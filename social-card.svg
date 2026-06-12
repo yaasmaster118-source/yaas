@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="g" cx="70%" cy="25%" r="70%">
+      <stop offset="0" stop-color="#28321d"/>
+      <stop offset="1" stop-color="#0c0e12"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <g transform="translate(115 132)">
+    <g fill="#c9f34b" transform="translate(0 0)">
+      <rect x="84" width="42" height="126" rx="21"/>
+      <rect x="126" y="84" width="126" height="42" rx="21"/>
+      <rect x="84" y="126" width="42" height="126" rx="21"/>
+      <rect y="84" width="126" height="42" rx="21"/>
+      <circle cx="105" cy="105" r="41"/>
+    </g>
+    <text x="310" y="105" fill="#f2f4ef" font-family="Arial, sans-serif" font-size="104" font-weight="800">YAAS</text>
+    <text x="310" y="172" fill="#c9f34b" font-family="Arial, sans-serif" font-size="29" font-weight="700">YENİ NESİL TOPLULUK PLATFORMU</text>
+    <text x="310" y="226" fill="#959d91" font-family="Arial, sans-serif" font-size="25">Paylaş. Konuş. Birlikte büyü.</text>
+  </g>
+</svg>

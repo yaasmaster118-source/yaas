@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="YAAS; topluluk kurabileceğin, fotoğraf ve video paylaşabileceğin, arkadaşlarınla sesli konuşabileceğin yeni nesil sosyal platform.">
+    <meta name="keywords" content="YAAS, topluluk platformu, sosyal medya, sesli sohbet, fotoğraf paylaşma, video paylaşma, Türkiye">
+    <meta name="author" content="YAAS">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <meta name="theme-color" content="#0c0e12">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="tr_TR">
+    <meta property="og:site_name" content="YAAS">
+    <meta property="og:title" content="YAAS | Yeni Nesil Topluluk Platformu">
+    <meta property="og:description" content="Topluluğunu kur, anlarını paylaş ve sesli odalarda bir araya gel.">
+    <meta property="og:image" content="/social-card.svg">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="YAAS | Yeni Nesil Topluluk Platformu">
+    <meta name="twitter:description" content="Topluluğunu kur, anlarını paylaş ve sesli odalarda bir araya gel.">
+    <meta name="twitter:image" content="/social-card.svg">
+    <title>YAAS | Yeni Nesil Topluluk Platformu</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=1.0.3">
+    <script src="app.js?v=1.0.3" defer></script>
+  </head>
+  <body>
+    <section class="auth-screen" id="auth-screen" aria-label="YAAS giriş">
+      <div class="auth-brand">
+        <a class="auth-logo" href="#"><span class="logo-symbol" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>YAAS</strong></a>
+        <div class="auth-hero">
+          <span class="auth-eyebrow">YENİ NESİL TOPLULUK</span>
+          <h1>Birlikte paylaş.<br><em>Birlikte büyü.</em></h1>
+          <p>Topluluklarını kur, anlarını paylaş ve sesli odalarda bir araya gel.</p>
+          <div class="auth-orbit"><span class="hero-symbol" aria-hidden="true"><b></b><b></b><b></b><b></b></span><i></i><i></i><i></i></div>
+        </div>
+        <footer>© 2026 YAAS · 1.0</footer>
+      </div>
+      <div class="auth-panel">
+        <div class="auth-box">
+          <div class="auth-tabs">
+            <button class="active" type="button" data-auth-tab="login">Giriş yap</button>
+            <button type="button" data-auth-tab="register">Hesap oluştur</button>
+          </div>
+
+          <div class="auth-heading">
+            <div class="auth-mobile-brand"><span class="auth-mobile-logo logo-symbol" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>YAAS</strong></div>
+            <h2 id="auth-title">Tekrar hoş geldin</h2>
+            <p id="auth-subtitle">Topluluğuna kaldığın yerden devam et.</p>
+          </div>
+
+          <div class="social-auth">
+            <button class="oauth-button google-auth" type="button"><span class="google-mark">G</span> Google ile devam et</button>
+            <button class="oauth-button apple-auth" type="button"><span class="apple-mark">●</span> Apple ile devam et</button>
+          </div>
+          <div class="auth-divider"><span>veya e-posta ile</span></div>
+
+          <form class="auth-form active" id="login-form">
+            <label>E-posta adresi<input id="login-email" type="email" autocomplete="email" required placeholder="ornek@email.com"></label>
+            <label>Şifre<span class="password-field"><input id="login-password" type="password" autocomplete="current-password" minlength="6" required placeholder="Şifreni gir"><button class="password-toggle" type="button" aria-label="Şifreyi göster">◉</button></span></label>
+            <div class="auth-options"><label><input id="remember-login" type="checkbox" checked> Beni hatırla</label><button class="forgot-button" type="button">Şifremi unuttum</button></div>
+            <p class="auth-error" id="login-error" role="alert"></p>
+            <button class="auth-submit" type="submit">Giriş yap <span>→</span></button>
+          </form>
+
+          <form class="auth-form" id="register-form">
+            <label>Adın<input id="register-name" autocomplete="name" maxlength="32" required placeholder="Adın ve soyadın"></label>
+            <label>E-posta adresi<input id="register-email" type="email" autocomplete="email" required placeholder="ornek@email.com"></label>
+            <label>Şifre<span class="password-field"><input id="register-password" type="password" autocomplete="new-password" minlength="6" required placeholder="En az 6 karakter"><button class="password-toggle" type="button" aria-label="Şifreyi göster">◉</button></span></label>
+            <label class="terms-check"><input id="terms-check" type="checkbox" required> <span>Kullanım koşullarını ve gizlilik politikasını kabul ediyorum.</span></label>
+            <p class="auth-error" id="register-error" role="alert"></p>
+            <button class="auth-submit" type="submit">Hesabını oluştur <span>→</span></button>
+          </form>
+
+          <p class="auth-note">YAAS, şifreni düz metin olarak saklamaz.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="app">
+      <aside class="servers panel">
+        <div class="brand-row">
+          <button class="mobile-close" type="button" aria-label="Sunucu panelini kapat">×</button>
+          <a class="brand" href="#" aria-label="YAAS ana sayfa"><span class="logo-symbol" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>YAAS</strong></a>
+          <button class="create-server" type="button" aria-label="Sunucu ekle">＋</button>
+        </div>
+
+        <label class="side-search"><span>⌕</span><input type="search" placeholder="Sunucu veya kanal ara"></label>
+
+        <nav class="server-list" aria-label="Sunucular">
+          <p class="section-name">SUNUCULARIN</p>
+          <button class="server active" type="button" data-server="YAAS Studio">
+            <span class="server-logo purple">✦</span><span><strong>YAAS Studio</strong><small>8 kişi çevrimiçi</small></span><i>4</i>
+          </button>
+          <button class="server" type="button" data-server="Oyun Kulübü">
+            <span class="server-logo coral">OK</span><span><strong>Oyun Kulübü</strong><small>12 kişi çevrimiçi</small></span>
+          </button>
+          <button class="server" type="button" data-server="Yazılımcılar">
+            <span class="server-logo cyan">&lt;/&gt;</span><span><strong>Yazılımcılar</strong><small>23 kişi çevrimiçi</small></span>
+          </button>
+          <button class="server" type="button" data-server="Müzik Odası">
+            <span class="server-logo pink">♫</span><span><strong>Müzik Odası</strong><small>5 kişi çevrimiçi</small></span>
+          </button>
+        </nav>
+
+        <section class="channels">
+          <div class="section-title"><span id="server-title">YAAS STUDIO</span><button type="button">＋</button></div>
+          <button class="channel active" type="button"><span>#</span> genel akış</button>
+          <button class="channel" type="button"><span>#</span> fotoğraflar</button>
+          <button class="channel" type="button"><span>▷</span> videolar <i>2</i></button>
+          <button class="channel" type="button"><span>◉</span> canlı yayın</button>
+          <button class="channel voice-entry" type="button" data-room="yaas-studio-ses"><span>♬</span> ses odası <b>LIVE</b></button>
+        </section>
+
+        <button class="discover-card" type="button">
+          <span>✦</span><div><strong>Yeni topluluklar keşfet</strong><small>İlgini çeken insanları bul</small></div><i>→</i>
+        </button>
+      </aside>
+
+      <main class="feed">
+        <header class="topbar">
+          <button class="mobile-menu" type="button" aria-label="Sunucuları aç">☰</button>
+          <div><strong>Genel Akış</strong><span>Topluluğundaki en yeni paylaşımlar</span></div>
+          <label class="global-search"><span>⌕</span><input type="search" placeholder="YAAS'ta ara..."><kbd>⌘ K</kbd></label>
+          <button class="top-icon" type="button" aria-label="Bildirimler">♢<i></i></button>
+          <button class="profile-mobile" type="button" aria-label="Profil panelini aç">AM</button>
+        </header>
+
+        <div class="feed-scroll">
+          <section class="stories" aria-label="Hikayeler">
+            <button class="story add-story" type="button"><span class="story-ring"><i>＋</i></span><small>Hikayen</small></button>
+            <button class="story" type="button"><span class="story-ring"><i class="avatar coral">E</i></span><small>Ece</small></button>
+            <button class="story" type="button"><span class="story-ring"><i class="avatar blue">M</i></span><small>Mert</small></button>
+            <button class="story" type="button"><span class="story-ring"><i class="avatar violet">S</i></span><small>Selin</small></button>
+            <button class="story" type="button"><span class="story-ring"><i class="avatar gold">C</i></span><small>Cem</small></button>
+            <button class="story" type="button"><span class="story-ring seen"><i class="avatar green">D</i></span><small>Deniz</small></button>
+          </section>
+
+          <section class="create-post card">
+            <div class="create-top">
+              <span class="avatar lime">A</span>
+              <textarea id="post-text" rows="1" placeholder="Topluluğunla bir şey paylaş..."></textarea>
+            </div>
+            <div class="media-preview" id="media-preview"></div>
+            <div class="create-actions">
+              <input id="media-input" type="file" accept="image/*,video/*" hidden>
+              <button class="media-picker" type="button"><span class="photo-icon">▧</span> Fotoğraf / Video</button>
+              <button type="button"><span class="live-icon">●</span> Canlı yayın</button>
+              <button type="button"><span class="event-icon">◇</span> Etkinlik</button>
+              <button class="share-button" type="button">Paylaş</button>
+            </div>
+          </section>
+
+          <div class="feed-tabs">
+            <button class="active" type="button">Senin için</button>
+            <button type="button">En yeni</button>
+            <button type="button">Popüler</button>
+          </div>
+
+          <section id="posts">
+            <article class="post card">
+              <header class="post-head">
+                <span class="avatar coral">E</span>
+                <div><strong>Ece Yılmaz <i>✓</i></strong><span>YAAS Studio · 24 dk</span></div>
+                <button type="button" aria-label="Gönderi menüsü">•••</button>
+              </header>
+              <p class="post-copy">Yeni YAAS arayüzü için hazırladığım renk çalışması. Karanlık mod ve neon detaylar sizce nasıl? <a href="#">#tasarım</a> <a href="#">#YAAS</a></p>
+              <div class="post-media design-art">
+                <div class="art-copy"><small>CREATE WITHOUT LIMITS</small><strong>Fikirden<br><em>gerçeğe.</em></strong><span>YAAS</span></div>
+                <div class="art-shape"><span class="hero-symbol" aria-hidden="true"><b></b><b></b><b></b><b></b></span></div>
+              </div>
+              <div class="post-stats"><span><b>♥</b> Ece, Mert ve 126 kişi</span><span>18 yorum · 7 paylaşım</span></div>
+              <div class="post-actions">
+                <button class="like-button" type="button"><span>♡</span> Beğen <b>127</b></button>
+                <button class="comment-toggle" type="button"><span>◯</span> Yorum</button>
+                <button type="button"><span>↗</span> Paylaş</button>
+                <button class="save-button" type="button"><span>♧</span> Kaydet</button>
+              </div>
+              <div class="comments">
+                <div class="comment"><span class="avatar blue">M</span><div><strong>Mert Kaya</strong><p>Renkler çok iyi olmuş, özellikle yeşil detaylar harika!</p><small>12 dk · Beğen · Yanıtla</small></div></div>
+                <form class="comment-form"><span class="avatar lime">A</span><input placeholder="Yorum yaz..."><button type="submit">➤</button></form>
+              </div>
+            </article>
+
+            <article class="post card">
+              <header class="post-head">
+                <span class="avatar blue">M</span>
+                <div><strong>Mert Kaya</strong><span>Yazılımcılar · 1 sa</span></div>
+                <button type="button" aria-label="Gönderi menüsü">•••</button>
+              </header>
+              <p class="post-copy">Bugün geliştirdiğimiz yeni video oynatıcının ilk gösterimi. Hem hızlı hem de topluluk yorumları video üzerinde anlık görünüyor 🚀</p>
+              <div class="post-media video-art">
+                <div class="video-grid"></div>
+                <div class="video-copy"><small>YAAS LABS</small><strong>Birlikte izle.<br>Birlikte konuş.</strong></div>
+                <button class="play-button" type="button" aria-label="Videoyu oynat">▶</button>
+                <div class="video-bottom"><span>0:00</span><i></i><span>1:42</span><b>▣</b></div>
+              </div>
+              <div class="post-stats"><span><b>♥</b> 84 kişi beğendi</span><span>11 yorum · 4 paylaşım</span></div>
+              <div class="post-actions">
+                <button class="like-button" type="button"><span>♡</span> Beğen <b>84</b></button>
+                <button class="comment-toggle" type="button"><span>◯</span> Yorum</button>
+                <button type="button"><span>↗</span> Paylaş</button>
+                <button class="save-button" type="button"><span>♧</span> Kaydet</button>
+              </div>
+              <div class="comments">
+                <form class="comment-form"><span class="avatar lime">A</span><input placeholder="Yorum yaz..."><button type="submit">➤</button></form>
+              </div>
+            </article>
+          </section>
+        </div>
+      </main>
+
+      <aside class="profile panel">
+        <header class="profile-head">
+          <strong>Profilin</strong>
+          <button class="profile-close" type="button" aria-label="Profil panelini kapat">×</button>
+          <button class="settings-button" type="button" aria-label="Ayarları aç">⚙</button>
+        </header>
+
+        <section class="profile-card">
+          <div class="profile-cover"><span>✦</span></div>
+          <div class="profile-main">
+            <span class="big-avatar"><span id="profile-initials">AM</span><i></i></span>
+            <button class="edit-profile-button" type="button">Profili düzenle</button>
+          </div>
+          <h2 id="profile-name">Ali Mert</h2>
+          <p><span id="profile-handle">@alimert</span> · <span id="profile-role">İçerik üretici</span></p>
+          <div class="profile-stats"><span><strong>248</strong><small>Gönderi</small></span><span><strong>12.4K</strong><small>Takipçi</small></span><span><strong>386</strong><small>Takip</small></span></div>
+        </section>
+
+        <nav class="profile-nav" aria-label="Profil menüsü">
+          <button class="active" type="button"><span>⌂</span> Ana sayfa</button>
+          <button type="button"><span>♧</span> Kaydedilenler <b id="saved-count">0</b></button>
+          <button type="button"><span>▧</span> Gönderilerim</button>
+          <button type="button"><span>◫</span> Medya</button>
+          <button type="button"><span>♡</span> Beğendiklerim</button>
+          <button class="logout-button" type="button"><span>↪</span> Çıkış yap</button>
+        </nav>
+
+        <section class="settings-card">
+          <div class="section-title"><span>HIZLI AYARLAR</span></div>
+          <label><span><i>◐</i><b>Karanlık görünüm</b></span><input class="switch" type="checkbox" checked></label>
+          <label><span><i>♢</i><b>Bildirimler</b></span><input class="switch" type="checkbox" checked></label>
+          <label><span><i>◉</i><b>Çevrimiçi görün</b></span><input class="switch" type="checkbox" checked></label>
+        </section>
+
+        <section class="trending">
+          <div class="section-title"><span>GÜNDEMDE</span><button type="button">Tümü</button></div>
+          <a href="#"><span>1</span><div><strong>#YAASLansman</strong><small>2.8K gönderi</small></div></a>
+          <a href="#"><span>2</span><div><strong>#YeniNesilTopluluk</strong><small>1.4K gönderi</small></div></a>
+          <a href="#"><span>3</span><div><strong>#Tasarım</strong><small>892 gönderi</small></div></a>
+        </section>
+      </aside>
+    </div>
+
+    <div class="modal-layer" id="server-modal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="server-modal-title">
+        <header><div><span class="modal-mark">＋</span><span><strong id="server-modal-title">Yeni sunucu oluştur</strong><small>Topluluğuna bir isim ve konu ver.</small></span></div><button class="modal-close" type="button" aria-label="Pencereyi kapat">×</button></header>
+        <form id="server-form">
+          <label>Sunucu adı<input id="new-server-name" maxlength="28" required placeholder="Örn. Tasarım Kulübü"></label>
+          <label>Sunucu konusu<select id="new-server-topic"><option>Topluluk</option><option>Oyun</option><option>Teknoloji</option><option>Müzik</option><option>Eğitim</option></select></label>
+          <div class="color-options" aria-label="Sunucu rengi">
+            <button class="color-choice selected" type="button" data-color="purple" aria-label="Mor"></button>
+            <button class="color-choice coral" type="button" data-color="coral" aria-label="Mercan"></button>
+            <button class="color-choice cyan" type="button" data-color="cyan" aria-label="Mavi"></button>
+            <button class="color-choice pink" type="button" data-color="pink" aria-label="Pembe"></button>
+          </div>
+          <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Sunucuyu oluştur</button></footer>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-layer" id="profile-modal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+        <header><div><span class="modal-mark">AM</span><span><strong id="profile-modal-title">Profili düzenle</strong><small>Topluluğun seni nasıl göreceğini belirle.</small></span></div><button class="modal-close" type="button" aria-label="Pencereyi kapat">×</button></header>
+        <form id="profile-form">
+          <label>Görünen ad<input id="edit-name" maxlength="32" required></label>
+          <label>Kullanıcı adı<input id="edit-handle" maxlength="24" required></label>
+          <label>Kısa açıklama<input id="edit-role" maxlength="40"></label>
+          <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Değişiklikleri kaydet</button></footer>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-layer" id="settings-modal" hidden>
+      <section class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+        <header><div><span class="modal-mark">⚙</span><span><strong id="settings-modal-title">YAAS ayarları</strong><small>Deneyimini kendine göre düzenle.</small></span></div><button class="modal-close" type="button" aria-label="Pencereyi kapat">×</button></header>
+        <div class="settings-list">
+          <label><span><strong>Hareketleri azalt</strong><small>Animasyonları ve geçişleri sınırlar.</small></span><input class="switch" id="reduce-motion-setting" type="checkbox"></label>
+          <label><span><strong>Bildirim sesleri</strong><small>Yeni etkileşimlerde sesli bildirim verir.</small></span><input class="switch" id="sound-setting" type="checkbox" checked></label>
+          <label><span><strong>Otomatik video oynatma</strong><small>Akıştaki videoları otomatik başlatır.</small></span><input class="switch" id="autoplay-setting" type="checkbox"></label>
+        </div>
+        <div class="version-row"><span>YAAS sürümü</span><strong>1.0.0</strong></div>
+      </section>
+    </div>
+
+    <section class="voice-room" id="voice-room" hidden aria-label="Sesli kanal">
+      <header>
+        <div><span class="voice-live-dot"></span><span><strong>Ses odası</strong><small id="voice-status">Bağlantı bekleniyor</small></span></div>
+        <button class="voice-minimize" type="button" aria-label="Sesli kanalı küçült">⌄</button>
+      </header>
+      <div class="voice-participants" id="voice-participants"></div>
+      <div class="voice-controls">
+        <button class="voice-control mic-control" type="button" aria-label="Mikrofonu kapat"><span>♩</span><small>Mikrofon</small></button>
+        <button class="voice-control sound-control" type="button" aria-label="Sesi kapat"><span>◉</span><small>Ses</small></button>
+        <button class="voice-control leave-control" type="button" aria-label="Sesli kanaldan ayrıl"><span>×</span><small>Ayrıl</small></button>
+      </div>
+      <div id="remote-audio" hidden></div>
+    </section>
+
+    <div class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

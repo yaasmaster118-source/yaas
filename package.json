@@ -1,0 +1,13 @@
+{
+  "name": "yaas-website",
+  "version": "1.0.0",
+  "private": true,
+  "description": "YAAS community and media sharing platform",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check app.js"
+  }
+}
