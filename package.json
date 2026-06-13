@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check app.js && node --check src/database.js && node --check src/auth.js && node --check src/permissions.js && node --check src/api.js && node --check scripts/create-owner.js && node --test test/*.test.js",
+    "check": "node --check server.js && node --check app.js && node --check src/database.js && node --check src/auth.js && node --check src/oauth.js && node --check src/permissions.js && node --check src/api.js && node --check scripts/create-owner.js && node --test test/*.test.js",
     "db:init": "node scripts/init-db.js",
     "owner:create": "node scripts/create-owner.js"
   },

@@ -10,9 +10,10 @@ function getLocalDatabase() {
   if (localDatabase) return localDatabase;
 
   const { DatabaseSync } = require("node:sqlite");
-  const dataDirectory = path.join(__dirname, "..", ".data");
+  const configuredPath = process.env.LOCAL_DATABASE_PATH;
+  const dataDirectory = configuredPath ? path.dirname(configuredPath) : path.join(__dirname, "..", ".data");
   fs.mkdirSync(dataDirectory, { recursive: true });
-  localDatabase = new DatabaseSync(path.join(dataDirectory, "yaas.sqlite"));
+  localDatabase = new DatabaseSync(configuredPath || path.join(dataDirectory, "yaas.sqlite"));
   localDatabase.exec(`
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS users (
@@ -46,6 +47,13 @@ function getLocalDatabase() {
       joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY(server_id, user_id)
     );
+    CREATE TABLE IF NOT EXISTS oauth_accounts (
+      provider TEXT NOT NULL,
+      provider_user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(provider, provider_user_id)
+    );
   `);
   return localDatabase;
 }
@@ -59,7 +67,14 @@ function toSqliteQuery(text, values) {
     })
     .replace(/::int\b/gi, "")
     .replace(/\bNOW\(\)/gi, "CURRENT_TIMESTAMP");
-  return { sql, values: orderedValues.map((value) => value instanceof Date ? value.toISOString() : value) };
+  return {
+    sql,
+    values: orderedValues.map((value) => {
+      if (value instanceof Date) return value.toISOString();
+      if (typeof value === "boolean") return value ? 1 : 0;
+      return value;
+    })
+  };
 }
 
 function localQuery(text, values = []) {

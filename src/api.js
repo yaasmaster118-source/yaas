@@ -11,6 +11,7 @@ const {
   verifyPassword
 } = require("./auth");
 const { ALL_PERMISSIONS, ROLE_TEMPLATES, validPermissions } = require("./permissions");
+const { finishOAuth, publicProviders, startOAuth } = require("./oauth");
 
 function text(value, max) {
   return String(value || "").trim().slice(0, max);
@@ -92,6 +93,24 @@ async function handleApi(request, response, helpers) {
   const method = request.method;
 
   try {
+    if (method === "GET" && url.pathname === "/api/auth/providers") {
+      return sendJson(response, 200, { providers: publicProviders() });
+    }
+
+    const oauthStart = url.pathname.match(/^\/api\/auth\/oauth\/(google|apple)$/);
+    if (method === "GET" && oauthStart) {
+      if (!startOAuth(oauthStart[1], getOrigin(request), response)) {
+        return sendJson(response, 503, { error: "Bu giriş yöntemi henüz ayarlanmadı" });
+      }
+      return;
+    }
+
+    const oauthCallback = url.pathname.match(/^\/api\/auth\/oauth\/(google|apple)\/callback$/);
+    if (method === "GET" && oauthCallback) {
+      await finishOAuth(oauthCallback[1], request, response, getOrigin(request), url.searchParams);
+      return;
+    }
+
     if (method === "POST" && url.pathname === "/api/auth/register") {
       const body = await readJson(request);
       const email = text(body.email, 254).toLowerCase();
@@ -385,7 +404,9 @@ async function handleApi(request, response, helpers) {
 
     sendJson(response, 404, { error: "API yolu bulunamadı" });
   } catch (error) {
-    if (error.code === "23505") return sendJson(response, 409, { error: "Bu kayıt zaten mevcut" });
+    if (error.code === "23505" || /UNIQUE constraint failed/i.test(error.message)) {
+      return sendJson(response, 409, { error: "Bu kayıt zaten mevcut" });
+    }
     console.error(error);
     sendJson(response, 500, { error: "Sunucu hatası" });
   }

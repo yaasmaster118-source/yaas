@@ -92,3 +92,13 @@ CREATE INDEX IF NOT EXISTS memberships_user_idx ON memberships(user_id);
 CREATE INDEX IF NOT EXISTS channels_server_idx ON channels(server_id, position);
 CREATE INDEX IF NOT EXISTS messages_channel_idx ON messages(channel_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS member_roles_member_idx ON member_roles(server_id, user_id);
+
+CREATE TABLE IF NOT EXISTS oauth_accounts (
+  provider TEXT NOT NULL,
+  provider_user_id TEXT NOT NULL,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(provider, provider_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS oauth_accounts_user_idx ON oauth_accounts(user_id);

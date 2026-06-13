@@ -1,5 +1,9 @@
 "use strict";
 
+if (location.protocol === "file:") {
+  location.replace("http://localhost:4173/");
+}
+
 const $ = (selector, parent = document) => parent.querySelector(selector);
 const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
 
@@ -224,6 +228,14 @@ function editRole(role) {
 
 async function start() {
   buildPermissionGrid();
+  const providers = await api("/api/auth/providers");
+  const enabledProviders = providers.providers || {};
+  $$("[data-provider]").forEach((button) => {
+    button.disabled = !enabledProviders[button.dataset.provider];
+  });
+  $("#social-login-note").textContent = enabledProviders.google || enabledProviders.apple
+    ? "Sosyal hesabın YAAS hesabın olarak kaydedilir."
+    : "Google ve Apple girişi yönetici ayarları tamamlanınca açılacak.";
   const data = await api("/api/me");
   if (!data.user) return showAuth();
   showApp(data.user);
@@ -238,6 +250,9 @@ $$(".modal-layer").forEach((layer) => layer.addEventListener("click", (event) =>
 }));
 $$("[data-open-panel]").forEach((button) => button.addEventListener("click", () => $(`#${button.dataset.openPanel}`).classList.add("open")));
 $$("[data-close-panel]").forEach((button) => button.addEventListener("click", () => $(`#${button.dataset.closePanel}`).classList.remove("open")));
+$$("[data-provider]").forEach((button) => button.addEventListener("click", () => {
+  location.href = `/api/auth/oauth/${button.dataset.provider}`;
+}));
 
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
