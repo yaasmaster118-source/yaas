@@ -27,7 +27,20 @@ const state = {
   user: null,
   servers: [],
   activeServer: null,
-  activeChannel: null
+  activeChannel: null,
+  voice: {
+    roomId: null,
+    clientId: null,
+    stream: null,
+    peers: new Map(),
+    pollTimer: null,
+    muted: false,
+    deafened: false
+  }
+};
+
+const RTC_CONFIGURATION = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
 
 async function api(path, options = {}) {
@@ -179,6 +192,7 @@ function showNoChannel() {
 }
 
 async function openChannel(channel) {
+  if (state.voice.roomId && state.voice.roomId !== channel.id) await leaveVoice();
   state.activeChannel = channel;
   $$(".channel-item").forEach((button) => button.classList.toggle("active", button.dataset.channelId === channel.id));
   $("#active-channel-name").textContent = channel.name;
@@ -205,6 +219,157 @@ async function loadMessages() {
   } catch (error) {
     notify(error.message, true);
   }
+}
+
+async function voiceApi(path, options = {}) {
+  return api(`/api/voice/${path}`, options);
+}
+
+function renderVoiceParticipants(participants = []) {
+  const list = $("#voice-participants");
+  list.innerHTML = participants.map((participant) =>
+    `<span class="voice-person">${escapeHtml(participant.name)}${participant.id === state.voice.clientId ? " (sen)" : ""}</span>`
+  ).join("");
+  list.classList.toggle("hidden", participants.length === 0);
+}
+
+async function sendVoiceSignal(to, signal) {
+  await voiceApi("signal", {
+    method: "POST",
+    body: JSON.stringify({ roomId: state.voice.roomId, from: state.voice.clientId, to, signal })
+  });
+}
+
+function attachRemoteAudio(peerId, stream) {
+  let audio = document.getElementById(`voice-audio-${peerId}`);
+  if (!audio) {
+    audio = document.createElement("audio");
+    audio.id = `voice-audio-${peerId}`;
+    audio.autoplay = true;
+    audio.playsInline = true;
+    $("#remote-audio-container").append(audio);
+  }
+  audio.srcObject = stream;
+  audio.muted = state.voice.deafened;
+}
+
+function createVoicePeer(peerId, initiator) {
+  if (state.voice.peers.has(peerId)) return state.voice.peers.get(peerId);
+  const connection = new RTCPeerConnection(RTC_CONFIGURATION);
+  state.voice.stream.getTracks().forEach((track) => connection.addTrack(track, state.voice.stream));
+  connection.onicecandidate = ({ candidate }) => {
+    if (candidate) sendVoiceSignal(peerId, { type: "ice", candidate }).catch(() => {});
+  };
+  connection.ontrack = ({ streams }) => attachRemoteAudio(peerId, streams[0]);
+  connection.onconnectionstatechange = () => {
+    if (["failed", "closed", "disconnected"].includes(connection.connectionState)) {
+      connection.close();
+      state.voice.peers.delete(peerId);
+      document.getElementById(`voice-audio-${peerId}`)?.remove();
+    }
+  };
+  state.voice.peers.set(peerId, connection);
+  if (initiator) {
+    connection.createOffer()
+      .then((offer) => connection.setLocalDescription(offer).then(() => sendVoiceSignal(peerId, offer)))
+      .catch(() => {});
+  }
+  return connection;
+}
+
+async function handleVoiceSignal(from, signal) {
+  const connection = createVoicePeer(from, false);
+  if (signal.type === "offer") {
+    await connection.setRemoteDescription(signal);
+    const answer = await connection.createAnswer();
+    await connection.setLocalDescription(answer);
+    await sendVoiceSignal(from, answer);
+  } else if (signal.type === "answer") {
+    await connection.setRemoteDescription(signal);
+  } else if (signal.type === "ice" && signal.candidate) {
+    await connection.addIceCandidate(signal.candidate).catch(() => {});
+  }
+}
+
+async function pollVoice() {
+  if (!state.voice.roomId) return;
+  try {
+    const data = await voiceApi(
+      `poll?roomId=${encodeURIComponent(state.voice.roomId)}&clientId=${encodeURIComponent(state.voice.clientId)}`
+    );
+    renderVoiceParticipants(data.participants || []);
+    for (const item of data.signals || []) await handleVoiceSignal(item.from, item.signal);
+    state.voice.pollTimer = setTimeout(pollVoice, 900);
+  } catch {
+    await leaveVoice(false);
+    notify("Ses bağlantısı kesildi", true);
+  }
+}
+
+async function joinVoice() {
+  if (!state.activeChannel || state.activeChannel.type !== "voice" || state.voice.roomId) return;
+  if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
+    return notify("Bu tarayıcı sesli görüşmeyi desteklemiyor", true);
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false
+    });
+    state.voice.roomId = state.activeChannel.id;
+    state.voice.clientId = crypto.randomUUID();
+    state.voice.stream = stream;
+    const data = await voiceApi("join", {
+      method: "POST",
+      body: JSON.stringify({
+        roomId: state.voice.roomId,
+        clientId: state.voice.clientId,
+        name: state.user.display_name || state.user.displayName
+      })
+    });
+    $("#join-voice-button").classList.add("hidden");
+    $("#mute-voice-button").classList.remove("hidden");
+    $("#deafen-voice-button").classList.remove("hidden");
+    $("#leave-voice-button").classList.remove("hidden");
+    $("#voice-status").textContent = "Bağlandı";
+    renderVoiceParticipants([{ id: state.voice.clientId, name: state.user.display_name || state.user.displayName }]);
+    for (const peer of data.peers || []) createVoicePeer(peer.id, true);
+    pollVoice();
+  } catch (error) {
+    state.voice.stream?.getTracks().forEach((track) => track.stop());
+    Object.assign(state.voice, { roomId: null, clientId: null, stream: null });
+    notify(error.name === "NotAllowedError" ? "Mikrofon izni verilmedi" : error.message, true);
+  }
+}
+
+async function leaveVoice(notifyServer = true) {
+  clearTimeout(state.voice.pollTimer);
+  if (notifyServer && state.voice.roomId && state.voice.clientId) {
+    await voiceApi("leave", {
+      method: "POST",
+      body: JSON.stringify({ roomId: state.voice.roomId, clientId: state.voice.clientId })
+    }).catch(() => {});
+  }
+  state.voice.peers.forEach((connection) => connection.close());
+  state.voice.peers.clear();
+  state.voice.stream?.getTracks().forEach((track) => track.stop());
+  $("#remote-audio-container").replaceChildren();
+  renderVoiceParticipants([]);
+  $("#join-voice-button").classList.remove("hidden");
+  $("#mute-voice-button").classList.add("hidden");
+  $("#deafen-voice-button").classList.add("hidden");
+  $("#leave-voice-button").classList.add("hidden");
+  $("#voice-status").textContent = "Bağlı değil";
+  $("#mute-voice-button").textContent = "Mikrofonu kapat";
+  $("#deafen-voice-button").textContent = "Sesi kapat";
+  Object.assign(state.voice, {
+    roomId: null,
+    clientId: null,
+    stream: null,
+    pollTimer: null,
+    muted: false,
+    deafened: false
+  });
 }
 
 function messageTemplate(message) {
@@ -289,6 +454,7 @@ $("#register-form").addEventListener("submit", async (event) => {
 });
 
 $("#logout-button").addEventListener("click", async () => {
+  await leaveVoice();
   await api("/api/auth/logout", { method: "POST", body: "{}" });
   state.servers = [];
   state.activeServer = null;
@@ -401,8 +567,26 @@ $("#role-form").addEventListener("submit", async (event) => {
   }
 });
 
-$("#join-voice-button").addEventListener("click", () => {
-  notify("Sunucu izinlerine bağlı ses bağlantısı sıradaki 1.1 adımında etkinleşecek.");
+$("#join-voice-button").addEventListener("click", joinVoice);
+$("#leave-voice-button").addEventListener("click", () => leaveVoice());
+$("#mute-voice-button").addEventListener("click", () => {
+  state.voice.muted = !state.voice.muted;
+  state.voice.stream?.getAudioTracks().forEach((track) => { track.enabled = !state.voice.muted; });
+  $("#mute-voice-button").textContent = state.voice.muted ? "Mikrofonu aç" : "Mikrofonu kapat";
+  $("#voice-status").textContent = state.voice.muted ? "Mikrofon kapalı" : "Bağlandı";
+});
+$("#deafen-voice-button").addEventListener("click", () => {
+  state.voice.deafened = !state.voice.deafened;
+  $$("#remote-audio-container audio").forEach((audio) => { audio.muted = state.voice.deafened; });
+  $("#deafen-voice-button").textContent = state.voice.deafened ? "Sesi aç" : "Sesi kapat";
+});
+window.addEventListener("beforeunload", () => {
+  if (state.voice.roomId) {
+    navigator.sendBeacon("/api/voice/leave", JSON.stringify({
+      roomId: state.voice.roomId,
+      clientId: state.voice.clientId
+    }));
+  }
 });
 
 $$("[data-mobile-view=channels]").forEach((button) => button.addEventListener("click", () => {

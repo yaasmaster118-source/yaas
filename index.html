@@ -133,7 +133,15 @@
               <span class="voice-orb">◖</span>
               <h3 id="voice-channel-name">Ses kanalı</h3>
               <p>Sunucu üyeleriyle sesli konuş.</p>
-              <button class="primary" id="join-voice-button" type="button">Ses kanalına katıl</button>
+              <div class="voice-participants hidden" id="voice-participants"></div>
+              <div class="voice-controls">
+                <button class="primary" id="join-voice-button" type="button">Ses kanalına katıl</button>
+                <button class="secondary hidden" id="mute-voice-button" type="button">Mikrofonu kapat</button>
+                <button class="secondary hidden" id="deafen-voice-button" type="button">Sesi kapat</button>
+                <button class="danger-button hidden" id="leave-voice-button" type="button">Ayrıl</button>
+              </div>
+              <small class="voice-status" id="voice-status">Bağlı değil</small>
+              <div id="remote-audio-container" hidden></div>
             </div>
           </section>
         </section>

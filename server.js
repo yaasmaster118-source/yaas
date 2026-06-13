@@ -2,6 +2,8 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { handleApi } = require("./src/api");
+const { getAuthenticatedUser } = require("./src/auth");
+const { query } = require("./src/database");
 
 const port = Number(process.env.PORT) || 4173;
 const root = __dirname;
@@ -44,6 +46,10 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.url.startsWith("/api/voice/")) {
+    if (!isSameOrigin(request)) {
+      sendJson(response, 403, { error: "Geçersiz istek kaynağı" });
+      return;
+    }
     handleVoiceApi(request, response);
     return;
   }
@@ -147,15 +153,33 @@ async function handleVoiceApi(request, response) {
     if (request.method === "POST" && url.pathname === "/api/voice/join") {
       const { roomId, clientId, name } = await readJson(request);
       if (!roomId || !clientId) return sendJson(response, 400, { error: "Eksik oda bilgisi" });
+      const user = await getAuthenticatedUser(request);
+      if (!user) return sendJson(response, 401, { error: "Oturum gerekli" });
+      const allowed = await query(
+        `SELECT 1 FROM channels c
+          JOIN memberships m ON m.server_id = c.server_id
+         WHERE c.id = $1 AND c.type = 'voice' AND m.user_id = $2`,
+        [roomId, user.id]
+      );
+      if (!allowed.rowCount) return sendJson(response, 403, { error: "Bu ses kanalına erişimin yok" });
       if (!voiceRooms.has(roomId)) voiceRooms.set(roomId, new Map());
       const room = voiceRooms.get(roomId);
       const peers = [...room.values()].map(({ id, name: peerName }) => ({ id, name: peerName }));
-      room.set(clientId, { id: clientId, name: String(name || "YAAS üyesi").slice(0, 40), lastSeen: Date.now(), queue: [] });
+      room.set(clientId, {
+        id: clientId,
+        userId: user.id,
+        name: String(name || user.display_name || "YAAS üyesi").slice(0, 40),
+        lastSeen: Date.now(),
+        queue: []
+      });
       return sendJson(response, 200, { peers });
     }
 
     if (request.method === "POST" && url.pathname === "/api/voice/signal") {
       const { roomId, from, to, signal } = await readJson(request);
+      if (!voiceRooms.get(roomId)?.has(from)) {
+        return sendJson(response, 403, { error: "Ses odasına bağlı değilsin" });
+      }
       const target = voiceRooms.get(roomId)?.get(to);
       if (target) target.queue.push({ from, signal });
       return sendJson(response, 200, { ok: true });
