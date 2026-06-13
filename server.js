@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { handleApi } = require("./src/api");
 
 const port = Number(process.env.PORT) || 4173;
 const root = __dirname;
@@ -21,6 +22,15 @@ const contentTypes = {
 };
 
 const server = http.createServer((request, response) => {
+  if (request.url.startsWith("/api/") && !request.url.startsWith("/api/voice/")) {
+    if (!isSameOrigin(request)) {
+      sendJson(response, 403, { error: "Geçersiz istek kaynağı" });
+      return;
+    }
+    handleApi(request, response, { getOrigin, readJson, sendJson });
+    return;
+  }
+
   if (request.url === "/robots.txt") {
     response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
     response.end(`User-agent: *\nAllow: /\nSitemap: ${getOrigin(request)}/sitemap.xml\n`);
@@ -46,7 +56,7 @@ const server = http.createServer((request, response) => {
 
   if (request.url === "/health") {
     response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-    response.end(JSON.stringify({ status: "ok", version: "1.0.0" }));
+    response.end(JSON.stringify({ status: "ok", version: "1.1.0-dev" }));
     return;
   }
 
@@ -84,6 +94,12 @@ function getOrigin(request) {
   const protocol = request.headers["x-forwarded-proto"] || "http";
   const host = request.headers["x-forwarded-host"] || request.headers.host || `localhost:${port}`;
   return `${protocol}://${host}`;
+}
+
+function isSameOrigin(request) {
+  if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
+  const origin = request.headers.origin;
+  return !origin || origin === getOrigin(request);
 }
 
 function readJson(request) {

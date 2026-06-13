@@ -3,7 +3,7 @@ services:
     name: yaas
     runtime: node
     plan: free
-    buildCommand: ""
+    buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
     envVars:

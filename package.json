@@ -1,6 +1,6 @@
 {
   "name": "yaas-website",
-  "version": "1.0.0",
+  "version": "1.1.0-dev",
   "private": true,
   "description": "YAAS community and media sharing platform",
   "engines": {
@@ -8,6 +8,10 @@
   },
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check app.js"
+    "check": "node --check server.js && node --check app.js && node --check src/database.js && node --check src/auth.js && node --check src/permissions.js && node --check src/api.js && node --test test/*.test.js",
+    "db:init": "node scripts/init-db.js"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
   }
 }
