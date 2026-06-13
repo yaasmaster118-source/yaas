@@ -134,10 +134,18 @@
               <h3 id="voice-channel-name">Ses kanalı</h3>
               <p>Sunucu üyeleriyle sesli konuş.</p>
               <div class="voice-participants hidden" id="voice-participants"></div>
+              <div class="voice-video-grid hidden" id="voice-video-grid">
+                <figure class="voice-video-tile hidden" id="local-video-tile">
+                  <video id="local-video" autoplay muted playsinline></video>
+                  <figcaption>Sen</figcaption>
+                </figure>
+              </div>
               <div class="voice-controls">
                 <button class="primary" id="join-voice-button" type="button">Ses kanalına katıl</button>
                 <button class="secondary hidden" id="mute-voice-button" type="button">Mikrofonu kapat</button>
                 <button class="secondary hidden" id="deafen-voice-button" type="button">Sesi kapat</button>
+                <button class="secondary hidden" id="camera-voice-button" type="button">Kamerayı aç</button>
+                <button class="secondary hidden" id="screen-voice-button" type="button">Ekranı paylaş</button>
                 <button class="danger-button hidden" id="leave-voice-button" type="button">Ayrıl</button>
               </div>
               <small class="voice-status" id="voice-status">Bağlı değil</small>

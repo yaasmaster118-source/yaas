@@ -32,6 +32,8 @@ const state = {
     roomId: null,
     clientId: null,
     stream: null,
+    videoStream: null,
+    videoMode: null,
     peers: new Map(),
     pollTimer: null,
     muted: false,
@@ -253,6 +255,37 @@ function attachRemoteAudio(peerId, stream) {
   audio.muted = state.voice.deafened;
 }
 
+function attachRemoteVideo(peerId, track) {
+  let tile = document.getElementById(`voice-video-tile-${peerId}`);
+  if (!tile) {
+    tile = document.createElement("figure");
+    tile.id = `voice-video-tile-${peerId}`;
+    tile.className = "voice-video-tile";
+    tile.innerHTML = `<video autoplay muted playsinline></video><figcaption>Katılımcı</figcaption>`;
+    $("#voice-video-grid").append(tile);
+  }
+  const video = $("video", tile);
+  video.srcObject = new MediaStream([track]);
+  $("#voice-video-grid").classList.remove("hidden");
+  track.onended = () => {
+    tile.remove();
+    updateVideoGridVisibility();
+  };
+}
+
+function updateVideoGridVisibility() {
+  const hasVisibleTile = $$(".voice-video-tile", $("#voice-video-grid"))
+    .some((tile) => !tile.classList.contains("hidden"));
+  $("#voice-video-grid").classList.toggle("hidden", !hasVisibleTile);
+}
+
+async function negotiateVoicePeer(peerId, connection) {
+  if (connection.signalingState !== "stable") return;
+  const offer = await connection.createOffer();
+  await connection.setLocalDescription(offer);
+  await sendVoiceSignal(peerId, offer);
+}
+
 function createVoicePeer(peerId, initiator) {
   if (state.voice.peers.has(peerId)) return state.voice.peers.get(peerId);
   const connection = new RTCPeerConnection(RTC_CONFIGURATION);
@@ -260,24 +293,31 @@ function createVoicePeer(peerId, initiator) {
   connection.onicecandidate = ({ candidate }) => {
     if (candidate) sendVoiceSignal(peerId, { type: "ice", candidate }).catch(() => {});
   };
-  connection.ontrack = ({ streams }) => attachRemoteAudio(peerId, streams[0]);
+  connection.ontrack = ({ track, streams }) => {
+    if (track.kind === "video") attachRemoteVideo(peerId, track);
+    else attachRemoteAudio(peerId, streams[0] || new MediaStream([track]));
+  };
+  connection.onnegotiationneeded = () => negotiateVoicePeer(peerId, connection).catch(() => {});
   connection.onconnectionstatechange = () => {
     if (["failed", "closed", "disconnected"].includes(connection.connectionState)) {
       connection.close();
       state.voice.peers.delete(peerId);
       document.getElementById(`voice-audio-${peerId}`)?.remove();
+      document.getElementById(`voice-video-tile-${peerId}`)?.remove();
+      updateVideoGridVisibility();
     }
   };
   state.voice.peers.set(peerId, connection);
-  if (initiator) {
-    connection.createOffer()
-      .then((offer) => connection.setLocalDescription(offer).then(() => sendVoiceSignal(peerId, offer)))
-      .catch(() => {});
-  }
+  if (initiator) negotiateVoicePeer(peerId, connection).catch(() => {});
   return connection;
 }
 
 async function handleVoiceSignal(from, signal) {
+  if (signal.type === "video-stop") {
+    document.getElementById(`voice-video-tile-${from}`)?.remove();
+    updateVideoGridVisibility();
+    return;
+  }
   const connection = createVoicePeer(from, false);
   if (signal.type === "offer") {
     await connection.setRemoteDescription(signal);
@@ -330,6 +370,8 @@ async function joinVoice() {
     $("#join-voice-button").classList.add("hidden");
     $("#mute-voice-button").classList.remove("hidden");
     $("#deafen-voice-button").classList.remove("hidden");
+    $("#camera-voice-button").classList.remove("hidden");
+    $("#screen-voice-button").classList.remove("hidden");
     $("#leave-voice-button").classList.remove("hidden");
     $("#voice-status").textContent = "Bağlandı";
     renderVoiceParticipants([{ id: state.voice.clientId, name: state.user.display_name || state.user.displayName }]);
@@ -342,8 +384,80 @@ async function joinVoice() {
   }
 }
 
+async function setOutgoingVideo(track, stream, mode) {
+  const previousStream = state.voice.videoStream;
+  state.voice.videoStream = stream;
+  state.voice.videoMode = mode;
+  for (const [peerId, connection] of state.voice.peers) {
+    const sender = connection.getSenders().find((item) => item.track?.kind === "video");
+    if (sender) await sender.replaceTrack(track);
+    else connection.addTrack(track, stream);
+    await negotiateVoicePeer(peerId, connection).catch(() => {});
+  }
+  previousStream?.getTracks().forEach((item) => {
+    if (item !== track) item.stop();
+  });
+  $("#local-video").srcObject = stream;
+  $("#local-video-tile").classList.remove("hidden");
+  $("#voice-video-grid").classList.remove("hidden");
+  $("#camera-voice-button").textContent = mode === "camera" ? "Kamerayı kapat" : "Kamerayı aç";
+  $("#screen-voice-button").textContent = mode === "screen" ? "Paylaşımı durdur" : "Ekranı paylaş";
+  track.onended = () => stopOutgoingVideo();
+}
+
+async function stopOutgoingVideo() {
+  const stream = state.voice.videoStream;
+  if (!stream) return;
+  state.voice.videoStream = null;
+  state.voice.videoMode = null;
+  for (const [peerId, connection] of state.voice.peers) {
+    const sender = connection.getSenders().find((item) => item.track?.kind === "video");
+    if (sender) await sender.replaceTrack(null);
+    await sendVoiceSignal(peerId, { type: "video-stop" }).catch(() => {});
+    await negotiateVoicePeer(peerId, connection).catch(() => {});
+  }
+  stream?.getTracks().forEach((track) => track.stop());
+  $("#local-video").srcObject = null;
+  $("#local-video-tile").classList.add("hidden");
+  $("#camera-voice-button").textContent = "Kamerayı aç";
+  $("#screen-voice-button").textContent = "Ekranı paylaş";
+  updateVideoGridVisibility();
+}
+
+async function toggleCamera() {
+  if (!state.voice.roomId) return;
+  if (state.voice.videoMode === "camera") return stopOutgoingVideo();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+      audio: false
+    });
+    await setOutgoingVideo(stream.getVideoTracks()[0], stream, "camera");
+  } catch (error) {
+    notify(error.name === "NotAllowedError" ? "Kamera izni verilmedi" : "Kamera açılamadı", true);
+  }
+}
+
+async function toggleScreenShare() {
+  if (!state.voice.roomId) return;
+  if (state.voice.videoMode === "screen") return stopOutgoingVideo();
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    return notify("Bu tarayıcı ekran paylaşımını desteklemiyor", true);
+  }
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: 30, max: 60 } },
+      audio: false
+    });
+    await setOutgoingVideo(stream.getVideoTracks()[0], stream, "screen");
+  } catch (error) {
+    if (error.name !== "NotAllowedError") notify("Ekran paylaşımı başlatılamadı", true);
+  }
+}
+
 async function leaveVoice(notifyServer = true) {
   clearTimeout(state.voice.pollTimer);
+  await stopOutgoingVideo();
   if (notifyServer && state.voice.roomId && state.voice.clientId) {
     await voiceApi("leave", {
       method: "POST",
@@ -358,6 +472,8 @@ async function leaveVoice(notifyServer = true) {
   $("#join-voice-button").classList.remove("hidden");
   $("#mute-voice-button").classList.add("hidden");
   $("#deafen-voice-button").classList.add("hidden");
+  $("#camera-voice-button").classList.add("hidden");
+  $("#screen-voice-button").classList.add("hidden");
   $("#leave-voice-button").classList.add("hidden");
   $("#voice-status").textContent = "Bağlı değil";
   $("#mute-voice-button").textContent = "Mikrofonu kapat";
@@ -366,6 +482,8 @@ async function leaveVoice(notifyServer = true) {
     roomId: null,
     clientId: null,
     stream: null,
+    videoStream: null,
+    videoMode: null,
     pollTimer: null,
     muted: false,
     deafened: false
@@ -580,6 +698,8 @@ $("#deafen-voice-button").addEventListener("click", () => {
   $$("#remote-audio-container audio").forEach((audio) => { audio.muted = state.voice.deafened; });
   $("#deafen-voice-button").textContent = state.voice.deafened ? "Sesi aç" : "Sesi kapat";
 });
+$("#camera-voice-button").addEventListener("click", toggleCamera);
+$("#screen-voice-button").addEventListener("click", toggleScreenShare);
 window.addEventListener("beforeunload", () => {
   if (state.voice.roomId) {
     navigator.sendBeacon("/api/voice/leave", JSON.stringify({

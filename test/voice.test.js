@@ -18,3 +18,12 @@ test("voice client includes WebRTC and microphone controls", () => {
   assert.match(app, /getUserMedia/);
   assert.match(app, /leaveVoice/);
 });
+
+test("voice client supports camera and screen sharing", () => {
+  const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+  assert.match(app, /getDisplayMedia/);
+  assert.match(app, /facingMode: "user"/);
+  assert.match(app, /replaceTrack/);
+  assert.match(app, /toggleCamera/);
+  assert.match(app, /toggleScreenShare/);
+});
