@@ -64,7 +64,7 @@ async function getAuthenticatedUser(request) {
   const token = parseCookies(request)[SESSION_COOKIE];
   if (!token) return null;
   const result = await query(
-    `SELECT u.id, u.email, u.display_name, u.handle
+    `SELECT u.id, u.email, u.display_name, u.handle, u.is_site_owner
        FROM sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1 AND s.expires_at > NOW()`,

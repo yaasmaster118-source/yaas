@@ -72,6 +72,7 @@ function showApp(user) {
   $("#account-name").textContent = user.display_name || user.displayName;
   $("#account-handle").textContent = `@${user.handle}`;
   $("#account-avatar").textContent = initials(user.display_name || user.displayName);
+  $("#account-owner-badge").classList.toggle("hidden", !user.is_site_owner);
 }
 
 function showAuth() {
@@ -149,7 +150,8 @@ function renderMembers() {
   $("#member-list").innerHTML = members.map((member) => `
     <article class="member-item">
       <span class="avatar">${escapeHtml(initials(member.display_name))}</span>
-      <div><strong>${escapeHtml(member.nickname || member.display_name)}</strong><small>@${escapeHtml(member.handle)}</small>
+      <div><span class="member-name-row"><strong>${escapeHtml(member.nickname || member.display_name)}</strong>
+      ${member.is_site_owner ? '<i class="site-owner-badge">YAAS SAHİBİ</i>' : ""}</span><small>@${escapeHtml(member.handle)}</small>
       <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}">${escapeHtml(role.name)}</i>`).join("")}</span></div>
     </article>`).join("");
 }

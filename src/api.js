@@ -104,18 +104,22 @@ async function handleApi(request, response, helpers) {
         return sendJson(response, 409, { error: "Bu e-posta zaten kayıtlı" });
       }
       const user = { id: crypto.randomUUID(), email, name, handle: makeHandle(email) };
+      const isSiteOwner = Boolean(process.env.OWNER_EMAIL)
+        && email === process.env.OWNER_EMAIL.trim().toLowerCase();
       await query(
-        "INSERT INTO users (id, email, display_name, handle, password_hash) VALUES ($1, $2, $3, $4, $5)",
-        [user.id, email, name, user.handle, await hashPassword(password)]
+        "INSERT INTO users (id, email, display_name, handle, password_hash, is_site_owner) VALUES ($1, $2, $3, $4, $5, $6)",
+        [user.id, email, name, user.handle, await hashPassword(password), isSiteOwner]
       );
       await createSession(user.id, response);
-      return sendJson(response, 201, { user: { id: user.id, email, displayName: name, handle: user.handle } });
+      return sendJson(response, 201, {
+        user: { id: user.id, email, displayName: name, handle: user.handle, is_site_owner: isSiteOwner }
+      });
     }
 
     if (method === "POST" && url.pathname === "/api/auth/login") {
       const body = await readJson(request);
       const result = await query(
-        "SELECT id, email, display_name, handle, password_hash FROM users WHERE email = $1",
+        "SELECT id, email, display_name, handle, password_hash, is_site_owner FROM users WHERE email = $1",
         [text(body.email, 254).toLowerCase()]
       );
       const user = result.rows[0];
@@ -123,7 +127,15 @@ async function handleApi(request, response, helpers) {
         return sendJson(response, 401, { error: "E-posta veya şifre yanlış" });
       }
       await createSession(user.id, response);
-      return sendJson(response, 200, { user: { id: user.id, email: user.email, displayName: user.display_name, handle: user.handle } });
+      return sendJson(response, 200, {
+        user: {
+          id: user.id,
+          email: user.email,
+          displayName: user.display_name,
+          handle: user.handle,
+          is_site_owner: user.is_site_owner
+        }
+      });
     }
 
     if (method === "POST" && url.pathname === "/api/auth/logout") {
@@ -167,7 +179,7 @@ async function handleApi(request, response, helpers) {
         query("SELECT id, name, description, icon_color, owner_id, created_at FROM servers WHERE id = $1", [serverId]),
         query("SELECT id, name, type, position, is_private, allowed_role_ids FROM channels WHERE server_id = $1 ORDER BY position", [serverId]),
         query(
-          `SELECT u.id, u.display_name, u.handle, m.nickname, m.joined_at,
+          `SELECT u.id, u.display_name, u.handle, u.is_site_owner, m.nickname, m.joined_at,
                   COALESCE(json_agg(json_build_object('id', r.id, 'name', r.name, 'color', r.color, 'position', r.position)
                     ORDER BY r.position DESC) FILTER (WHERE r.id IS NOT NULL), '[]') AS roles
              FROM memberships m JOIN users u ON u.id = m.user_id
