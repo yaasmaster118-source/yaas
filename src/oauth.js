@@ -19,8 +19,18 @@ const providers = {
 };
 
 function providerEnabled(provider) {
-  const key = provider.toUpperCase();
-  return Boolean(providers[provider] && process.env[`${key}_CLIENT_ID`] && process.env[`${key}_CLIENT_SECRET`]);
+  if (provider === "google") {
+    return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  }
+  if (provider === "apple") {
+    return Boolean(
+      process.env.APPLE_CLIENT_ID &&
+      process.env.APPLE_TEAM_ID &&
+      process.env.APPLE_KEY_ID &&
+      process.env.APPLE_PRIVATE_KEY
+    );
+  }
+  return false;
 }
 
 function publicProviders() {
@@ -47,8 +57,11 @@ function startOAuth(provider, origin, response) {
     state
   });
   if (provider === "google") parameters.set("access_type", "online");
-  if (provider === "apple") parameters.set("response_mode", "query");
-  response.setHeader("Set-Cookie", `${STATE_COOKIE}=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`);
+  if (provider === "apple") parameters.set("response_mode", "form_post");
+  const appleCookie = provider === "apple" && process.env.NODE_ENV === "production"
+    ? "; SameSite=None; Secure"
+    : "; SameSite=Lax";
+  response.setHeader("Set-Cookie", `${STATE_COOKIE}=${state}; Path=/; HttpOnly${appleCookie}; Max-Age=600`);
   response.writeHead(302, { Location: `${config.authorizeUrl}?${parameters}` });
   response.end();
   return true;
@@ -60,7 +73,65 @@ function decodeJwtPayload(token) {
   return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
 }
 
-async function fetchIdentity(provider, code, origin) {
+async function verifyAppleIdToken(token) {
+  const [encodedHeader, encodedPayload, encodedSignature] = String(token || "").split(".");
+  if (!encodedHeader || !encodedPayload || !encodedSignature) throw new Error("Apple kimlik belirteci geçersiz");
+  const header = JSON.parse(Buffer.from(encodedHeader, "base64url").toString("utf8"));
+  const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+  if (header.alg !== "RS256" || !header.kid) throw new Error("Apple kimlik imzası geçersiz");
+
+  const keysResponse = await fetch("https://appleid.apple.com/auth/keys");
+  if (!keysResponse.ok) throw new Error("Apple doğrulama anahtarları alınamadı");
+  const keys = await keysResponse.json();
+  const jwk = keys.keys?.find((key) => key.kid === header.kid && key.alg === "RS256");
+  if (!jwk) throw new Error("Apple doğrulama anahtarı bulunamadı");
+
+  const verified = crypto.verify(
+    "RSA-SHA256",
+    Buffer.from(`${encodedHeader}.${encodedPayload}`),
+    crypto.createPublicKey({ key: jwk, format: "jwk" }),
+    Buffer.from(encodedSignature, "base64url")
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (
+    !verified ||
+    payload.iss !== "https://appleid.apple.com" ||
+    !audience.includes(process.env.APPLE_CLIENT_ID) ||
+    Number(payload.exp) <= now
+  ) {
+    throw new Error("Apple kimlik doğrulaması başarısız");
+  }
+  return payload;
+}
+
+function encodeJwtPart(value) {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function appleClientSecret(now = Math.floor(Date.now() / 1000)) {
+  const header = encodeJwtPart({ alg: "ES256", kid: process.env.APPLE_KEY_ID });
+  const payload = encodeJwtPart({
+    iss: process.env.APPLE_TEAM_ID,
+    iat: now,
+    exp: now + 300,
+    aud: "https://appleid.apple.com",
+    sub: process.env.APPLE_CLIENT_ID
+  });
+  const signingInput = `${header}.${payload}`;
+  const privateKey = String(process.env.APPLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  const signature = crypto.sign("sha256", Buffer.from(signingInput), {
+    key: crypto.createPrivateKey(privateKey),
+    dsaEncoding: "ieee-p1363"
+  }).toString("base64url");
+  return `${signingInput}.${signature}`;
+}
+
+function clientSecret(provider) {
+  return provider === "apple" ? appleClientSecret() : process.env.GOOGLE_CLIENT_SECRET;
+}
+
+async function fetchIdentity(provider, code, origin, callbackUser) {
   const redirectUri = `${origin}/api/auth/oauth/${provider}/callback`;
   const tokenResponse = await fetch(providers[provider].tokenUrl, {
     method: "POST",
@@ -68,7 +139,7 @@ async function fetchIdentity(provider, code, origin) {
     body: new URLSearchParams({
       code,
       client_id: process.env[`${provider.toUpperCase()}_CLIENT_ID`],
-      client_secret: process.env[`${provider.toUpperCase()}_CLIENT_SECRET`],
+      client_secret: clientSecret(provider),
       redirect_uri: redirectUri,
       grant_type: "authorization_code"
     })
@@ -82,11 +153,21 @@ async function fetchIdentity(provider, code, origin) {
     });
     if (!profileResponse.ok) throw new Error("Google profile request failed");
     const profile = await profileResponse.json();
+    if (profile.email_verified === false) throw new Error("Google e-posta adresi doğrulanmamış");
     return { id: profile.sub, email: profile.email, name: profile.name || profile.email.split("@")[0] };
   }
 
-  const profile = decodeJwtPayload(tokens.id_token);
-  return { id: profile.sub, email: profile.email, name: profile.email?.split("@")[0] || "Apple üyesi" };
+  const profile = await verifyAppleIdToken(tokens.id_token);
+  let appleUser = {};
+  try {
+    appleUser = callbackUser ? JSON.parse(callbackUser) : {};
+  } catch {}
+  const suppliedName = [appleUser.name?.firstName, appleUser.name?.lastName].filter(Boolean).join(" ");
+  return {
+    id: profile.sub,
+    email: profile.email,
+    name: suppliedName || profile.email?.split("@")[0] || "Apple üyesi"
+  };
 }
 
 function makeHandle(email) {
@@ -128,13 +209,16 @@ async function loginOAuthUser(provider, identity, response) {
   await createSession(userId, response);
 }
 
-async function finishOAuth(provider, request, response, origin, searchParams) {
+async function finishOAuth(provider, request, response, origin, callbackValues) {
   if (!providerEnabled(provider)) return false;
   const state = parseCookies(request)[STATE_COOKIE];
-  if (!state || state !== searchParams.get("state") || !searchParams.get("code")) {
+  const getValue = (key) => typeof callbackValues.get === "function"
+    ? callbackValues.get(key)
+    : callbackValues[key];
+  if (!state || state !== getValue("state") || !getValue("code")) {
     throw new Error("Geçersiz sosyal giriş isteği");
   }
-  const identity = await fetchIdentity(provider, searchParams.get("code"), origin);
+  const identity = await fetchIdentity(provider, getValue("code"), origin, getValue("user"));
   await loginOAuthUser(provider, identity, response);
   response.setHeader("Set-Cookie", [
     response.getHeader("Set-Cookie"),
@@ -145,4 +229,4 @@ async function finishOAuth(provider, request, response, origin, searchParams) {
   return true;
 }
 
-module.exports = { finishOAuth, publicProviders, startOAuth };
+module.exports = { appleClientSecret, finishOAuth, publicProviders, startOAuth, verifyAppleIdToken };

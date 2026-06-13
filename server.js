@@ -25,11 +25,12 @@ const contentTypes = {
 
 const server = http.createServer((request, response) => {
   if (request.url.startsWith("/api/") && !request.url.startsWith("/api/voice/")) {
-    if (!isSameOrigin(request)) {
+    const isAppleCallback = request.url.startsWith("/api/auth/oauth/apple/callback");
+    if (!isAppleCallback && !isSameOrigin(request)) {
       sendJson(response, 403, { error: "Geçersiz istek kaynağı" });
       return;
     }
-    handleApi(request, response, { getOrigin, readJson, sendJson });
+    handleApi(request, response, { getOrigin, readForm, readJson, sendJson });
     return;
   }
 
@@ -118,6 +119,24 @@ function readJson(request) {
     request.on("end", () => {
       try {
         resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    request.on("error", reject);
+  });
+}
+
+function readForm(request) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > 100_000) request.destroy();
+    });
+    request.on("end", () => {
+      try {
+        resolve(Object.fromEntries(new URLSearchParams(body)));
       } catch (error) {
         reject(error);
       }

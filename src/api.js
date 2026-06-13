@@ -88,7 +88,7 @@ async function createServer(client, user, body) {
 }
 
 async function handleApi(request, response, helpers) {
-  const { readJson, sendJson, getOrigin } = helpers;
+  const { readForm, readJson, sendJson, getOrigin } = helpers;
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   const method = request.method;
 
@@ -106,8 +106,9 @@ async function handleApi(request, response, helpers) {
     }
 
     const oauthCallback = url.pathname.match(/^\/api\/auth\/oauth\/(google|apple)\/callback$/);
-    if (method === "GET" && oauthCallback) {
-      await finishOAuth(oauthCallback[1], request, response, getOrigin(request), url.searchParams);
+    if (oauthCallback && (method === "GET" || (method === "POST" && oauthCallback[1] === "apple"))) {
+      const callbackValues = method === "POST" ? await readForm(request) : Object.fromEntries(url.searchParams);
+      await finishOAuth(oauthCallback[1], request, response, getOrigin(request), callbackValues);
       return;
     }
 

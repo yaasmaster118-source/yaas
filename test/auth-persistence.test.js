@@ -34,7 +34,31 @@ test("Google and Apple login stay disabled until credentials are configured", ()
   delete process.env.GOOGLE_CLIENT_ID;
   delete process.env.GOOGLE_CLIENT_SECRET;
   delete process.env.APPLE_CLIENT_ID;
-  delete process.env.APPLE_CLIENT_SECRET;
+  delete process.env.APPLE_TEAM_ID;
+  delete process.env.APPLE_KEY_ID;
+  delete process.env.APPLE_PRIVATE_KEY;
   const { publicProviders } = require("../src/oauth");
   assert.deepEqual(publicProviders(), { google: false, apple: false });
+});
+
+test("Apple client secret is generated as an ES256 JWT", () => {
+  const { privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  process.env.APPLE_CLIENT_ID = "com.yaas.web";
+  process.env.APPLE_TEAM_ID = "TEAM123";
+  process.env.APPLE_KEY_ID = "KEY123";
+  process.env.APPLE_PRIVATE_KEY = privateKey.export({ type: "pkcs8", format: "pem" });
+  const { appleClientSecret } = require("../src/oauth");
+  const token = appleClientSecret(1_700_000_000);
+  const [header, payload, signature] = token.split(".");
+  assert.equal(JSON.parse(Buffer.from(header, "base64url")).alg, "ES256");
+  assert.equal(JSON.parse(Buffer.from(payload, "base64url")).sub, "com.yaas.web");
+  assert.ok(signature);
+});
+
+test("Apple identity tokens are verified against Apple public keys", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "src", "oauth.js"), "utf8");
+  assert.match(source, /appleid\.apple\.com\/auth\/keys/);
+  assert.match(source, /crypto\.verify/);
+  assert.match(source, /payload\.iss !== "https:\/\/appleid\.apple\.com"/);
+  assert.match(source, /APPLE_CLIENT_ID/);
 });
