@@ -28,6 +28,8 @@ const state = {
   servers: [],
   activeServer: null,
   activeChannel: null,
+  friends: { friends: [], incoming: [], outgoing: [] },
+  activeDm: null,
   voice: {
     roomId: null,
     clientId: null,
@@ -145,6 +147,7 @@ async function openServer(serverId) {
     $(".manage-server-button").classList.toggle("hidden", !data.permissions.includes("roles.manage"));
     $("#add-channel-button").classList.toggle("hidden", !data.permissions.includes("channels.manage"));
     $("#invite-button").classList.toggle("hidden", !data.permissions.includes("invites.create"));
+    $("#server-danger-zone").classList.toggle("hidden", data.server.owner_id !== state.user.id);
     renderServers();
     renderChannels();
     renderMembers();
@@ -176,8 +179,86 @@ function renderMembers() {
       <span class="avatar">${escapeHtml(initials(member.display_name))}</span>
       <div><span class="member-name-row"><strong>${escapeHtml(member.nickname || member.display_name)}</strong>
       ${member.is_site_owner ? '<i class="site-owner-badge">YAAS SAHİBİ</i>' : ""}</span><small>@${escapeHtml(member.handle)}</small>
-      <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}">${escapeHtml(role.name)}</i>`).join("")}</span></div>
+      <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}">${escapeHtml(role.name)}</i>`).join("")}</span>
+      ${member.id !== state.user.id ? `<span class="member-actions"><button class="secondary add-friend-button" data-handle="${escapeHtml(member.handle)}" type="button">Arkadaş ekle</button></span>` : ""}
+      </div>
     </article>`).join("");
+  $$(".add-friend-button").forEach((button) => button.addEventListener("click", () => {
+    sendFriendRequest(button.dataset.handle).catch((error) => notify(error.message, true));
+  }));
+}
+
+function friendRow(person, actions = "") {
+  return `<div class="friend-row">
+    <span class="avatar">${escapeHtml(initials(person.display_name))}</span>
+    <div><strong>${escapeHtml(person.display_name)}</strong><small>@${escapeHtml(person.handle)}</small></div>
+    <span class="friend-actions">${actions}</span>
+  </div>`;
+}
+
+async function loadFriends() {
+  state.friends = await api("/api/friends");
+  $("#incoming-friend-list").innerHTML = state.friends.incoming.length
+    ? state.friends.incoming.map((person) => friendRow(person,
+      `<button class="primary accept-friend-button" data-user-id="${person.id}" type="button">Kabul</button>
+       <button class="secondary reject-friend-button" data-user-id="${person.id}" type="button">Sil</button>`)).join("")
+    : '<small class="empty-list">İstek yok</small>';
+  $("#friend-list").innerHTML = state.friends.friends.length
+    ? state.friends.friends.map((person) => friendRow(person,
+      `<button class="primary open-dm-button" data-user-id="${person.id}" type="button">Mesaj</button>`)).join("")
+    : '<small class="empty-list">Henüz arkadaşın yok</small>';
+  $("#outgoing-friend-list").innerHTML = state.friends.outgoing.length
+    ? state.friends.outgoing.map((person) => friendRow(person, "<small>Bekliyor</small>")).join("")
+    : '<small class="empty-list">Gönderilen istek yok</small>';
+
+  $$(".accept-friend-button").forEach((button) => button.addEventListener("click", () =>
+    answerFriendRequest(button.dataset.userId, "accept")));
+  $$(".reject-friend-button").forEach((button) => button.addEventListener("click", () =>
+    answerFriendRequest(button.dataset.userId, "reject")));
+  $$(".open-dm-button").forEach((button) => button.addEventListener("click", () => {
+    openDm(state.friends.friends.find((item) => item.id === button.dataset.userId));
+  }));
+}
+
+async function sendFriendRequest(handle) {
+  const data = await api("/api/friends/requests", {
+    method: "POST",
+    body: JSON.stringify({ handle })
+  });
+  await loadFriends();
+  notify(data.accepted ? "Arkadaşlık kabul edildi" : "Arkadaşlık isteği gönderildi");
+}
+
+async function answerFriendRequest(userId, action) {
+  await api(`/api/friends/requests/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action })
+  });
+  await loadFriends();
+  notify(action === "accept" ? "Arkadaşlık isteği kabul edildi" : "İstek silindi");
+}
+
+async function openDm(friend) {
+  if (!friend) return;
+  state.activeDm = friend;
+  $("#dm-empty").classList.add("hidden");
+  $("#dm-view").classList.remove("hidden");
+  $("#dm-avatar").textContent = initials(friend.display_name);
+  $("#dm-name").textContent = friend.display_name;
+  $("#dm-handle").textContent = `@${friend.handle}`;
+  await loadDmMessages();
+}
+
+async function loadDmMessages() {
+  if (!state.activeDm) return;
+  const data = await api(`/api/dms/${state.activeDm.id}`);
+  $("#dm-message-list").innerHTML = data.messages.length
+    ? data.messages.map((message) => `<div class="dm-message ${message.sender_id === state.user.id ? "mine" : ""}">
+        ${escapeHtml(message.content)}
+        <small>${new Date(message.created_at).toLocaleString("tr-TR")}</small>
+      </div>`).join("")
+    : '<div class="dm-empty">İlk özel mesajı gönder.</div>';
+  $("#dm-message-list").scrollTop = $("#dm-message-list").scrollHeight;
 }
 
 function renderRoles() {
@@ -604,7 +685,47 @@ $("#logout-button").addEventListener("click", async () => {
   await api("/api/auth/logout", { method: "POST", body: "{}" });
   state.servers = [];
   state.activeServer = null;
+  state.friends = { friends: [], incoming: [], outgoing: [] };
+  state.activeDm = null;
   showAuth();
+});
+
+$("#friends-button").addEventListener("click", async () => {
+  try {
+    await loadFriends();
+    openModal("friends-modal");
+    $("#server-panel").classList.remove("open");
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+
+$("#friend-request-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = $(".form-error", event.currentTarget);
+  error.textContent = "";
+  try {
+    await sendFriendRequest($("#friend-handle-input").value);
+    event.currentTarget.reset();
+  } catch (failure) {
+    error.textContent = failure.message;
+  }
+});
+
+$("#dm-message-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const content = $("#dm-message-input").value.trim();
+  if (!content || !state.activeDm) return;
+  try {
+    await api(`/api/dms/${state.activeDm.id}`, {
+      method: "POST",
+      body: JSON.stringify({ content })
+    });
+    $("#dm-message-input").value = "";
+    await loadDmMessages();
+  } catch (error) {
+    notify(error.message, true);
+  }
 });
 
 $("#create-server-form").addEventListener("submit", async (event) => {
@@ -678,8 +799,41 @@ $("#invite-button").addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({ expiresInHours: 168 })
     });
-    await navigator.clipboard.writeText(data.invite.url).catch(() => {});
-    notify(`Davet hazır: ${data.invite.code}`);
+    $("#invite-link-output").value = data.invite.url;
+    openModal("invite-modal");
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+
+$("#copy-invite-button").addEventListener("click", async () => {
+  await navigator.clipboard.writeText($("#invite-link-output").value);
+  notify("Davet bağlantısı kopyalandı");
+});
+
+$("#share-invite-button").addEventListener("click", async () => {
+  const url = $("#invite-link-output").value;
+  if (navigator.share) {
+    await navigator.share({ title: "YAAS sunucu daveti", text: "YAAS sunucuma katıl", url });
+  } else {
+    await navigator.clipboard.writeText(url);
+    notify("Paylaşım desteklenmiyor; bağlantı kopyalandı");
+  }
+});
+
+$("#delete-server-button").addEventListener("click", async () => {
+  if (!state.activeServer) return;
+  const serverName = state.activeServer.server.name;
+  if (!confirm(`"${serverName}" sunucusunu kalıcı olarak silmek istediğine emin misin?`)) return;
+  try {
+    await api(`/api/servers/${state.activeServer.server.id}`, { method: "DELETE", body: "{}" });
+    closeModal($("#delete-server-button"));
+    state.activeServer = null;
+    state.activeChannel = null;
+    $("#server-view").classList.add("hidden");
+    $("#welcome-view").classList.remove("hidden");
+    await loadServers();
+    notify("Sunucu silindi");
   } catch (error) {
     notify(error.message, true);
   }

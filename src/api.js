@@ -69,6 +69,17 @@ async function requirePermission(response, sendJson, serverId, userId, permissio
   return granted;
 }
 
+async function areFriends(firstUserId, secondUserId) {
+  const result = await query(
+    `SELECT 1 FROM friendships
+      WHERE status = 'accepted'
+        AND ((requester_id = $1 AND addressee_id = $2)
+          OR (requester_id = $2 AND addressee_id = $1))`,
+    [firstUserId, secondUserId]
+  );
+  return Boolean(result.rowCount);
+}
+
 async function createServer(client, user, body) {
   const serverId = crypto.randomUUID();
   await client.query(
@@ -181,6 +192,147 @@ async function handleApi(request, response, helpers) {
     const user = await requireUser(request, response, sendJson);
     if (!user) return;
 
+    if (method === "GET" && url.pathname === "/api/friends") {
+      const [friends, incoming, outgoing] = await Promise.all([
+        query(
+          `SELECT u.id, u.display_name, u.handle, u.is_site_owner
+             FROM friendships f
+             JOIN users u ON u.id = CASE
+               WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
+            WHERE f.status = 'accepted' AND (f.requester_id = $1 OR f.addressee_id = $1)
+            ORDER BY u.display_name`,
+          [user.id]
+        ),
+        query(
+          `SELECT u.id, u.display_name, u.handle, u.is_site_owner, f.created_at
+             FROM friendships f JOIN users u ON u.id = f.requester_id
+            WHERE f.addressee_id = $1 AND f.status = 'pending' ORDER BY f.created_at DESC`,
+          [user.id]
+        ),
+        query(
+          `SELECT u.id, u.display_name, u.handle, f.created_at
+             FROM friendships f JOIN users u ON u.id = f.addressee_id
+            WHERE f.requester_id = $1 AND f.status = 'pending' ORDER BY f.created_at DESC`,
+          [user.id]
+        )
+      ]);
+      return sendJson(response, 200, {
+        friends: friends.rows,
+        incoming: incoming.rows,
+        outgoing: outgoing.rows
+      });
+    }
+
+    if (method === "POST" && url.pathname === "/api/friends/requests") {
+      const body = await readJson(request);
+      const handle = text(body.handle, 30).replace(/^@/, "").toLowerCase();
+      const targetResult = await query(
+        "SELECT id, display_name, handle FROM users WHERE LOWER(handle) = $1",
+        [handle]
+      );
+      const target = targetResult.rows[0];
+      if (!target) return sendJson(response, 404, { error: "Kullanıcı bulunamadı" });
+      if (target.id === user.id) return sendJson(response, 400, { error: "Kendine arkadaşlık isteği gönderemezsin" });
+      const existing = await query(
+        `SELECT requester_id, addressee_id, status FROM friendships
+          WHERE (requester_id = $1 AND addressee_id = $2)
+             OR (requester_id = $2 AND addressee_id = $1)`,
+        [user.id, target.id]
+      );
+      if (existing.rowCount) {
+        const friendship = existing.rows[0];
+        if (friendship.status === "accepted") {
+          return sendJson(response, 409, { error: "Bu kullanıcı zaten arkadaşın" });
+        }
+        if (friendship.requester_id === target.id) {
+          await query(
+            `UPDATE friendships SET status = 'accepted', updated_at = NOW()
+              WHERE requester_id = $1 AND addressee_id = $2`,
+            [target.id, user.id]
+          );
+          return sendJson(response, 200, { accepted: true, friend: target });
+        }
+        return sendJson(response, 409, { error: "Arkadaşlık isteği zaten gönderildi" });
+      }
+      await query(
+        "INSERT INTO friendships (requester_id, addressee_id, status) VALUES ($1, $2, 'pending')",
+        [user.id, target.id]
+      );
+      return sendJson(response, 201, { request: target });
+    }
+
+    const friendRequestRoute = url.pathname.match(/^\/api\/friends\/requests\/([0-9a-f-]+)$/i);
+    if (method === "PATCH" && friendRequestRoute) {
+      const body = await readJson(request);
+      const requesterId = friendRequestRoute[1];
+      if (body.action === "accept") {
+        const result = await query(
+          `UPDATE friendships SET status = 'accepted', updated_at = NOW()
+            WHERE requester_id = $1 AND addressee_id = $2 AND status = 'pending'`,
+          [requesterId, user.id]
+        );
+        if (!result.rowCount) return sendJson(response, 404, { error: "Arkadaşlık isteği bulunamadı" });
+        return sendJson(response, 200, { ok: true });
+      }
+      if (body.action === "reject") {
+        const result = await query(
+          "DELETE FROM friendships WHERE requester_id = $1 AND addressee_id = $2 AND status = 'pending'",
+          [requesterId, user.id]
+        );
+        if (!result.rowCount) return sendJson(response, 404, { error: "Arkadaşlık isteği bulunamadı" });
+        return sendJson(response, 200, { ok: true });
+      }
+      return sendJson(response, 400, { error: "Geçersiz arkadaşlık işlemi" });
+    }
+
+    const friendRoute = url.pathname.match(/^\/api\/friends\/([0-9a-f-]+)$/i);
+    if (method === "DELETE" && friendRoute) {
+      await query(
+        `DELETE FROM friendships
+          WHERE (requester_id = $1 AND addressee_id = $2)
+             OR (requester_id = $2 AND addressee_id = $1)`,
+        [user.id, friendRoute[1]]
+      );
+      return sendJson(response, 200, { ok: true });
+    }
+
+    const dmRoute = url.pathname.match(/^\/api\/dms\/([0-9a-f-]+)$/i);
+    if (dmRoute && ["GET", "POST"].includes(method)) {
+      const friendId = dmRoute[1];
+      if (!(await areFriends(user.id, friendId))) {
+        return sendJson(response, 403, { error: "Özel mesaj için önce arkadaş olmalısınız" });
+      }
+      if (method === "GET") {
+        const result = await query(
+          `SELECT dm.id, dm.sender_id, dm.recipient_id, dm.content, dm.created_at,
+                  u.display_name AS sender_name, u.handle AS sender_handle
+             FROM direct_messages dm JOIN users u ON u.id = dm.sender_id
+            WHERE (dm.sender_id = $1 AND dm.recipient_id = $2)
+               OR (dm.sender_id = $2 AND dm.recipient_id = $1)
+            ORDER BY dm.created_at DESC LIMIT 100`,
+          [user.id, friendId]
+        );
+        return sendJson(response, 200, { messages: result.rows.reverse() });
+      }
+      const body = await readJson(request);
+      const content = text(body.content, 4000);
+      if (!content) return sendJson(response, 400, { error: "Mesaj boş olamaz" });
+      const message = { id: crypto.randomUUID(), content };
+      await query(
+        "INSERT INTO direct_messages (id, sender_id, recipient_id, content) VALUES ($1, $2, $3, $4)",
+        [message.id, user.id, friendId, content]
+      );
+      return sendJson(response, 201, {
+        message: {
+          ...message,
+          sender_id: user.id,
+          recipient_id: friendId,
+          sender_name: user.display_name,
+          created_at: new Date().toISOString()
+        }
+      });
+    }
+
     if (method === "GET" && url.pathname === "/api/servers") {
       const result = await query(
         `SELECT s.id, s.name, s.description, s.icon_color, s.owner_id, m.joined_at,
@@ -202,6 +354,13 @@ async function handleApi(request, response, helpers) {
     }
 
     const serverRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)$/i);
+    if (method === "DELETE" && serverRoute) {
+      const serverId = serverRoute[1];
+      const owned = await query("SELECT id FROM servers WHERE id = $1 AND owner_id = $2", [serverId, user.id]);
+      if (!owned.rowCount) return sendJson(response, 403, { error: "Yalnızca sunucu sahibi sunucuyu silebilir" });
+      await query("DELETE FROM servers WHERE id = $1", [serverId]);
+      return sendJson(response, 200, { ok: true });
+    }
     if (method === "GET" && serverRoute) {
       const serverId = serverRoute[1];
       const granted = await permissions(serverId, user.id);

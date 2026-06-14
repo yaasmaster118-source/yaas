@@ -71,6 +71,7 @@
         <div class="server-actions">
           <button class="primary" data-open-modal="create-server-modal" type="button">＋ Sunucu oluştur</button>
           <button class="secondary" data-open-modal="join-server-modal" type="button">Davetle katıl</button>
+          <button class="secondary friends-button" id="friends-button" type="button">Arkadaşlar ve DM</button>
         </div>
         <p class="section-label">SUNUCULARIN</p>
         <nav class="server-list" id="server-list"></nav>
@@ -211,6 +212,59 @@
             <p class="form-error"></p>
             <button class="primary" type="submit">Rolü kaydet</button>
           </form>
+        </div>
+        <div class="danger-zone hidden" id="server-danger-zone">
+          <div><strong>Sunucuyu sil</strong><small>Bu işlem kanalları, mesajları ve üyelikleri kalıcı olarak siler.</small></div>
+          <button class="danger-button" id="delete-server-button" type="button">Sunucuyu sil</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-layer" id="invite-modal" hidden>
+      <section class="modal">
+        <header><div><strong>Sunucu daveti</strong><small>Bu bağlantıyı gönderen herkes sunucuya katılabilir.</small></div><button class="icon-button modal-close" type="button">×</button></header>
+        <label>Davet bağlantısı<input id="invite-link-output" readonly></label>
+        <footer>
+          <button class="secondary" id="share-invite-button" type="button">Paylaş</button>
+          <button class="primary" id="copy-invite-button" type="button">Bağlantıyı kopyala</button>
+        </footer>
+      </section>
+    </div>
+
+    <div class="modal-layer" id="friends-modal" hidden>
+      <section class="modal friends-modal">
+        <header><div><strong>Arkadaşlar ve DM</strong><small>İstek gönder, kabul et ve özel mesajlaş.</small></div><button class="icon-button modal-close" type="button">×</button></header>
+        <div class="friends-layout">
+          <aside class="friends-sidebar">
+            <form id="friend-request-form">
+              <label>Kullanıcı adı<input id="friend-handle-input" placeholder="@kullanici" required></label>
+              <button class="primary wide" type="submit">Arkadaşlık isteği gönder</button>
+              <p class="form-error"></p>
+            </form>
+            <div class="friend-section">
+              <strong>GELEN İSTEKLER</strong>
+              <div id="incoming-friend-list"></div>
+            </div>
+            <div class="friend-section">
+              <strong>ARKADAŞLAR</strong>
+              <div id="friend-list"></div>
+            </div>
+            <div class="friend-section">
+              <strong>GÖNDERİLENLER</strong>
+              <div id="outgoing-friend-list"></div>
+            </div>
+          </aside>
+          <section class="dm-panel">
+            <div class="dm-empty" id="dm-empty">Mesajlaşmak için bir arkadaş seç.</div>
+            <div class="dm-view hidden" id="dm-view">
+              <header><span class="avatar" id="dm-avatar">?</span><div><strong id="dm-name">Arkadaş</strong><small id="dm-handle">@kullanici</small></div></header>
+              <div class="dm-message-list" id="dm-message-list"></div>
+              <form class="message-form" id="dm-message-form">
+                <input id="dm-message-input" maxlength="4000" placeholder="Özel mesaj gönder..." autocomplete="off">
+                <button class="primary" type="submit">Gönder</button>
+              </form>
+            </div>
+          </section>
         </div>
       </section>
     </div>
