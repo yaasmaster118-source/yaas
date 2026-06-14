@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -65,9 +66,18 @@ function getLocalDatabase() {
       PRIMARY KEY(server_id, user_id, role_id),
       FOREIGN KEY(server_id, user_id) REFERENCES memberships(server_id, user_id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS channel_categories (
+      id TEXT PRIMARY KEY,
+      server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(server_id, name)
+    );
     CREATE TABLE IF NOT EXISTS channels (
       id TEXT PRIMARY KEY,
       server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+      category_id TEXT,
       name TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('text', 'voice')),
       position INTEGER NOT NULL DEFAULT 0,
@@ -120,12 +130,17 @@ function getLocalDatabase() {
     CREATE INDEX IF NOT EXISTS sessions_token_hash_idx ON sessions(token_hash);
     CREATE INDEX IF NOT EXISTS memberships_user_idx ON memberships(user_id);
     CREATE INDEX IF NOT EXISTS channels_server_idx ON channels(server_id, position);
+    CREATE INDEX IF NOT EXISTS channel_categories_server_idx ON channel_categories(server_id, position);
     CREATE INDEX IF NOT EXISTS messages_channel_idx ON messages(channel_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS member_roles_member_idx ON member_roles(server_id, user_id);
     CREATE INDEX IF NOT EXISTS oauth_accounts_user_idx ON oauth_accounts(user_id);
     CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships(addressee_id, status);
     CREATE INDEX IF NOT EXISTS direct_messages_pair_idx ON direct_messages(sender_id, recipient_id, created_at DESC);
   `);
+  const channelColumns = localDatabase.prepare("PRAGMA table_info(channels)").all();
+  if (!channelColumns.some((column) => column.name === "category_id")) {
+    localDatabase.exec("ALTER TABLE channels ADD COLUMN category_id TEXT");
+  }
   return localDatabase;
 }
 
@@ -204,6 +219,28 @@ async function initializeDatabase() {
     await getPool().query(
       "UPDATE users SET is_site_owner = $1 WHERE email = $2",
       [true, ownerEmail]
+    );
+  }
+
+  const servers = await getPool().query("SELECT id FROM servers");
+  for (const server of servers.rows) {
+    const categories = await getPool().query(
+      "SELECT id FROM channel_categories WHERE server_id = $1",
+      [server.id]
+    );
+    if (categories.rowCount) continue;
+    const textCategoryId = crypto.randomUUID();
+    const voiceCategoryId = crypto.randomUUID();
+    await getPool().query(
+      `INSERT INTO channel_categories (id, server_id, name, position)
+       VALUES ($1, $2, 'YAZI KANALLARI', 10), ($3, $2, 'SES KANALLARI', 20)`,
+      [textCategoryId, server.id, voiceCategoryId]
+    );
+    await getPool().query(
+      `UPDATE channels SET category_id = CASE
+         WHEN type = 'voice' THEN $2 ELSE $3 END
+       WHERE server_id = $1 AND category_id IS NULL`,
+      [server.id, voiceCategoryId, textCategoryId]
     );
   }
 }

@@ -56,6 +56,18 @@ async function permissions(serverId, userId) {
   return new Set(result.rows.flatMap((row) => jsonArray(row.permissions)));
 }
 
+async function highestRolePosition(serverId, userId) {
+  const server = await query("SELECT owner_id FROM servers WHERE id = $1", [serverId]);
+  if (server.rows[0]?.owner_id === userId) return Number.POSITIVE_INFINITY;
+  const result = await query(
+    `SELECT MAX(r.position) AS position FROM member_roles mr
+      JOIN roles r ON r.id = mr.role_id
+     WHERE mr.server_id = $1 AND mr.user_id = $2`,
+    [serverId, userId]
+  );
+  return Number(result.rows[0]?.position || 0);
+}
+
 async function requirePermission(response, sendJson, serverId, userId, permission) {
   const granted = await permissions(serverId, userId);
   if (!granted) {
@@ -101,10 +113,17 @@ async function createServer(client, user, body) {
     "INSERT INTO member_roles (server_id, user_id, role_id) VALUES ($1, $2, $3)",
     [serverId, user.id, roles.Owner]
   );
+  const textCategoryId = crypto.randomUUID();
+  const voiceCategoryId = crypto.randomUUID();
   await client.query(
-    `INSERT INTO channels (id, server_id, name, type, position)
-     VALUES ($1, $2, 'genel', 'text', 10), ($3, $2, 'Ses Odası', 'voice', 20)`,
-    [crypto.randomUUID(), serverId, crypto.randomUUID()]
+    `INSERT INTO channel_categories (id, server_id, name, position)
+     VALUES ($1, $2, 'YAZI KANALLARI', 10), ($3, $2, 'SES KANALLARI', 20)`,
+    [textCategoryId, serverId, voiceCategoryId]
+  );
+  await client.query(
+    `INSERT INTO channels (id, server_id, category_id, name, type, position)
+     VALUES ($1, $2, $3, 'genel', 'text', 10), ($4, $2, $5, 'Ses Odası', 'voice', 20)`,
+    [crypto.randomUUID(), serverId, textCategoryId, crypto.randomUUID(), voiceCategoryId]
   );
   return { id: serverId, name: text(body.name, 40) };
 }
@@ -365,9 +384,10 @@ async function handleApi(request, response, helpers) {
       const serverId = serverRoute[1];
       const granted = await permissions(serverId, user.id);
       if (!granted) return sendJson(response, 404, { error: "Sunucu bulunamadı" });
-      const [server, channels, members, memberRoles, roles] = await Promise.all([
+      const [server, categories, channels, members, memberRoles, roles] = await Promise.all([
         query("SELECT id, name, description, icon_color, owner_id, created_at FROM servers WHERE id = $1", [serverId]),
-        query("SELECT id, name, type, position, is_private, allowed_role_ids FROM channels WHERE server_id = $1 ORDER BY position", [serverId]),
+        query("SELECT id, name, position FROM channel_categories WHERE server_id = $1 ORDER BY position", [serverId]),
+        query("SELECT id, category_id, name, type, position, is_private, allowed_role_ids FROM channels WHERE server_id = $1 ORDER BY position", [serverId]),
         query(
           `SELECT u.id, u.display_name, u.handle, u.is_site_owner, m.nickname, m.joined_at
              FROM memberships m JOIN users u ON u.id = m.user_id
@@ -411,6 +431,7 @@ async function handleApi(request, response, helpers) {
       );
       return sendJson(response, 200, {
         server: server.rows[0],
+        categories: categories.rows,
         channels: visibleChannels,
         members: granted.has("members.view") ? normalizedMembers : [],
         roles: granted.has("roles.manage") ? normalizedRoles : [],
@@ -423,12 +444,19 @@ async function handleApi(request, response, helpers) {
       const serverId = roleRoute[1];
       if (!(await requirePermission(response, sendJson, serverId, user.id, "roles.manage"))) return;
       const body = await readJson(request);
-      const role = { id: crypto.randomUUID(), name: text(body.name, 30), permissions: validPermissions(body.permissions) };
+      const actorPosition = await highestRolePosition(serverId, user.id);
+      const requestedPosition = Number(body.position) || 20;
+      const role = {
+        id: crypto.randomUUID(),
+        name: text(body.name, 30),
+        permissions: validPermissions(body.permissions),
+        position: Number.isFinite(actorPosition) ? Math.min(requestedPosition, actorPosition - 1) : requestedPosition
+      };
       if (!role.name) return sendJson(response, 400, { error: "Rol adı gerekli" });
       await query(
         `INSERT INTO roles (id, server_id, name, color, position, permissions)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-        [role.id, serverId, role.name, text(body.color, 20) || "#8d7aff", Number(body.position) || 20, JSON.stringify(role.permissions)]
+        [role.id, serverId, role.name, text(body.color, 20) || "#8d7aff", role.position, JSON.stringify(role.permissions)]
       );
       return sendJson(response, 201, { role });
     }
@@ -437,10 +465,14 @@ async function handleApi(request, response, helpers) {
     if (roleItemRoute && ["PATCH", "DELETE"].includes(method)) {
       const [, serverId, roleId] = roleItemRoute;
       if (!(await requirePermission(response, sendJson, serverId, user.id, "roles.manage"))) return;
-      const existing = await query("SELECT id, name, is_system FROM roles WHERE id = $1 AND server_id = $2", [roleId, serverId]);
+      const existing = await query("SELECT id, name, position, is_system FROM roles WHERE id = $1 AND server_id = $2", [roleId, serverId]);
       const role = existing.rows[0];
       if (!role) return sendJson(response, 404, { error: "Rol bulunamadı" });
       if (role.name === "Owner") return sendJson(response, 403, { error: "Owner rolü değiştirilemez" });
+      const actorPosition = await highestRolePosition(serverId, user.id);
+      if (Number.isFinite(actorPosition) && role.position >= actorPosition) {
+        return sendJson(response, 403, { error: "Kendi rolüne eşit veya yüksek bir rolü yönetemezsin" });
+      }
       if (method === "DELETE") {
         if (role.is_system) return sendJson(response, 403, { error: "Sistem rolü silinemez" });
         await query("DELETE FROM roles WHERE id = $1 AND server_id = $2", [roleId, serverId]);
@@ -459,7 +491,9 @@ async function handleApi(request, response, helpers) {
           serverId,
           body.name ? text(body.name, 30) : null,
           body.color ? text(body.color, 20) : null,
-          Number.isFinite(Number(body.position)) ? Number(body.position) : null,
+          Number.isFinite(Number(body.position))
+            ? (Number.isFinite(actorPosition) ? Math.min(Number(body.position), actorPosition - 1) : Number(body.position))
+            : null,
           Array.isArray(body.permissions) ? JSON.stringify(validPermissions(body.permissions)) : null
         ]
       );
@@ -470,6 +504,12 @@ async function handleApi(request, response, helpers) {
     if (method === "PUT" && assignRoute) {
       const [, serverId, memberId, roleId] = assignRoute;
       if (!(await requirePermission(response, sendJson, serverId, user.id, "members.manage"))) return;
+      const role = await query("SELECT name, position FROM roles WHERE id = $1 AND server_id = $2", [roleId, serverId]);
+      if (!role.rowCount) return sendJson(response, 404, { error: "Rol bulunamadı" });
+      const actorPosition = await highestRolePosition(serverId, user.id);
+      if (role.rows[0].name === "Owner" || (Number.isFinite(actorPosition) && role.rows[0].position >= actorPosition)) {
+        return sendJson(response, 403, { error: "Bu rolü veremezsin" });
+      }
       await query(
         `INSERT INTO member_roles (server_id, user_id, role_id)
          SELECT $1, $2, id FROM roles WHERE id = $3 AND server_id = $1 ON CONFLICT DO NOTHING`,
@@ -480,8 +520,12 @@ async function handleApi(request, response, helpers) {
     if (method === "DELETE" && assignRoute) {
       const [, serverId, memberId, roleId] = assignRoute;
       if (!(await requirePermission(response, sendJson, serverId, user.id, "members.manage"))) return;
-      const role = await query("SELECT name FROM roles WHERE id = $1 AND server_id = $2", [roleId, serverId]);
+      const role = await query("SELECT name, position FROM roles WHERE id = $1 AND server_id = $2", [roleId, serverId]);
       if (role.rows[0]?.name === "Owner") return sendJson(response, 403, { error: "Owner rolü kaldırılamaz" });
+      const actorPosition = await highestRolePosition(serverId, user.id);
+      if (Number.isFinite(actorPosition) && role.rows[0]?.position >= actorPosition) {
+        return sendJson(response, 403, { error: "Bu rolü kaldıramazsın" });
+      }
       await query(
         "DELETE FROM member_roles WHERE server_id = $1 AND user_id = $2 AND role_id = $3",
         [serverId, memberId, roleId]
@@ -496,10 +540,18 @@ async function handleApi(request, response, helpers) {
       const body = await readJson(request);
       const channel = { id: crypto.randomUUID(), name: text(body.name, 40), type: body.type === "voice" ? "voice" : "text" };
       if (!channel.name) return sendJson(response, 400, { error: "Kanal adı gerekli" });
+      const categoryId = body.categoryId || null;
+      if (categoryId) {
+        const category = await query(
+          "SELECT id FROM channel_categories WHERE id = $1 AND server_id = $2",
+          [categoryId, serverId]
+        );
+        if (!category.rowCount) return sendJson(response, 400, { error: "Kategori bulunamadı" });
+      }
       await query(
-        `INSERT INTO channels (id, server_id, name, type, position, is_private, allowed_role_ids)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-        [channel.id, serverId, channel.name, channel.type, Number(body.position) || 100, Boolean(body.isPrivate), JSON.stringify(body.allowedRoleIds || [])]
+        `INSERT INTO channels (id, server_id, category_id, name, type, position, is_private, allowed_role_ids)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+        [channel.id, serverId, categoryId, channel.name, channel.type, Number(body.position) || 100, Boolean(body.isPrivate), JSON.stringify(body.allowedRoleIds || [])]
       );
       return sendJson(response, 201, { channel });
     }
@@ -518,7 +570,8 @@ async function handleApi(request, response, helpers) {
            name = COALESCE($3, name),
            position = COALESCE($4, position),
            is_private = COALESCE($5, is_private),
-           allowed_role_ids = COALESCE($6::jsonb, allowed_role_ids)
+           allowed_role_ids = COALESCE($6::jsonb, allowed_role_ids),
+           category_id = COALESCE($7, category_id)
          WHERE id = $1 AND server_id = $2`,
         [
           channelId,
@@ -526,9 +579,32 @@ async function handleApi(request, response, helpers) {
           body.name ? text(body.name, 40) : null,
           Number.isFinite(Number(body.position)) ? Number(body.position) : null,
           typeof body.isPrivate === "boolean" ? body.isPrivate : null,
-          Array.isArray(body.allowedRoleIds) ? JSON.stringify(body.allowedRoleIds) : null
+          Array.isArray(body.allowedRoleIds) ? JSON.stringify(body.allowedRoleIds) : null,
+          body.categoryId || null
         ]
       );
+      return sendJson(response, 200, { ok: true });
+    }
+
+    const categoryRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/categories$/i);
+    if (method === "POST" && categoryRoute) {
+      const serverId = categoryRoute[1];
+      if (!(await requirePermission(response, sendJson, serverId, user.id, "channels.manage"))) return;
+      const body = await readJson(request);
+      const category = { id: crypto.randomUUID(), name: text(body.name, 40) };
+      if (!category.name) return sendJson(response, 400, { error: "Kategori adı gerekli" });
+      await query(
+        "INSERT INTO channel_categories (id, server_id, name, position) VALUES ($1, $2, $3, $4)",
+        [category.id, serverId, category.name, Number(body.position) || 100]
+      );
+      return sendJson(response, 201, { category });
+    }
+
+    const categoryItemRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/categories\/([0-9a-f-]+)$/i);
+    if (method === "DELETE" && categoryItemRoute) {
+      const [, serverId, categoryId] = categoryItemRoute;
+      if (!(await requirePermission(response, sendJson, serverId, user.id, "channels.manage"))) return;
+      await query("DELETE FROM channel_categories WHERE id = $1 AND server_id = $2", [categoryId, serverId]);
       return sendJson(response, 200, { ok: true });
     }
 

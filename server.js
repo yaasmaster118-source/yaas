@@ -171,23 +171,67 @@ function cleanVoiceRooms() {
   }
 }
 
+function arrayValue(value) {
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function voiceAccess(channelId, userId) {
+  const channelResult = await query(
+    `SELECT c.id, c.server_id, c.type, c.is_private, c.allowed_role_ids, s.owner_id
+       FROM channels c JOIN servers s ON s.id = c.server_id
+       JOIN memberships m ON m.server_id = c.server_id
+      WHERE c.id = $1 AND c.type = 'voice' AND m.user_id = $2`,
+    [channelId, userId]
+  );
+  const channel = channelResult.rows[0];
+  if (!channel) return null;
+  if (channel.owner_id === userId) return { join: true, speak: true };
+  const roles = await query(
+    `SELECT r.id, r.permissions FROM member_roles mr
+      JOIN roles r ON r.id = mr.role_id
+     WHERE mr.server_id = $1 AND mr.user_id = $2`,
+    [channel.server_id, userId]
+  );
+  const roleIds = new Set(roles.rows.map((role) => role.id));
+  if (channel.is_private && !arrayValue(channel.allowed_role_ids).some((roleId) => roleIds.has(roleId))) {
+    return null;
+  }
+  const permissions = new Set(roles.rows.flatMap((role) => arrayValue(role.permissions)));
+  return { join: permissions.has("voice.join"), speak: permissions.has("voice.speak") };
+}
+
 async function handleVoiceApi(request, response) {
   cleanVoiceRooms();
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
 
   try {
+    if (request.method === "GET" && url.pathname === "/api/voice/config") {
+      const user = await getAuthenticatedUser(request);
+      if (!user) return sendJson(response, 401, { error: "Oturum gerekli" });
+      const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+      if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+        iceServers.push({
+          urls: process.env.TURN_URL.split(",").map((item) => item.trim()).filter(Boolean),
+          username: process.env.TURN_USERNAME,
+          credential: process.env.TURN_CREDENTIAL
+        });
+      }
+      return sendJson(response, 200, { iceServers });
+    }
+
     if (request.method === "POST" && url.pathname === "/api/voice/join") {
       const { roomId, clientId, name } = await readJson(request);
       if (!roomId || !clientId) return sendJson(response, 400, { error: "Eksik oda bilgisi" });
       const user = await getAuthenticatedUser(request);
       if (!user) return sendJson(response, 401, { error: "Oturum gerekli" });
-      const allowed = await query(
-        `SELECT 1 FROM channels c
-          JOIN memberships m ON m.server_id = c.server_id
-         WHERE c.id = $1 AND c.type = 'voice' AND m.user_id = $2`,
-        [roomId, user.id]
-      );
-      if (!allowed.rowCount) return sendJson(response, 403, { error: "Bu ses kanalına erişimin yok" });
+      const access = await voiceAccess(roomId, user.id);
+      if (!access?.join) return sendJson(response, 403, { error: "Bu ses kanalına erişimin yok" });
       if (!voiceRooms.has(roomId)) voiceRooms.set(roomId, new Map());
       const room = voiceRooms.get(roomId);
       const peers = [...room.values()].map(({ id, name: peerName }) => ({ id, name: peerName }));
@@ -198,7 +242,7 @@ async function handleVoiceApi(request, response) {
         lastSeen: Date.now(),
         queue: []
       });
-      return sendJson(response, 200, { peers });
+      return sendJson(response, 200, { peers, canSpeak: access.speak });
     }
 
     if (request.method === "POST" && url.pathname === "/api/voice/signal") {

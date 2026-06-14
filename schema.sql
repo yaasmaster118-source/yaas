@@ -55,9 +55,19 @@ CREATE TABLE IF NOT EXISTS member_roles (
   FOREIGN KEY(server_id, user_id) REFERENCES memberships(server_id, user_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS channel_categories (
+  id UUID PRIMARY KEY,
+  server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(server_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS channels (
   id UUID PRIMARY KEY,
   server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES channel_categories(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   type TEXT NOT NULL CHECK(type IN ('text', 'voice')),
   position INTEGER NOT NULL DEFAULT 0,
@@ -66,6 +76,8 @@ CREATE TABLE IF NOT EXISTS channels (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(server_id, name, type)
 );
+
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES channel_categories(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS messages (
   id UUID PRIMARY KEY,
@@ -90,6 +102,7 @@ CREATE TABLE IF NOT EXISTS invites (
 CREATE INDEX IF NOT EXISTS sessions_token_hash_idx ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS memberships_user_idx ON memberships(user_id);
 CREATE INDEX IF NOT EXISTS channels_server_idx ON channels(server_id, position);
+CREATE INDEX IF NOT EXISTS channel_categories_server_idx ON channel_categories(server_id, position);
 CREATE INDEX IF NOT EXISTS messages_channel_idx ON messages(channel_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS member_roles_member_idx ON member_roles(server_id, user_id);
 

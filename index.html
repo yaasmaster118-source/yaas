@@ -12,8 +12,8 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.1">
-    <script src="app.js?v=1.1.1" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.2">
+    <script src="app.js?v=1.1.2" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -112,6 +112,7 @@
               <button class="icon-button manage-server-button hidden" data-open-modal="manage-server-modal" type="button">⚙</button>
             </header>
             <div class="channel-list" id="channel-list"></div>
+            <button class="add-channel-button hidden" id="add-category-button" data-open-modal="category-modal" type="button">＋ Kategori ekle</button>
             <button class="add-channel-button hidden" id="add-channel-button" data-open-modal="channel-modal" type="button">＋ Kanal ekle</button>
           </aside>
 
@@ -193,9 +194,19 @@
         <header><div><strong>Yeni kanal</strong><small>Yazı veya ses kanalı oluştur.</small></div><button class="icon-button modal-close" type="button">×</button></header>
         <label>Kanal adı<input id="channel-name-input" maxlength="40" required></label>
         <label>Tür<select id="channel-type-input"><option value="text">Yazı kanalı</option><option value="voice">Ses kanalı</option></select></label>
+        <label>Kategori<select id="channel-category-input"><option value="">Kategorisiz</option></select></label>
         <label class="check-row"><input id="channel-private-input" type="checkbox"> Özel kanal</label>
         <p class="form-error"></p>
         <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Kanalı oluştur</button></footer>
+      </form>
+    </div>
+
+    <div class="modal-layer" id="category-modal" hidden>
+      <form class="modal" id="category-form">
+        <header><div><strong>Yeni kategori</strong><small>Kanalları bir başlık altında düzenle.</small></div><button class="icon-button modal-close" type="button">×</button></header>
+        <label>Kategori adı<input id="category-name-input" maxlength="40" required></label>
+        <p class="form-error"></p>
+        <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Kategori oluştur</button></footer>
       </form>
     </div>
 

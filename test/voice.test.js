@@ -24,6 +24,17 @@ test("voice client supports camera and screen sharing", () => {
   assert.match(app, /getDisplayMedia/);
   assert.match(app, /facingMode: "user"/);
   assert.match(app, /replaceTrack/);
+  assert.match(app, /addTransceiver\("video"/);
+  assert.match(app, /pollFailures/);
+  assert.doesNotMatch(app, /onnegotiationneeded/);
   assert.match(app, /toggleCamera/);
   assert.match(app, /toggleScreenShare/);
+});
+
+test("voice permissions and TURN configuration are enforced by the server", () => {
+  const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.match(server, /voiceAccess/);
+  assert.match(server, /voice\.join/);
+  assert.match(server, /voice\.speak/);
+  assert.match(server, /TURN_URL/);
 });

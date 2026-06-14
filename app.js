@@ -37,7 +37,9 @@ const state = {
     videoStream: null,
     videoMode: null,
     peers: new Map(),
+    remoteVideoTracks: new Map(),
     pollTimer: null,
+    pollFailures: 0,
     muted: false,
     deafened: false
   }
@@ -46,6 +48,13 @@ const state = {
 const RTC_CONFIGURATION = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
+
+async function loadVoiceConfiguration() {
+  const data = await voiceApi("config");
+  if (Array.isArray(data.iceServers) && data.iceServers.length) {
+    RTC_CONFIGURATION.iceServers = data.iceServers;
+  }
+}
 
 function inviteCodeFromLocation() {
   const pathMatch = location.pathname.match(/^\/invite\/([A-Za-z0-9_-]+)$/);
@@ -146,8 +155,12 @@ async function openServer(serverId) {
     $("#active-server-description").textContent = data.server.description || `${data.members.length} üye`;
     $(".manage-server-button").classList.toggle("hidden", !data.permissions.includes("roles.manage"));
     $("#add-channel-button").classList.toggle("hidden", !data.permissions.includes("channels.manage"));
+    $("#add-category-button").classList.toggle("hidden", !data.permissions.includes("channels.manage"));
     $("#invite-button").classList.toggle("hidden", !data.permissions.includes("invites.create"));
     $("#server-danger-zone").classList.toggle("hidden", data.server.owner_id !== state.user.id);
+    $("#channel-category-input").innerHTML = '<option value="">Kategorisiz</option>'
+      + (data.categories || []).map((category) =>
+        `<option value="${category.id}">${escapeHtml(category.name)}</option>`).join("");
     renderServers();
     renderChannels();
     renderMembers();
@@ -160,11 +173,23 @@ async function openServer(serverId) {
 }
 
 function renderChannels() {
-  $("#channel-list").innerHTML = state.activeServer.channels.map((channel) => `
-    <button class="channel-item" data-channel-id="${channel.id}" type="button">
-      <span>${channel.type === "voice" ? "◖" : "#"}</span>${escapeHtml(channel.name)}
-      ${channel.is_private ? "<small>⌁</small>" : ""}
-    </button>`).join("");
+  const categories = state.activeServer.categories || [];
+  const grouped = categories.map((category) => ({
+    ...category,
+    channels: state.activeServer.channels.filter((channel) => channel.category_id === category.id)
+  }));
+  const uncategorized = state.activeServer.channels.filter((channel) => !channel.category_id);
+  const channelButtons = (channels) => channels.map((channel) => `
+      <button class="channel-item" data-channel-id="${channel.id}" type="button">
+        <span>${channel.type === "voice" ? "◖" : "#"}</span>${escapeHtml(channel.name)}
+        ${channel.is_private ? "<small>⌁</small>" : ""}
+      </button>`).join("");
+  $("#channel-list").innerHTML = grouped.map((category) => `
+    <section class="channel-category">
+      <div class="channel-category-header">${escapeHtml(category.name)}</div>
+      ${channelButtons(category.channels)}
+    </section>`).join("")
+    + (uncategorized.length ? `<section class="channel-category">${channelButtons(uncategorized)}</section>` : "");
   $$(".channel-item").forEach((button) => button.addEventListener("click", () => {
     const channel = state.activeServer.channels.find((item) => item.id === button.dataset.channelId);
     openChannel(channel);
@@ -352,8 +377,19 @@ function attachRemoteVideo(peerId, track) {
   }
   const video = $("video", tile);
   video.srcObject = new MediaStream([track]);
-  $("#voice-video-grid").classList.remove("hidden");
+  state.voice.remoteVideoTracks.set(peerId, track);
+  tile.classList.toggle("hidden", track.muted);
+  updateVideoGridVisibility();
+  track.onunmute = () => {
+    tile.classList.remove("hidden");
+    updateVideoGridVisibility();
+  };
+  track.onmute = () => {
+    tile.classList.add("hidden");
+    updateVideoGridVisibility();
+  };
   track.onended = () => {
+    state.voice.remoteVideoTracks.delete(peerId);
     tile.remove();
     updateVideoGridVisibility();
   };
@@ -372,10 +408,26 @@ async function negotiateVoicePeer(peerId, connection) {
   await sendVoiceSignal(peerId, offer);
 }
 
+function videoSender(connection) {
+  return connection.getTransceivers()
+    .find((item) => item.receiver.track?.kind === "video")?.sender || null;
+}
+
+function removeVoicePeer(peerId) {
+  const connection = state.voice.peers.get(peerId);
+  state.voice.peers.delete(peerId);
+  connection?.close();
+  state.voice.remoteVideoTracks.delete(peerId);
+  document.getElementById(`voice-audio-${peerId}`)?.remove();
+  document.getElementById(`voice-video-tile-${peerId}`)?.remove();
+  updateVideoGridVisibility();
+}
+
 function createVoicePeer(peerId, initiator) {
   if (state.voice.peers.has(peerId)) return state.voice.peers.get(peerId);
   const connection = new RTCPeerConnection(RTC_CONFIGURATION);
-  state.voice.stream.getTracks().forEach((track) => connection.addTrack(track, state.voice.stream));
+  state.voice.stream.getAudioTracks().forEach((track) => connection.addTrack(track, state.voice.stream));
+  connection.addTransceiver("video", { direction: "sendrecv" });
   connection.onicecandidate = ({ candidate }) => {
     if (candidate) sendVoiceSignal(peerId, { type: "ice", candidate }).catch(() => {});
   };
@@ -383,14 +435,15 @@ function createVoicePeer(peerId, initiator) {
     if (track.kind === "video") attachRemoteVideo(peerId, track);
     else attachRemoteAudio(peerId, streams[0] || new MediaStream([track]));
   };
-  connection.onnegotiationneeded = () => negotiateVoicePeer(peerId, connection).catch(() => {});
   connection.onconnectionstatechange = () => {
-    if (["failed", "closed", "disconnected"].includes(connection.connectionState)) {
-      connection.close();
-      state.voice.peers.delete(peerId);
-      document.getElementById(`voice-audio-${peerId}`)?.remove();
-      document.getElementById(`voice-video-tile-${peerId}`)?.remove();
-      updateVideoGridVisibility();
+    if (connection.connectionState === "disconnected") {
+      clearTimeout(connection.disconnectTimer);
+      connection.disconnectTimer = setTimeout(() => {
+        if (connection.connectionState === "disconnected") removeVoicePeer(peerId);
+      }, 8000);
+    } else {
+      clearTimeout(connection.disconnectTimer);
+      if (["failed", "closed"].includes(connection.connectionState)) removeVoicePeer(peerId);
     }
   };
   state.voice.peers.set(peerId, connection);
@@ -400,7 +453,12 @@ function createVoicePeer(peerId, initiator) {
 
 async function handleVoiceSignal(from, signal) {
   if (signal.type === "video-stop") {
-    document.getElementById(`voice-video-tile-${from}`)?.remove();
+    document.getElementById(`voice-video-tile-${from}`)?.classList.add("hidden");
+    updateVideoGridVisibility();
+    return;
+  }
+  if (signal.type === "video-start") {
+    document.getElementById(`voice-video-tile-${from}`)?.classList.remove("hidden");
     updateVideoGridVisibility();
     return;
   }
@@ -424,11 +482,21 @@ async function pollVoice() {
       `poll?roomId=${encodeURIComponent(state.voice.roomId)}&clientId=${encodeURIComponent(state.voice.clientId)}`
     );
     renderVoiceParticipants(data.participants || []);
-    for (const item of data.signals || []) await handleVoiceSignal(item.from, item.signal);
+    state.voice.pollFailures = 0;
+    $("#voice-status").textContent = state.voice.muted ? "Mikrofon kapalı" : "Bağlandı";
+    for (const item of data.signals || []) {
+      await handleVoiceSignal(item.from, item.signal).catch(() => {});
+    }
     state.voice.pollTimer = setTimeout(pollVoice, 900);
   } catch {
-    await leaveVoice(false);
-    notify("Ses bağlantısı kesildi", true);
+    state.voice.pollFailures += 1;
+    if (state.voice.pollFailures >= 5) {
+      await leaveVoice(false);
+      notify("Ses bağlantısı kesildi", true);
+      return;
+    }
+    $("#voice-status").textContent = "Bağlantı yenileniyor...";
+    state.voice.pollTimer = setTimeout(pollVoice, 1500);
   }
 }
 
@@ -445,6 +513,7 @@ async function joinVoice() {
     state.voice.roomId = state.activeChannel.id;
     state.voice.clientId = crypto.randomUUID();
     state.voice.stream = stream;
+    state.voice.pollFailures = 0;
     const data = await voiceApi("join", {
       method: "POST",
       body: JSON.stringify({
@@ -453,13 +522,17 @@ async function joinVoice() {
         name: state.user.display_name || state.user.displayName
       })
     });
+    if (!data.canSpeak) {
+      stream.getAudioTracks().forEach((track) => { track.enabled = false; });
+      state.voice.muted = true;
+    }
     $("#join-voice-button").classList.add("hidden");
-    $("#mute-voice-button").classList.remove("hidden");
+    $("#mute-voice-button").classList.toggle("hidden", !data.canSpeak);
     $("#deafen-voice-button").classList.remove("hidden");
     $("#camera-voice-button").classList.remove("hidden");
     $("#screen-voice-button").classList.remove("hidden");
     $("#leave-voice-button").classList.remove("hidden");
-    $("#voice-status").textContent = "Bağlandı";
+    $("#voice-status").textContent = data.canSpeak ? "Bağlandı" : "Dinleyici olarak bağlandı";
     renderVoiceParticipants([{ id: state.voice.clientId, name: state.user.display_name || state.user.displayName }]);
     for (const peer of data.peers || []) createVoicePeer(peer.id, true);
     pollVoice();
@@ -475,12 +548,12 @@ async function setOutgoingVideo(track, stream, mode) {
   state.voice.videoStream = stream;
   state.voice.videoMode = mode;
   for (const [peerId, connection] of state.voice.peers) {
-    const sender = connection.getSenders().find((item) => item.track?.kind === "video");
+    const sender = videoSender(connection);
     if (sender) await sender.replaceTrack(track);
-    else connection.addTrack(track, stream);
-    await negotiateVoicePeer(peerId, connection).catch(() => {});
+    await sendVoiceSignal(peerId, { type: "video-start", mode }).catch(() => {});
   }
   previousStream?.getTracks().forEach((item) => {
+    item.onended = null;
     if (item !== track) item.stop();
   });
   $("#local-video").srcObject = stream;
@@ -488,7 +561,9 @@ async function setOutgoingVideo(track, stream, mode) {
   $("#voice-video-grid").classList.remove("hidden");
   $("#camera-voice-button").textContent = mode === "camera" ? "Kamerayı kapat" : "Kamerayı aç";
   $("#screen-voice-button").textContent = mode === "screen" ? "Paylaşımı durdur" : "Ekranı paylaş";
-  track.onended = () => stopOutgoingVideo();
+  track.onended = () => {
+    if (state.voice.videoStream === stream) stopOutgoingVideo();
+  };
 }
 
 async function stopOutgoingVideo() {
@@ -497,10 +572,9 @@ async function stopOutgoingVideo() {
   state.voice.videoStream = null;
   state.voice.videoMode = null;
   for (const [peerId, connection] of state.voice.peers) {
-    const sender = connection.getSenders().find((item) => item.track?.kind === "video");
+    const sender = videoSender(connection);
     if (sender) await sender.replaceTrack(null);
     await sendVoiceSignal(peerId, { type: "video-stop" }).catch(() => {});
-    await negotiateVoicePeer(peerId, connection).catch(() => {});
   }
   stream?.getTracks().forEach((track) => track.stop());
   $("#local-video").srcObject = null;
@@ -570,7 +644,9 @@ async function leaveVoice(notifyServer = true) {
     stream: null,
     videoStream: null,
     videoMode: null,
+    remoteVideoTracks: new Map(),
     pollTimer: null,
+    pollFailures: 0,
     muted: false,
     deafened: false
   });
@@ -629,6 +705,7 @@ async function start() {
     return showAuth();
   }
   showApp(data.user);
+  await loadVoiceConfiguration().catch(() => {});
   if (!(await joinPendingInvite())) await loadServers();
 }
 
@@ -768,6 +845,7 @@ $("#channel-form").addEventListener("submit", async (event) => {
       body: JSON.stringify({
         name: $("#channel-name-input").value,
         type: $("#channel-type-input").value,
+        categoryId: $("#channel-category-input").value || null,
         isPrivate: $("#channel-private-input").checked
       })
     });
@@ -803,6 +881,22 @@ $("#invite-button").addEventListener("click", async () => {
     openModal("invite-modal");
   } catch (error) {
     notify(error.message, true);
+  }
+});
+
+$("#category-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await api(`/api/servers/${state.activeServer.server.id}/categories`, {
+      method: "POST",
+      body: JSON.stringify({ name: $("#category-name-input").value })
+    });
+    event.currentTarget.reset();
+    closeModal(event.currentTarget);
+    await openServer(state.activeServer.server.id);
+    notify("Kategori oluşturuldu");
+  } catch (error) {
+    $(".form-error", event.currentTarget).textContent = error.message;
   }
 });
 
