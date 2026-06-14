@@ -176,10 +176,18 @@ async function query(text, values = []) {
 async function initializeDatabase() {
   if (!process.env.DATABASE_URL) {
     getLocalDatabase();
-    return;
+  } else {
+    const schema = fs.readFileSync(path.join(__dirname, "..", "schema.sql"), "utf8");
+    await getPool().query(schema);
   }
-  const schema = fs.readFileSync(path.join(__dirname, "..", "schema.sql"), "utf8");
-  await getPool().query(schema);
+
+  const ownerEmail = process.env.OWNER_EMAIL?.trim().toLowerCase();
+  if (ownerEmail) {
+    await getPool().query(
+      "UPDATE users SET is_site_owner = $1 WHERE email = $2",
+      [true, ownerEmail]
+    );
+  }
 }
 
 async function transaction(callback) {

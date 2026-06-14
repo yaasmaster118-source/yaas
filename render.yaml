@@ -3,12 +3,16 @@ services:
     name: yaas
     runtime: node
     plan: free
+    branch: main
+    autoDeployTrigger: commit
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: "24"
+      - key: OWNER_EMAIL
+        value: alimelekaliyev545@gmail.com
       - key: DATABASE_URL
         sync: false
       - key: GOOGLE_CLIENT_ID

@@ -63,7 +63,11 @@ const server = http.createServer((request, response) => {
 
   if (request.url === "/health") {
     response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-    response.end(JSON.stringify({ status: "ok", version: "1.1.0-dev" }));
+    response.end(JSON.stringify({
+      status: "ok",
+      version: "1.1.0-dev",
+      build: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || "local"
+    }));
     return;
   }
 

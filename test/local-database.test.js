@@ -57,7 +57,13 @@ test("local database supports complete server creation", async () => {
   const invite = await query("SELECT * FROM invites WHERE code = $1 FOR UPDATE", ["test-code"]);
   assert.equal(invite.rowCount, 1);
 
+  process.env.OWNER_EMAIL = "owner@example.com";
+  await initializeDatabase();
+  const owner = await query("SELECT is_site_owner FROM users WHERE email = $1", ["owner@example.com"]);
+  assert.equal(owner.rows[0].is_site_owner, 1);
+
   await getPool().end();
   fs.rmSync(databasePath, { force: true });
   delete process.env.LOCAL_DATABASE_PATH;
+  delete process.env.OWNER_EMAIL;
 });
