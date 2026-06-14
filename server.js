@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { handleApi } = require("./src/api");
 const { getAuthenticatedUser } = require("./src/auth");
-const { query } = require("./src/database");
+const { initializeDatabase, query } = require("./src/database");
 
 const port = Number(process.env.PORT) || 4173;
 const root = __dirname;
@@ -226,6 +226,13 @@ async function handleVoiceApi(request, response) {
   }
 }
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`YAAS is running at http://localhost:${port}`);
-});
+initializeDatabase()
+  .then(() => {
+    server.listen(port, "0.0.0.0", () => {
+      console.log(`YAAS is running at http://localhost:${port}`);
+    });
+  })
+  .catch((error) => {
+    console.error("Database initialization failed", error);
+    process.exitCode = 1;
+  });

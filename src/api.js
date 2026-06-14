@@ -17,6 +17,17 @@ function text(value, max) {
   return String(value || "").trim().slice(0, max);
 }
 
+function jsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function makeHandle(email) {
   const base = email.split("@")[0].replace(/[^\w.]/g, "").toLowerCase().slice(0, 20) || "yaasuye";
   return `${base}-${crypto.randomBytes(2).toString("hex")}`;
@@ -42,7 +53,7 @@ async function permissions(serverId, userId) {
      WHERE mr.server_id = $1 AND mr.user_id = $2`,
     [serverId, userId]
   );
-  return new Set(result.rows.flatMap((row) => row.permissions || []));
+  return new Set(result.rows.flatMap((row) => jsonArray(row.permissions)));
 }
 
 async function requirePermission(response, sendJson, serverId, userId, permission) {
@@ -195,31 +206,55 @@ async function handleApi(request, response, helpers) {
       const serverId = serverRoute[1];
       const granted = await permissions(serverId, user.id);
       if (!granted) return sendJson(response, 404, { error: "Sunucu bulunamadı" });
-      const [server, channels, members, roles] = await Promise.all([
+      const [server, channels, members, memberRoles, roles] = await Promise.all([
         query("SELECT id, name, description, icon_color, owner_id, created_at FROM servers WHERE id = $1", [serverId]),
         query("SELECT id, name, type, position, is_private, allowed_role_ids FROM channels WHERE server_id = $1 ORDER BY position", [serverId]),
         query(
-          `SELECT u.id, u.display_name, u.handle, u.is_site_owner, m.nickname, m.joined_at,
-                  COALESCE(json_agg(json_build_object('id', r.id, 'name', r.name, 'color', r.color, 'position', r.position)
-                    ORDER BY r.position DESC) FILTER (WHERE r.id IS NOT NULL), '[]') AS roles
+          `SELECT u.id, u.display_name, u.handle, u.is_site_owner, m.nickname, m.joined_at
              FROM memberships m JOIN users u ON u.id = m.user_id
-             LEFT JOIN member_roles mr ON mr.server_id = m.server_id AND mr.user_id = m.user_id
-             LEFT JOIN roles r ON r.id = mr.role_id
-            WHERE m.server_id = $1 GROUP BY u.id, m.nickname, m.joined_at ORDER BY m.joined_at`,
+            WHERE m.server_id = $1 ORDER BY m.joined_at`,
+          [serverId]
+        ),
+        query(
+          `SELECT mr.user_id, r.id, r.name, r.color, r.position
+             FROM member_roles mr JOIN roles r ON r.id = mr.role_id
+            WHERE mr.server_id = $1 ORDER BY r.position DESC`,
           [serverId]
         ),
         query("SELECT id, name, color, position, permissions, is_system FROM roles WHERE server_id = $1 ORDER BY position DESC", [serverId])
       ]);
-      const currentMember = members.rows.find((item) => item.id === user.id);
+      const rolesByMember = new Map();
+      for (const role of memberRoles.rows) {
+        if (!rolesByMember.has(role.user_id)) rolesByMember.set(role.user_id, []);
+        rolesByMember.get(role.user_id).push({
+          id: role.id,
+          name: role.name,
+          color: role.color,
+          position: role.position
+        });
+      }
+      const normalizedMembers = members.rows.map((member) => ({
+        ...member,
+        roles: rolesByMember.get(member.id) || []
+      }));
+      const normalizedChannels = channels.rows.map((channel) => ({
+        ...channel,
+        allowed_role_ids: jsonArray(channel.allowed_role_ids)
+      }));
+      const normalizedRoles = roles.rows.map((role) => ({
+        ...role,
+        permissions: jsonArray(role.permissions)
+      }));
+      const currentMember = normalizedMembers.find((item) => item.id === user.id);
       const roleIds = new Set((currentMember?.roles || []).map((role) => role.id));
-      const visibleChannels = channels.rows.filter((channel) =>
+      const visibleChannels = normalizedChannels.filter((channel) =>
         !channel.is_private || channel.allowed_role_ids.some((roleId) => roleIds.has(roleId))
       );
       return sendJson(response, 200, {
         server: server.rows[0],
         channels: visibleChannels,
-        members: granted.has("members.view") ? members.rows : [],
-        roles: granted.has("roles.manage") ? roles.rows : [],
+        members: granted.has("members.view") ? normalizedMembers : [],
+        roles: granted.has("roles.manage") ? normalizedRoles : [],
         permissions: [...granted]
       });
     }
