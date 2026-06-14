@@ -397,6 +397,11 @@ async function handleApi(request, response, helpers) {
         );
         const invite = result.rows[0];
         if (!invite) return null;
+        const existingMembership = await client.query(
+          "SELECT 1 FROM memberships WHERE server_id = $1 AND user_id = $2",
+          [invite.server_id, user.id]
+        );
+        if (existingMembership.rowCount) return invite.server_id;
         await client.query("INSERT INTO memberships (server_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [invite.server_id, user.id]);
         await client.query(
           `INSERT INTO member_roles (server_id, user_id, role_id)

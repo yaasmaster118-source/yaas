@@ -45,6 +45,11 @@ const RTC_CONFIGURATION = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
 
+function inviteCodeFromLocation() {
+  const pathMatch = location.pathname.match(/^\/invite\/([A-Za-z0-9_-]+)$/);
+  return pathMatch?.[1] || sessionStorage.getItem("yaasPendingInvite") || "";
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     credentials: "same-origin",
@@ -509,6 +514,20 @@ function editRole(role) {
   buildPermissionGrid(role.permissions || []);
 }
 
+async function joinPendingInvite() {
+  const code = inviteCodeFromLocation();
+  if (!code || !state.user) return false;
+  const data = await api(`/api/invites/${encodeURIComponent(code)}/join`, {
+    method: "POST",
+    body: "{}"
+  });
+  sessionStorage.removeItem("yaasPendingInvite");
+  history.replaceState({}, "", "/");
+  await loadServers(data.serverId);
+  notify("Sunucuya katıldın");
+  return true;
+}
+
 async function start() {
   buildPermissionGrid();
   const providers = await api("/api/auth/providers");
@@ -520,9 +539,16 @@ async function start() {
     ? "Sosyal hesabın YAAS hesabın olarak kaydedilir."
     : "Google ve Apple girişi yönetici ayarları tamamlanınca açılacak.";
   const data = await api("/api/me");
-  if (!data.user) return showAuth();
+  if (!data.user) {
+    const inviteCode = inviteCodeFromLocation();
+    if (inviteCode) {
+      sessionStorage.setItem("yaasPendingInvite", inviteCode);
+      $("#auth-subtitle").textContent = "Davet edilen sunucuya katılmak için giriş yap veya hesap oluştur.";
+    }
+    return showAuth();
+  }
   showApp(data.user);
-  await loadServers();
+  if (!(await joinPendingInvite())) await loadServers();
 }
 
 $$("[data-auth-tab]").forEach((button) => button.addEventListener("click", () => switchAuth(button.dataset.authTab)));
@@ -534,6 +560,8 @@ $$(".modal-layer").forEach((layer) => layer.addEventListener("click", (event) =>
 $$("[data-open-panel]").forEach((button) => button.addEventListener("click", () => $(`#${button.dataset.openPanel}`).classList.add("open")));
 $$("[data-close-panel]").forEach((button) => button.addEventListener("click", () => $(`#${button.dataset.closePanel}`).classList.remove("open")));
 $$("[data-provider]").forEach((button) => button.addEventListener("click", () => {
+  const inviteCode = inviteCodeFromLocation();
+  if (inviteCode) sessionStorage.setItem("yaasPendingInvite", inviteCode);
   location.href = `/api/auth/oauth/${button.dataset.provider}`;
 }));
 
@@ -546,7 +574,7 @@ $("#login-form").addEventListener("submit", async (event) => {
     });
     event.currentTarget.reset();
     showApp(data.user);
-    await loadServers();
+    if (!(await joinPendingInvite())) await loadServers();
   } catch (error) {
     $("#login-error").textContent = error.message;
   }
@@ -565,7 +593,7 @@ $("#register-form").addEventListener("submit", async (event) => {
     });
     event.currentTarget.reset();
     showApp(data.user);
-    await loadServers();
+    if (!(await joinPendingInvite())) await loadServers();
   } catch (error) {
     $("#register-error").textContent = error.message;
   }

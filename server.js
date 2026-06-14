@@ -71,7 +71,10 @@ const server = http.createServer((request, response) => {
     return;
   }
 
-  const requestPath = request.url === "/" ? "/index.html" : request.url.split("?")[0];
+  const pathname = request.url.split("?")[0];
+  const requestPath = pathname === "/" || /^\/invite\/[A-Za-z0-9_-]+$/.test(pathname)
+    ? "/index.html"
+    : pathname;
   const filePath = path.resolve(root, `.${decodeURIComponent(requestPath)}`);
   const relativePath = path.relative(root, filePath);
 
