@@ -92,12 +92,32 @@ function initials(name) {
   return String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
 }
 
+function safeColor(value, fallback = "#c9f34b") {
+  return /^#[0-9a-f]{6}$/i.test(String(value || "")) ? value : fallback;
+}
+
 function openModal(id) {
   $(`#${id}`).hidden = false;
 }
 
 function closeModal(element) {
   element.closest(".modal-layer").hidden = true;
+}
+
+function selectServerTemplate(template) {
+  $("#server-template-input").value = template;
+  $$("[data-server-template]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.serverTemplate === template);
+  });
+}
+
+function switchSettingsTab(tab) {
+  $$("[data-settings-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.settingsTab === tab);
+  });
+  $$("[data-settings-panel]").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.settingsPanel === tab);
+  });
 }
 
 function showApp(user) {
@@ -137,7 +157,7 @@ function renderServers() {
   const list = $("#server-list");
   list.innerHTML = state.servers.map((server) => `
     <button class="server-item ${state.activeServer?.server?.id === server.id ? "active" : ""}" data-server-id="${server.id}" type="button">
-      <span class="server-icon">${escapeHtml(initials(server.name))}</span>
+      <span class="server-icon" style="background:${safeColor(server.icon_color)}">${escapeHtml(initials(server.name))}</span>
       <span><strong>${escapeHtml(server.name)}</strong><small>${server.member_count} üye</small></span>
     </button>`).join("");
   $("#server-list-empty").classList.toggle("hidden", state.servers.length > 0);
@@ -153,17 +173,31 @@ async function openServer(serverId) {
     $("#server-view").classList.remove("hidden");
     $("#active-server-name").textContent = data.server.name;
     $("#active-server-description").textContent = data.server.description || `${data.members.length} üye`;
-    $(".manage-server-button").classList.toggle("hidden", !data.permissions.includes("roles.manage"));
+    const canOpenSettings = ["server.manage", "roles.manage", "members.view", "invites.create"]
+      .some((permission) => data.permissions.includes(permission));
+    $(".manage-server-button").classList.toggle("hidden", !canOpenSettings);
     $("#add-channel-button").classList.toggle("hidden", !data.permissions.includes("channels.manage"));
     $("#add-category-button").classList.toggle("hidden", !data.permissions.includes("channels.manage"));
     $("#invite-button").classList.toggle("hidden", !data.permissions.includes("invites.create"));
     $("#server-danger-zone").classList.toggle("hidden", data.server.owner_id !== state.user.id);
+    $("#leave-server-zone").classList.toggle("hidden", data.server.owner_id === state.user.id);
+    $("#settings-server-name").textContent = `${data.server.name} ayarları`;
+    $("#settings-server-name-input").value = data.server.name;
+    $("#settings-server-description-input").value = data.server.description || "";
+    $("#settings-server-color-input").value = /^#[0-9a-f]{6}$/i.test(data.server.icon_color || "")
+      ? data.server.icon_color
+      : "#c9f34b";
+    $('[data-settings-tab="overview"]').classList.toggle("hidden", !data.permissions.includes("server.manage"));
+    $('[data-settings-tab="roles"]').classList.toggle("hidden", !data.permissions.includes("roles.manage"));
+    $('[data-settings-tab="members"]').classList.toggle("hidden", !data.permissions.includes("members.view"));
+    $('[data-settings-tab="invites"]').classList.toggle("hidden", !data.permissions.includes("invites.create"));
     $("#channel-category-input").innerHTML = '<option value="">Kategorisiz</option>'
       + (data.categories || []).map((category) =>
         `<option value="${category.id}">${escapeHtml(category.name)}</option>`).join("");
     renderServers();
     renderChannels();
     renderMembers();
+    renderSettingsMembers();
     renderRoles();
     showNoChannel();
     $("#server-panel").classList.remove("open");
@@ -174,10 +208,11 @@ async function openServer(serverId) {
 
 function renderChannels() {
   const categories = state.activeServer.categories || [];
+  const showEmptyCategories = localStorage.getItem("yaas:show-all-channels-setting") !== "false";
   const grouped = categories.map((category) => ({
     ...category,
     channels: state.activeServer.channels.filter((channel) => channel.category_id === category.id)
-  }));
+  })).filter((category) => showEmptyCategories || category.channels.length);
   const uncategorized = state.activeServer.channels.filter((channel) => !channel.category_id);
   const channelButtons = (channels) => channels.map((channel) => `
       <button class="channel-item" data-channel-id="${channel.id}" type="button">
@@ -198,6 +233,7 @@ function renderChannels() {
 
 function renderMembers() {
   const members = state.activeServer.members || [];
+  const showContactActions = localStorage.getItem("yaas:server-dm-setting") !== "false";
   $("#member-empty").classList.toggle("hidden", members.length > 0);
   $("#member-list").innerHTML = members.map((member) => `
     <article class="member-item">
@@ -205,12 +241,28 @@ function renderMembers() {
       <div><span class="member-name-row"><strong>${escapeHtml(member.nickname || member.display_name)}</strong>
       ${member.is_site_owner ? '<i class="site-owner-badge">YAAS SAHİBİ</i>' : ""}</span><small>@${escapeHtml(member.handle)}</small>
       <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}">${escapeHtml(role.name)}</i>`).join("")}</span>
-      ${member.id !== state.user.id ? `<span class="member-actions"><button class="secondary add-friend-button" data-handle="${escapeHtml(member.handle)}" type="button">Arkadaş ekle</button></span>` : ""}
+      ${showContactActions && member.id !== state.user.id ? `<span class="member-actions"><button class="secondary add-friend-button" data-handle="${escapeHtml(member.handle)}" type="button">Arkadaş ekle</button></span>` : ""}
       </div>
     </article>`).join("");
   $$(".add-friend-button").forEach((button) => button.addEventListener("click", () => {
     sendFriendRequest(button.dataset.handle).catch((error) => notify(error.message, true));
   }));
+}
+
+function renderSettingsMembers() {
+  const members = state.activeServer?.members || [];
+  $("#settings-member-list").innerHTML = members.length
+    ? members.map((member) => `
+      <article class="settings-member-row">
+        <span class="avatar">${escapeHtml(initials(member.display_name))}</span>
+        <div>
+          <strong>${escapeHtml(member.nickname || member.display_name)}</strong>
+          <small>@${escapeHtml(member.handle)}</small>
+        </div>
+        <span class="settings-member-roles">${member.roles.map((role) =>
+          `<i style="color:${escapeHtml(role.color)}">${escapeHtml(role.name)}</i>`).join("")}</span>
+      </article>`).join("")
+    : '<div class="empty-list">Bu sunucuda henüz üye yok.</div>';
 }
 
 function friendRow(person, actions = "") {
@@ -711,6 +763,20 @@ async function start() {
 
 $$("[data-auth-tab]").forEach((button) => button.addEventListener("click", () => switchAuth(button.dataset.authTab)));
 $$("[data-open-modal]").forEach((button) => button.addEventListener("click", () => openModal(button.dataset.openModal)));
+$$("[data-server-template]").forEach((button) => button.addEventListener("click", () => {
+  selectServerTemplate(button.dataset.serverTemplate);
+}));
+$$("[data-settings-tab]").forEach((button) => button.addEventListener("click", () => {
+  switchSettingsTab(button.dataset.settingsTab);
+}));
+$(".manage-server-button").addEventListener("click", () => {
+  const firstTab = $$("[data-settings-tab]").find((button) => !button.classList.contains("hidden"));
+  switchSettingsTab(firstTab?.dataset.settingsTab || "preferences");
+});
+$("#builder-open-join").addEventListener("click", () => {
+  closeModal($("#builder-open-join"));
+  openModal("join-server-modal");
+});
 $$(".modal-close").forEach((button) => button.addEventListener("click", () => closeModal(button)));
 $$(".modal-layer").forEach((layer) => layer.addEventListener("click", (event) => {
   if (event.target === layer) layer.hidden = true;
@@ -725,12 +791,13 @@ $$("[data-provider]").forEach((button) => button.addEventListener("click", () =>
 
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
   try {
     const data = await api("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ email: $("#login-email").value, password: $("#login-password").value })
     });
-    event.currentTarget.reset();
+    form.reset();
     showApp(data.user);
     if (!(await joinPendingInvite())) await loadServers();
   } catch (error) {
@@ -740,6 +807,7 @@ $("#login-form").addEventListener("submit", async (event) => {
 
 $("#register-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
   try {
     const data = await api("/api/auth/register", {
       method: "POST",
@@ -749,7 +817,7 @@ $("#register-form").addEventListener("submit", async (event) => {
         password: $("#register-password").value
       })
     });
-    event.currentTarget.reset();
+    form.reset();
     showApp(data.user);
     if (!(await joinPendingInvite())) await loadServers();
   } catch (error) {
@@ -779,11 +847,12 @@ $("#friends-button").addEventListener("click", async () => {
 
 $("#friend-request-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const error = $(".form-error", event.currentTarget);
+  const form = event.currentTarget;
+  const error = $(".form-error", form);
   error.textContent = "";
   try {
     await sendFriendRequest($("#friend-handle-input").value);
-    event.currentTarget.reset();
+    form.reset();
   } catch (failure) {
     error.textContent = failure.message;
   }
@@ -807,14 +876,21 @@ $("#dm-message-form").addEventListener("submit", async (event) => {
 
 $("#create-server-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const error = $(".form-error", event.currentTarget);
+  const form = event.currentTarget;
+  const error = $(".form-error", form);
+  error.textContent = "";
   try {
     const data = await api("/api/servers", {
       method: "POST",
-      body: JSON.stringify({ name: $("#server-name-input").value, description: $("#server-description-input").value })
+      body: JSON.stringify({
+        name: $("#server-name-input").value,
+        description: $("#server-description-input").value,
+        template: $("#server-template-input").value
+      })
     });
-    event.currentTarget.reset();
-    closeModal(event.currentTarget);
+    form.reset();
+    selectServerTemplate("custom");
+    closeModal(form);
     await loadServers(data.server.id);
     notify("Sunucu oluşturuldu");
   } catch (failure) {
@@ -824,21 +900,27 @@ $("#create-server-form").addEventListener("submit", async (event) => {
 
 $("#join-server-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
+  const formError = $(".form-error", form);
+  formError.textContent = "";
   const raw = $("#invite-code-input").value.trim();
   const code = raw.split("/").filter(Boolean).pop();
   try {
     const data = await api(`/api/invites/${encodeURIComponent(code)}/join`, { method: "POST", body: "{}" });
-    event.currentTarget.reset();
-    closeModal(event.currentTarget);
+    form.reset();
+    closeModal(form);
     await loadServers(data.serverId);
     notify("Sunucuya katıldın");
   } catch (error) {
-    $(".form-error", event.currentTarget).textContent = error.message;
+    formError.textContent = error.message;
   }
 });
 
 $("#channel-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
+  const formError = $(".form-error", form);
+  formError.textContent = "";
   try {
     const data = await api(`/api/servers/${state.activeServer.server.id}/channels`, {
       method: "POST",
@@ -849,12 +931,12 @@ $("#channel-form").addEventListener("submit", async (event) => {
         isPrivate: $("#channel-private-input").checked
       })
     });
-    event.currentTarget.reset();
-    closeModal(event.currentTarget);
+    form.reset();
+    closeModal(form);
     await openServer(state.activeServer.server.id);
     await openChannel(data.channel);
   } catch (error) {
-    $(".form-error", event.currentTarget).textContent = error.message;
+    formError.textContent = error.message;
   }
 });
 
@@ -871,7 +953,7 @@ $("#message-form").addEventListener("submit", async (event) => {
   }
 });
 
-$("#invite-button").addEventListener("click", async () => {
+async function createActiveServerInvite() {
   try {
     const data = await api(`/api/servers/${state.activeServer.server.id}/invites`, {
       method: "POST",
@@ -882,21 +964,27 @@ $("#invite-button").addEventListener("click", async () => {
   } catch (error) {
     notify(error.message, true);
   }
-});
+}
+
+$("#invite-button").addEventListener("click", createActiveServerInvite);
+$("#settings-create-invite").addEventListener("click", createActiveServerInvite);
 
 $("#category-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
+  const formError = $(".form-error", form);
+  formError.textContent = "";
   try {
     await api(`/api/servers/${state.activeServer.server.id}/categories`, {
       method: "POST",
       body: JSON.stringify({ name: $("#category-name-input").value })
     });
-    event.currentTarget.reset();
-    closeModal(event.currentTarget);
+    form.reset();
+    closeModal(form);
     await openServer(state.activeServer.server.id);
     notify("Kategori oluşturuldu");
   } catch (error) {
-    $(".form-error", event.currentTarget).textContent = error.message;
+    formError.textContent = error.message;
   }
 });
 
@@ -912,6 +1000,30 @@ $("#share-invite-button").addEventListener("click", async () => {
   } else {
     await navigator.clipboard.writeText(url);
     notify("Paylaşım desteklenmiyor; bağlantı kopyalandı");
+  }
+});
+
+$("#server-settings-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const formError = $(".form-error", form);
+  formError.textContent = "";
+  const serverId = state.activeServer.server.id;
+  try {
+    await api(`/api/servers/${serverId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: $("#settings-server-name-input").value,
+        description: $("#settings-server-description-input").value,
+        iconColor: $("#settings-server-color-input").value
+      })
+    });
+    await openServer(serverId);
+    openModal("manage-server-modal");
+    switchSettingsTab("overview");
+    notify("Sunucu bilgileri güncellendi");
+  } catch (error) {
+    formError.textContent = error.message;
   }
 });
 
@@ -933,6 +1045,39 @@ $("#delete-server-button").addEventListener("click", async () => {
   }
 });
 
+$("#leave-server-button").addEventListener("click", async () => {
+  if (!state.activeServer) return;
+  const serverName = state.activeServer.server.name;
+  if (!confirm(`"${serverName}" sunucusundan ayrılmak istediğine emin misin?`)) return;
+  try {
+    await api(`/api/servers/${state.activeServer.server.id}/members/me`, { method: "DELETE", body: "{}" });
+    closeModal($("#leave-server-button"));
+    state.activeServer = null;
+    state.activeChannel = null;
+    $("#server-view").classList.add("hidden");
+    $("#welcome-view").classList.remove("hidden");
+    await loadServers();
+    notify("Sunucudan ayrıldın");
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+
+const preferenceInputs = ["show-all-channels-setting", "server-dm-setting"];
+for (const inputId of preferenceInputs) {
+  const input = $(`#${inputId}`);
+  const saved = localStorage.getItem(`yaas:${inputId}`);
+  if (saved !== null) input.checked = saved === "true";
+  input.addEventListener("change", () => {
+    localStorage.setItem(`yaas:${inputId}`, String(input.checked));
+    if (state.activeServer) {
+      renderChannels();
+      renderMembers();
+    }
+    notify("Tercih kaydedildi");
+  });
+}
+
 $("#new-role-button").addEventListener("click", () => {
   $("#role-form").reset();
   $("#role-id-input").value = "";
@@ -941,6 +1086,9 @@ $("#new-role-button").addEventListener("click", () => {
 
 $("#role-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const form = event.currentTarget;
+  const formError = $(".form-error", form);
+  formError.textContent = "";
   const serverId = state.activeServer.server.id;
   const roleId = $("#role-id-input").value;
   const payload = {
@@ -957,7 +1105,7 @@ $("#role-form").addEventListener("submit", async (event) => {
     openModal("manage-server-modal");
     notify("Rol kaydedildi");
   } catch (error) {
-    $(".form-error", event.currentTarget).textContent = error.message;
+    formError.textContent = error.message;
   }
 });
 

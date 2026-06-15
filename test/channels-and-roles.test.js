@@ -10,6 +10,7 @@ test("channels support categories and roles enforce hierarchy", () => {
   const schema = fs.readFileSync(path.join(root, "schema.sql"), "utf8");
   const api = fs.readFileSync(path.join(root, "src", "api.js"), "utf8");
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
   assert.match(schema, /CREATE TABLE IF NOT EXISTS channel_categories/);
   assert.match(schema, /category_id UUID/);
@@ -18,4 +19,9 @@ test("channels support categories and roles enforce hierarchy", () => {
   assert.match(api, /Bu rolü veremezsin/);
   assert.match(app, /channel-category-input/);
   assert.match(app, /category-form/);
+  assert.doesNotMatch(app, /event\.currentTarget\.reset\(\)/);
+  assert.match(api, /SERVER_TEMPLATES/);
+  assert.match(api, /leaveServerRoute/);
+  assert.match(html, /data-server-template="gaming"/);
+  assert.match(html, /data-settings-panel="overview"/);
 });

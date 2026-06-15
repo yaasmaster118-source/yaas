@@ -12,8 +12,8 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.2">
-    <script src="app.js?v=1.1.2" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.3">
+    <script src="app.js?v=1.1.3" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -171,12 +171,29 @@
     </div>
 
     <div class="modal-layer" id="create-server-modal" hidden>
-      <form class="modal" id="create-server-form">
-        <header><div><strong>Sunucu oluştur</strong><small>Kendi özel topluluğunu başlat.</small></div><button class="icon-button modal-close" type="button">×</button></header>
-        <label>Sunucu adı<input id="server-name-input" minlength="2" maxlength="40" required></label>
-        <label>Açıklama<textarea id="server-description-input" maxlength="180"></textarea></label>
+      <form class="modal server-builder-modal" id="create-server-form">
+        <header><div><strong>Sunucunu oluştur</strong><small>Topluluğuna uygun bir başlangıç seç.</small></div><button class="icon-button modal-close" type="button">×</button></header>
+        <div class="server-builder-intro">
+          <h3>Nasıl bir alan kuruyorsun?</h3>
+          <p>Şablon yalnızca başlangıç kanallarını hazırlar. Sonrasında her şeyi değiştirebilirsin.</p>
+        </div>
+        <input id="server-template-input" type="hidden" value="custom">
+        <div class="template-grid">
+          <button class="template-card active" data-server-template="custom" type="button"><span>✦</span><strong>Kendim oluşturayım</strong><small>Sade başlangıç</small></button>
+          <button class="template-card" data-server-template="gaming" type="button"><span>⌁</span><strong>Oyun</strong><small>Lobi ve takım kanalları</small></button>
+          <button class="template-card" data-server-template="school" type="button"><span>▤</span><strong>Okul kulübü</strong><small>Duyuru ve sohbet alanı</small></button>
+          <button class="template-card" data-server-template="study" type="button"><span>◫</span><strong>Çalışma grubu</strong><small>Plan ve kaynak kanalları</small></button>
+          <button class="template-card" data-server-template="friends" type="button"><span>♡</span><strong>Arkadaşlar</strong><small>Sohbet ve medya alanı</small></button>
+          <button class="template-card" data-server-template="creators" type="button"><span>◉</span><strong>Üreticiler</strong><small>Çalışma ve geri bildirim</small></button>
+          <button class="template-card" data-server-template="local" type="button"><span>⌖</span><strong>Yerel topluluk</strong><small>Etkinlik ve buluşmalar</small></button>
+        </div>
+        <div class="server-builder-fields">
+          <label>Sunucu adı<input id="server-name-input" minlength="2" maxlength="40" placeholder="Yeni topluluğum" required></label>
+          <label>Açıklama<textarea id="server-description-input" maxlength="180" placeholder="Bu sunucu ne için kuruluyor?"></textarea></label>
+        </div>
         <p class="form-error"></p>
-        <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Oluştur</button></footer>
+        <div class="builder-join-row"><span>Zaten davetin var mı?</span><button class="secondary" id="builder-open-join" type="button">Bir sunucuya katıl</button></div>
+        <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Sunucuyu oluştur</button></footer>
       </form>
     </div>
 
@@ -211,22 +228,70 @@
     </div>
 
     <div class="modal-layer" id="manage-server-modal" hidden>
-      <section class="modal large">
-        <header><div><strong>Sunucu yönetimi</strong><small>Roller ve izinler</small></div><button class="icon-button modal-close" type="button">×</button></header>
-        <div class="role-layout">
-          <div><div class="modal-section-title">ROLLER</div><div id="role-list"></div><button class="secondary wide" id="new-role-button" type="button">＋ Yeni rol</button></div>
-          <form id="role-form">
-            <input id="role-id-input" type="hidden">
-            <label>Rol adı<input id="role-name-input" maxlength="30" required></label>
-            <label>Renk<input id="role-color-input" type="color" value="#8d7aff"></label>
-            <div class="permission-grid" id="permission-grid"></div>
-            <p class="form-error"></p>
-            <button class="primary" type="submit">Rolü kaydet</button>
-          </form>
-        </div>
-        <div class="danger-zone hidden" id="server-danger-zone">
-          <div><strong>Sunucuyu sil</strong><small>Bu işlem kanalları, mesajları ve üyelikleri kalıcı olarak siler.</small></div>
-          <button class="danger-button" id="delete-server-button" type="button">Sunucuyu sil</button>
+      <section class="modal server-settings-modal">
+        <header><div><strong id="settings-server-name">Sunucu ayarları</strong><small>Sunucunu, üyelerini ve izinlerini yönet.</small></div><button class="icon-button modal-close" type="button">×</button></header>
+        <div class="server-settings-layout">
+          <nav class="settings-nav">
+            <span class="modal-section-title">SUNUCU AYARLARI</span>
+            <button class="active" data-settings-tab="overview" type="button">Genel bakış</button>
+            <button data-settings-tab="roles" type="button">Roller ve izinler</button>
+            <button data-settings-tab="members" type="button">Üyeler</button>
+            <button data-settings-tab="invites" type="button">Davetler</button>
+            <span class="modal-section-title">KULLANICI TERCİHLERİ</span>
+            <button data-settings-tab="preferences" type="button">Gizlilik ve görünüm</button>
+          </nav>
+          <div class="settings-content">
+            <section class="settings-panel active" data-settings-panel="overview">
+              <h3>Genel bakış</h3>
+              <p>Sunucunun görünen bilgilerini düzenle.</p>
+              <form id="server-settings-form">
+                <label>Sunucu adı<input id="settings-server-name-input" maxlength="40" required></label>
+                <label>Açıklama<textarea id="settings-server-description-input" maxlength="180"></textarea></label>
+                <label>Simge rengi<input id="settings-server-color-input" type="color" value="#c9f34b"></label>
+                <p class="form-error"></p>
+                <button class="primary" type="submit">Değişiklikleri kaydet</button>
+              </form>
+            </section>
+            <section class="settings-panel" data-settings-panel="roles">
+              <h3>Roller ve izinler</h3>
+              <p>Yönetici, moderatör ve özel roller oluştur.</p>
+              <div class="role-layout">
+                <div><div class="modal-section-title">ROLLER</div><div id="role-list"></div><button class="secondary wide" id="new-role-button" type="button">＋ Yeni rol</button></div>
+                <form id="role-form">
+                  <input id="role-id-input" type="hidden">
+                  <label>Rol adı<input id="role-name-input" maxlength="30" required></label>
+                  <label>Renk<input id="role-color-input" type="color" value="#8d7aff"></label>
+                  <div class="permission-grid" id="permission-grid"></div>
+                  <p class="form-error"></p>
+                  <button class="primary" type="submit">Rolü kaydet</button>
+                </form>
+              </div>
+            </section>
+            <section class="settings-panel" data-settings-panel="members">
+              <h3>Üyeler</h3>
+              <p>Yalnızca bu sunucuya gerçekten katılmış kişiler gösterilir.</p>
+              <div class="settings-member-list" id="settings-member-list"></div>
+            </section>
+            <section class="settings-panel" data-settings-panel="invites">
+              <h3>Üyeleri davet et</h3>
+              <p>Arkadaşlarının sunucuya katılması için güvenli bir davet bağlantısı oluştur.</p>
+              <button class="primary" id="settings-create-invite" type="button">Davet bağlantısı oluştur</button>
+            </section>
+            <section class="settings-panel" data-settings-panel="preferences">
+              <h3>Gizlilik ve görünüm</h3>
+              <p>Bu cihazda sunucuyu nasıl kullanacağını seç.</p>
+              <label class="setting-switch"><span><strong>Boş kategorileri göster</strong><small>İçinde kanal olmayan başlıkları kanal listesinde tutar.</small></span><input id="show-all-channels-setting" type="checkbox" checked></label>
+              <label class="setting-switch"><span><strong>Üye iletişim seçeneklerini göster</strong><small>Üye listesinde arkadaş ekleme düğmesini gösterir.</small></span><input id="server-dm-setting" type="checkbox" checked></label>
+              <div class="danger-zone hidden" id="server-danger-zone">
+                <div><strong>Sunucuyu sil</strong><small>Kanallar, mesajlar ve üyelikler kalıcı olarak silinir.</small></div>
+                <button class="danger-button" id="delete-server-button" type="button">Sunucuyu sil</button>
+              </div>
+              <div class="danger-zone hidden" id="leave-server-zone">
+                <div><strong>Sunucudan ayrıl</strong><small>Tekrar katılmak için yeni bir davet gerekir.</small></div>
+                <button class="danger-button" id="leave-server-button" type="button">Sunucudan ayrıl</button>
+              </div>
+            </section>
+          </div>
         </div>
       </section>
     </div>

@@ -92,11 +92,43 @@ async function areFriends(firstUserId, secondUserId) {
   return Boolean(result.rowCount);
 }
 
+const SERVER_TEMPLATES = {
+  custom: [
+    { name: "YAZI KANALLARI", channels: [{ name: "genel", type: "text" }] },
+    { name: "SES KANALLARI", channels: [{ name: "Genel", type: "voice" }] }
+  ],
+  gaming: [
+    { name: "OYUN TOPLULUĞU", channels: [{ name: "lobi", type: "text" }, { name: "takım-ara", type: "text" }] },
+    { name: "SES ODALARI", channels: [{ name: "Oyun Odası", type: "voice" }] }
+  ],
+  school: [
+    { name: "OKUL KULÜBÜ", channels: [{ name: "duyurular", type: "text" }, { name: "sohbet", type: "text" }] },
+    { name: "BULUŞMA ODALARI", channels: [{ name: "Kulüp Odası", type: "voice" }] }
+  ],
+  study: [
+    { name: "ÇALIŞMA ALANI", channels: [{ name: "planlama", type: "text" }, { name: "kaynaklar", type: "text" }] },
+    { name: "ODAK ODALARI", channels: [{ name: "Sessiz Çalışma", type: "voice" }] }
+  ],
+  friends: [
+    { name: "ARKADAŞLAR", channels: [{ name: "sohbet", type: "text" }, { name: "fotoğraflar", type: "text" }] },
+    { name: "TAKILMA ODALARI", channels: [{ name: "Muhabbet", type: "voice" }] }
+  ],
+  creators: [
+    { name: "ÜRETİM", channels: [{ name: "çalışmalar", type: "text" }, { name: "geri-bildirim", type: "text" }] },
+    { name: "ATÖLYE", channels: [{ name: "Birlikte Üret", type: "voice" }] }
+  ],
+  local: [
+    { name: "TOPLULUK", channels: [{ name: "duyurular", type: "text" }, { name: "etkinlikler", type: "text" }] },
+    { name: "BULUŞMA", channels: [{ name: "Topluluk Odası", type: "voice" }] }
+  ]
+};
+
 async function createServer(client, user, body) {
   const serverId = crypto.randomUUID();
+  const iconColor = /^#[0-9a-f]{6}$/i.test(String(body.iconColor || "")) ? body.iconColor : "#c9f34b";
   await client.query(
     "INSERT INTO servers (id, name, description, icon_color, owner_id) VALUES ($1, $2, $3, $4, $5)",
-    [serverId, text(body.name, 40), text(body.description, 180), text(body.iconColor, 20) || "lime", user.id]
+    [serverId, text(body.name, 40), text(body.description, 180), iconColor, user.id]
   );
   await client.query("INSERT INTO memberships (server_id, user_id) VALUES ($1, $2)", [serverId, user.id]);
   const roles = {};
@@ -113,18 +145,21 @@ async function createServer(client, user, body) {
     "INSERT INTO member_roles (server_id, user_id, role_id) VALUES ($1, $2, $3)",
     [serverId, user.id, roles.Owner]
   );
-  const textCategoryId = crypto.randomUUID();
-  const voiceCategoryId = crypto.randomUUID();
-  await client.query(
-    `INSERT INTO channel_categories (id, server_id, name, position)
-     VALUES ($1, $2, 'YAZI KANALLARI', 10), ($3, $2, 'SES KANALLARI', 20)`,
-    [textCategoryId, serverId, voiceCategoryId]
-  );
-  await client.query(
-    `INSERT INTO channels (id, server_id, category_id, name, type, position)
-     VALUES ($1, $2, $3, 'genel', 'text', 10), ($4, $2, $5, 'Ses Odası', 'voice', 20)`,
-    [crypto.randomUUID(), serverId, textCategoryId, crypto.randomUUID(), voiceCategoryId]
-  );
+  const template = SERVER_TEMPLATES[body.template] || SERVER_TEMPLATES.custom;
+  for (const [categoryIndex, category] of template.entries()) {
+    const categoryId = crypto.randomUUID();
+    await client.query(
+      "INSERT INTO channel_categories (id, server_id, name, position) VALUES ($1, $2, $3, $4)",
+      [categoryId, serverId, category.name, (categoryIndex + 1) * 10]
+    );
+    for (const [channelIndex, channel] of category.channels.entries()) {
+      await client.query(
+        `INSERT INTO channels (id, server_id, category_id, name, type, position)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [crypto.randomUUID(), serverId, categoryId, channel.name, channel.type, (channelIndex + 1) * 10]
+      );
+    }
+  }
   return { id: serverId, name: text(body.name, 40) };
 }
 
@@ -373,6 +408,33 @@ async function handleApi(request, response, helpers) {
     }
 
     const serverRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)$/i);
+    if (method === "PATCH" && serverRoute) {
+      const serverId = serverRoute[1];
+      if (!(await requirePermission(response, sendJson, serverId, user.id, "server.manage"))) return;
+      const body = await readJson(request);
+      const name = body.name === undefined ? null : text(body.name, 40);
+      const iconColor = body.iconColor === undefined ? null : text(body.iconColor, 20);
+      if (body.name !== undefined && name.length < 2) {
+        return sendJson(response, 400, { error: "Sunucu adı en az 2 karakter olmalı" });
+      }
+      if (iconColor !== null && !/^#[0-9a-f]{6}$/i.test(iconColor)) {
+        return sendJson(response, 400, { error: "Geçerli bir simge rengi seçmelisin" });
+      }
+      await query(
+        `UPDATE servers SET
+           name = COALESCE($2, name),
+           description = COALESCE($3, description),
+           icon_color = COALESCE($4, icon_color)
+         WHERE id = $1`,
+        [
+          serverId,
+          name,
+          body.description === undefined ? null : text(body.description, 180),
+          iconColor
+        ]
+      );
+      return sendJson(response, 200, { ok: true });
+    }
     if (method === "DELETE" && serverRoute) {
       const serverId = serverRoute[1];
       const owned = await query("SELECT id FROM servers WHERE id = $1 AND owner_id = $2", [serverId, user.id]);
@@ -380,6 +442,21 @@ async function handleApi(request, response, helpers) {
       await query("DELETE FROM servers WHERE id = $1", [serverId]);
       return sendJson(response, 200, { ok: true });
     }
+
+    const leaveServerRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/members\/me$/i);
+    if (method === "DELETE" && leaveServerRoute) {
+      const serverId = leaveServerRoute[1];
+      const server = await query("SELECT owner_id FROM servers WHERE id = $1", [serverId]);
+      if (!server.rowCount || !(await membership(serverId, user.id))) {
+        return sendJson(response, 404, { error: "Sunucu bulunamadı" });
+      }
+      if (server.rows[0].owner_id === user.id) {
+        return sendJson(response, 403, { error: "Sunucu sahibi sunucudan ayrılamaz; önce sunucuyu silmelisin" });
+      }
+      await query("DELETE FROM memberships WHERE server_id = $1 AND user_id = $2", [serverId, user.id]);
+      return sendJson(response, 200, { ok: true });
+    }
+
     if (method === "GET" && serverRoute) {
       const serverId = serverRoute[1];
       const granted = await permissions(serverId, user.id);
