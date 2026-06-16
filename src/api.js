@@ -503,15 +503,16 @@ async function handleApi(request, response, helpers) {
       }));
       const currentMember = normalizedMembers.find((item) => item.id === user.id);
       const roleIds = new Set((currentMember?.roles || []).map((role) => role.id));
+      const isOwner = server.rows[0]?.owner_id === user.id;
       const visibleChannels = normalizedChannels.filter((channel) =>
-        !channel.is_private || channel.allowed_role_ids.some((roleId) => roleIds.has(roleId))
+        isOwner || !channel.is_private || channel.allowed_role_ids.some((roleId) => roleIds.has(roleId))
       );
       return sendJson(response, 200, {
         server: server.rows[0],
         categories: categories.rows,
         channels: visibleChannels,
         members: granted.has("members.view") ? normalizedMembers : [],
-        roles: granted.has("roles.manage") ? normalizedRoles : [],
+        roles: (granted.has("roles.manage") || granted.has("channels.manage") || granted.has("members.manage")) ? normalizedRoles : [],
         permissions: [...granted]
       });
     }
@@ -648,7 +649,7 @@ async function handleApi(request, response, helpers) {
            position = COALESCE($4, position),
            is_private = COALESCE($5, is_private),
            allowed_role_ids = COALESCE($6::jsonb, allowed_role_ids),
-           category_id = COALESCE($7, category_id)
+           category_id = CASE WHEN $8 THEN $7 ELSE category_id END
          WHERE id = $1 AND server_id = $2`,
         [
           channelId,
@@ -657,7 +658,8 @@ async function handleApi(request, response, helpers) {
           Number.isFinite(Number(body.position)) ? Number(body.position) : null,
           typeof body.isPrivate === "boolean" ? body.isPrivate : null,
           Array.isArray(body.allowedRoleIds) ? JSON.stringify(body.allowedRoleIds) : null,
-          body.categoryId || null
+          body.categoryId || null,
+          Object.hasOwn(body, "categoryId")
         ]
       );
       return sendJson(response, 200, { ok: true });

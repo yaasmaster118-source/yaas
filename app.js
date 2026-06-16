@@ -194,6 +194,9 @@ async function openServer(serverId) {
     $("#channel-category-input").innerHTML = '<option value="">Kategorisiz</option>'
       + (data.categories || []).map((category) =>
         `<option value="${category.id}">${escapeHtml(category.name)}</option>`).join("");
+    $("#channel-settings-category").innerHTML = $("#channel-category-input").innerHTML;
+    roleAccessList($("#channel-create-role-list"), manageableRoles().map((role) => role.id));
+    syncCreateRoleAccessVisibility();
     renderServers();
     renderChannels();
     renderMembers();
@@ -249,8 +252,35 @@ function renderMembers() {
   }));
 }
 
+function manageableRoles() {
+  return (state.activeServer?.roles || []).filter((role) => role.name !== "Owner");
+}
+
+function roleAccessList(container, selectedRoleIds = []) {
+  const selected = new Set(selectedRoleIds || []);
+  const roles = manageableRoles();
+  container.innerHTML = roles.length
+    ? `<strong>Bu kanalı görebilecek roller</strong>${roles.map((role) => `
+      <label class="role-access-row">
+        <input type="checkbox" value="${role.id}" ${selected.has(role.id) ? "checked" : ""}>
+        <span class="role-dot" style="background:${escapeHtml(role.color)}"></span>
+        ${escapeHtml(role.name)}
+      </label>`).join("")}`
+    : '<small class="empty-list">Özel kanal için önce rol oluşturmalısın.</small>';
+}
+
+function selectedRoleAccess(container) {
+  return $$("input:checked", container).map((input) => input.value);
+}
+
+function syncCreateRoleAccessVisibility() {
+  $("#channel-create-role-list").classList.toggle("hidden", !$("#channel-private-input").checked);
+}
+
 function renderSettingsMembers() {
   const members = state.activeServer?.members || [];
+  const canManageMembers = state.activeServer?.permissions?.includes("members.manage");
+  const roles = manageableRoles();
   $("#settings-member-list").innerHTML = members.length
     ? members.map((member) => `
       <article class="settings-member-row">
@@ -260,9 +290,55 @@ function renderSettingsMembers() {
           <small>@${escapeHtml(member.handle)}</small>
         </div>
         <span class="settings-member-roles">${member.roles.map((role) =>
-          `<i style="color:${escapeHtml(role.color)}">${escapeHtml(role.name)}</i>`).join("")}</span>
+          `<i style="color:${escapeHtml(role.color)}">${escapeHtml(role.name)}${canManageMembers && role.name !== "Owner" ? `<button data-remove-role="${role.id}" data-member-id="${member.id}" type="button">×</button>` : ""}</i>`).join("")}</span>
+        ${canManageMembers ? `<div class="member-role-tools">
+          <select data-role-select="${member.id}">
+            <option value="">Rol ver</option>
+            ${roles.filter((role) => !member.roles.some((item) => item.id === role.id)).map((role) =>
+              `<option value="${role.id}">${escapeHtml(role.name)}</option>`).join("")}
+          </select>
+          <button class="secondary assign-role-button" data-member-id="${member.id}" type="button">Ekle</button>
+        </div>` : ""}
       </article>`).join("")
     : '<div class="empty-list">Bu sunucuda henüz üye yok.</div>';
+  $$(".assign-role-button").forEach((button) => button.addEventListener("click", () => {
+    const roleId = $(`[data-role-select="${button.dataset.memberId}"]`).value;
+    if (!roleId) return notify("Önce bir rol seç", true);
+    assignMemberRole(button.dataset.memberId, roleId);
+  }));
+  $$("[data-remove-role]").forEach((button) => button.addEventListener("click", () => {
+    removeMemberRole(button.dataset.memberId, button.dataset.removeRole);
+  }));
+}
+
+async function assignMemberRole(memberId, roleId) {
+  try {
+    await api(`/api/servers/${state.activeServer.server.id}/members/${memberId}/roles/${roleId}`, {
+      method: "PUT",
+      body: "{}"
+    });
+    await openServer(state.activeServer.server.id);
+    openModal("manage-server-modal");
+    switchSettingsTab("members");
+    notify("Rol verildi");
+  } catch (error) {
+    notify(error.message, true);
+  }
+}
+
+async function removeMemberRole(memberId, roleId) {
+  try {
+    await api(`/api/servers/${state.activeServer.server.id}/members/${memberId}/roles/${roleId}`, {
+      method: "DELETE",
+      body: "{}"
+    });
+    await openServer(state.activeServer.server.id);
+    openModal("manage-server-modal");
+    switchSettingsTab("members");
+    notify("Rol kaldırıldı");
+  } catch (error) {
+    notify(error.message, true);
+  }
 }
 
 function friendRow(person, actions = "") {
@@ -363,6 +439,7 @@ async function openChannel(channel) {
   $("#active-channel-name").textContent = channel.name;
   $("#channel-symbol").textContent = channel.type === "voice" ? "◖" : "#";
   $("#channel-kind").textContent = channel.type === "voice" ? "Ses kanalı" : "Yazı kanalı";
+  $("#channel-settings-button").classList.toggle("hidden", !state.activeServer.permissions.includes("channels.manage"));
   $("#empty-channel").classList.add("hidden");
   $("#message-view").classList.toggle("hidden", channel.type !== "text");
   $("#voice-channel-view").classList.toggle("hidden", channel.type !== "voice");
@@ -372,6 +449,18 @@ async function openChannel(channel) {
     return;
   }
   await loadMessages();
+}
+
+function openChannelSettings() {
+  const channel = state.activeChannel;
+  if (!channel) return;
+  $("#channel-settings-id").value = channel.id;
+  $("#channel-settings-name").value = channel.name;
+  $("#channel-settings-category").value = channel.category_id || "";
+  $("#channel-settings-private").checked = Boolean(channel.is_private);
+  roleAccessList($("#channel-settings-role-list"), channel.allowed_role_ids || []);
+  $("#channel-settings-voice-note").classList.toggle("hidden", channel.type !== "voice");
+  openModal("channel-settings-modal");
 }
 
 async function loadMessages() {
@@ -777,6 +866,8 @@ $("#builder-open-join").addEventListener("click", () => {
   closeModal($("#builder-open-join"));
   openModal("join-server-modal");
 });
+$("#channel-settings-button").addEventListener("click", openChannelSettings);
+$("#channel-private-input").addEventListener("change", syncCreateRoleAccessVisibility);
 $$(".modal-close").forEach((button) => button.addEventListener("click", () => closeModal(button)));
 $$(".modal-layer").forEach((layer) => layer.addEventListener("click", (event) => {
   if (event.target === layer) layer.hidden = true;
@@ -928,7 +1019,8 @@ $("#channel-form").addEventListener("submit", async (event) => {
         name: $("#channel-name-input").value,
         type: $("#channel-type-input").value,
         categoryId: $("#channel-category-input").value || null,
-        isPrivate: $("#channel-private-input").checked
+        isPrivate: $("#channel-private-input").checked,
+        allowedRoleIds: $("#channel-private-input").checked ? selectedRoleAccess($("#channel-create-role-list")) : []
       })
     });
     form.reset();
@@ -948,6 +1040,50 @@ $("#message-form").addEventListener("submit", async (event) => {
     await api(`/api/channels/${state.activeChannel.id}/messages`, { method: "POST", body: JSON.stringify({ content }) });
     $("#message-input").value = "";
     await loadMessages();
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+
+$("#channel-settings-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const formError = $(".form-error", form);
+  formError.textContent = "";
+  const channelId = $("#channel-settings-id").value;
+  const serverId = state.activeServer.server.id;
+  const isPrivate = $("#channel-settings-private").checked;
+  try {
+    await api(`/api/servers/${serverId}/channels/${channelId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: $("#channel-settings-name").value,
+        categoryId: $("#channel-settings-category").value || null,
+        isPrivate,
+        allowedRoleIds: isPrivate ? selectedRoleAccess($("#channel-settings-role-list")) : []
+      })
+    });
+    closeModal(form);
+    await openServer(serverId);
+    const updated = state.activeServer.channels.find((channel) => channel.id === channelId);
+    if (updated) await openChannel(updated);
+    notify("Kanal ayarları kaydedildi");
+  } catch (error) {
+    formError.textContent = error.message;
+  }
+});
+
+$("#delete-channel-button").addEventListener("click", async () => {
+  const channelId = $("#channel-settings-id").value;
+  const channelName = $("#channel-settings-name").value;
+  const serverId = state.activeServer.server.id;
+  if (!confirm(`"${channelName}" kanalını silmek istediğine emin misin?`)) return;
+  try {
+    await api(`/api/servers/${serverId}/channels/${channelId}`, { method: "DELETE", body: "{}" });
+    closeModal($("#delete-channel-button"));
+    state.activeChannel = null;
+    await openServer(serverId);
+    notify("Kanal silindi");
   } catch (error) {
     notify(error.message, true);
   }

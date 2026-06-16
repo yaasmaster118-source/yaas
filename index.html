@@ -119,7 +119,10 @@
           <section class="content-panel">
             <header>
               <div><span id="channel-symbol">#</span><div><strong id="active-channel-name">kanal</strong><small id="channel-kind">Yazı kanalı</small></div></div>
-              <button class="secondary invite-button hidden" id="invite-button" type="button">Davet oluştur</button>
+              <div class="content-actions">
+                <button class="secondary hidden" id="channel-settings-button" type="button">Kanal ayarları</button>
+                <button class="secondary invite-button hidden" id="invite-button" type="button">Davet oluştur</button>
+              </div>
             </header>
             <div class="empty-channel" id="empty-channel">
               <span>#</span><strong>Bir kanal seç</strong><p>Sunucundaki konuşmalar burada başlayacak.</p>
@@ -213,8 +216,29 @@
         <label>Tür<select id="channel-type-input"><option value="text">Yazı kanalı</option><option value="voice">Ses kanalı</option></select></label>
         <label>Kategori<select id="channel-category-input"><option value="">Kategorisiz</option></select></label>
         <label class="check-row"><input id="channel-private-input" type="checkbox"> Özel kanal</label>
+        <div class="role-access-list hidden" id="channel-create-role-list"></div>
         <p class="form-error"></p>
         <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Kanalı oluştur</button></footer>
+      </form>
+    </div>
+
+    <div class="modal-layer" id="channel-settings-modal" hidden>
+      <form class="modal" id="channel-settings-form">
+        <header><div><strong>Kanal ayarları</strong><small>Metin, ses ve rol bazlı görünürlük ayarları.</small></div><button class="icon-button modal-close" type="button">×</button></header>
+        <input id="channel-settings-id" type="hidden">
+        <label>Kanal adı<input id="channel-settings-name" maxlength="40" required></label>
+        <label>Kategori<select id="channel-settings-category"><option value="">Kategorisiz</option></select></label>
+        <label class="check-row"><input id="channel-settings-private" type="checkbox"> Özel kanal yap</label>
+        <div class="role-access-list" id="channel-settings-role-list"></div>
+        <div class="voice-settings-note hidden" id="channel-settings-voice-note">
+          Ses kanalı: üyeler yalnızca izinli rolleri varsa katılabilir. Kamera ve ekran paylaşma 1.1 akışında kanala bağlı çalışır.
+        </div>
+        <p class="form-error"></p>
+        <footer>
+          <button class="danger-button" id="delete-channel-button" type="button">Kanalı sil</button>
+          <button class="secondary modal-close" type="button">Vazgeç</button>
+          <button class="primary" type="submit">Kaydet</button>
+        </footer>
       </form>
     </div>
 
