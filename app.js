@@ -220,7 +220,7 @@ function renderChannels() {
   const channelButtons = (channels) => channels.map((channel) => `
       <button class="channel-item" data-channel-id="${channel.id}" type="button">
         <span>${channel.type === "voice" ? "◖" : "#"}</span>${escapeHtml(channel.name)}
-        ${channel.is_private ? "<small>⌁</small>" : ""}
+        ${channel.is_private ? '<small class="private-channel-lock" title="Özel kanal">🔒</small>' : ""}
       </button>`).join("");
   $("#channel-list").innerHTML = grouped.map((category) => `
     <section class="channel-category">
