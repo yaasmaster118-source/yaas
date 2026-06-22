@@ -17,6 +17,15 @@ function text(value, max) {
   return String(value || "").trim().slice(0, max);
 }
 
+function boundedNumber(value, fallback, minimum, maximum) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, Math.round(number))) : fallback;
+}
+
+function qualityMode(value) {
+  return ["auto", "data", "high"].includes(value) ? value : "auto";
+}
+
 function jsonArray(value) {
   if (Array.isArray(value)) return value;
   if (typeof value !== "string") return [];
@@ -464,7 +473,7 @@ async function handleApi(request, response, helpers) {
       const [server, categories, channels, members, memberRoles, roles] = await Promise.all([
         query("SELECT id, name, description, icon_color, owner_id, created_at FROM servers WHERE id = $1", [serverId]),
         query("SELECT id, name, position FROM channel_categories WHERE server_id = $1 ORDER BY position", [serverId]),
-        query("SELECT id, category_id, name, type, position, is_private, allowed_role_ids FROM channels WHERE server_id = $1 ORDER BY position", [serverId]),
+        query("SELECT id, category_id, name, type, position, is_private, allowed_role_ids, user_limit, audio_bitrate, quality_mode FROM channels WHERE server_id = $1 ORDER BY position", [serverId]),
         query(
           `SELECT u.id, u.display_name, u.handle, u.is_site_owner, m.nickname, m.joined_at
              FROM memberships m JOIN users u ON u.id = m.user_id
@@ -627,9 +636,22 @@ async function handleApi(request, response, helpers) {
         if (!category.rowCount) return sendJson(response, 400, { error: "Kategori bulunamadı" });
       }
       await query(
-        `INSERT INTO channels (id, server_id, category_id, name, type, position, is_private, allowed_role_ids)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
-        [channel.id, serverId, categoryId, channel.name, channel.type, Number(body.position) || 100, Boolean(body.isPrivate), JSON.stringify(body.allowedRoleIds || [])]
+        `INSERT INTO channels
+           (id, server_id, category_id, name, type, position, is_private, allowed_role_ids, user_limit, audio_bitrate, quality_mode)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)`,
+        [
+          channel.id,
+          serverId,
+          categoryId,
+          channel.name,
+          channel.type,
+          Number(body.position) || 100,
+          Boolean(body.isPrivate),
+          JSON.stringify(body.allowedRoleIds || []),
+          channel.type === "voice" ? boundedNumber(body.userLimit, 12, 0, 25) : 0,
+          channel.type === "voice" ? boundedNumber(body.audioBitrate, 64, 32, 128) : 64,
+          channel.type === "voice" ? qualityMode(body.qualityMode) : "auto"
+        ]
       );
       return sendJson(response, 201, { channel });
     }
@@ -649,7 +671,10 @@ async function handleApi(request, response, helpers) {
            position = COALESCE($4, position),
            is_private = COALESCE($5, is_private),
            allowed_role_ids = COALESCE($6::jsonb, allowed_role_ids),
-           category_id = CASE WHEN $8 THEN $7 ELSE category_id END
+           category_id = CASE WHEN $8 THEN $7 ELSE category_id END,
+           user_limit = COALESCE($9, user_limit),
+           audio_bitrate = COALESCE($10, audio_bitrate),
+           quality_mode = COALESCE($11, quality_mode)
          WHERE id = $1 AND server_id = $2`,
         [
           channelId,
@@ -659,7 +684,10 @@ async function handleApi(request, response, helpers) {
           typeof body.isPrivate === "boolean" ? body.isPrivate : null,
           Array.isArray(body.allowedRoleIds) ? JSON.stringify(body.allowedRoleIds) : null,
           body.categoryId || null,
-          Object.hasOwn(body, "categoryId")
+          Object.hasOwn(body, "categoryId"),
+          body.userLimit === undefined ? null : boundedNumber(body.userLimit, 12, 0, 25),
+          body.audioBitrate === undefined ? null : boundedNumber(body.audioBitrate, 64, 32, 128),
+          body.qualityMode === undefined ? null : qualityMode(body.qualityMode)
         ]
       );
       return sendJson(response, 200, { ok: true });

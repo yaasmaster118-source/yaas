@@ -12,8 +12,8 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.3">
-    <script src="app.js?v=1.1.3" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.4">
+    <script src="app.js?v=1.1.4" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -153,6 +153,13 @@
                 <button class="secondary hidden" id="screen-voice-button" type="button">Ekranı paylaş</button>
                 <button class="danger-button hidden" id="leave-voice-button" type="button">Ayrıl</button>
               </div>
+              <div class="voice-personal-settings">
+                <label>Giriş modu<select id="voice-input-mode">
+                  <option value="activity">Ses algılama</option>
+                  <option value="ptt">Bas-konuş (Boşluk)</option>
+                </select></label>
+                <label>Çıkış sesi<input id="voice-output-volume" type="range" min="0" max="100" value="100"></label>
+              </div>
               <small class="voice-status" id="voice-status">Bağlı değil</small>
               <div id="remote-audio-container" hidden></div>
             </div>
@@ -216,6 +223,19 @@
         <label>Tür<select id="channel-type-input"><option value="text">Yazı kanalı</option><option value="voice">Ses kanalı</option></select></label>
         <label>Kategori<select id="channel-category-input"><option value="">Kategorisiz</option></select></label>
         <label class="check-row"><input id="channel-private-input" type="checkbox"> Özel kanal</label>
+        <div class="voice-channel-settings hidden" id="channel-create-voice-settings">
+          <label>Kullanıcı limiti<select id="channel-user-limit-input">
+            <option value="0">Limitsiz</option><option value="4">4 kişi</option><option value="8">8 kişi</option>
+            <option value="12" selected>12 kişi</option><option value="16">16 kişi</option><option value="25">25 kişi</option>
+          </select></label>
+          <label>Ses kalitesi<select id="channel-audio-bitrate-input">
+            <option value="32">32 kbps - Veri tasarrufu</option><option value="64" selected>64 kbps - Dengeli</option>
+            <option value="96">96 kbps - Net</option><option value="128">128 kbps - En yüksek</option>
+          </select></label>
+          <label>Performans modu<select id="channel-quality-mode-input">
+            <option value="auto" selected>Otomatik</option><option value="data">Veri tasarrufu</option><option value="high">Yüksek kalite</option>
+          </select></label>
+        </div>
         <div class="role-access-list hidden" id="channel-create-role-list"></div>
         <p class="form-error"></p>
         <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Kanalı oluştur</button></footer>
@@ -230,8 +250,18 @@
         <label>Kategori<select id="channel-settings-category"><option value="">Kategorisiz</option></select></label>
         <label class="check-row"><input id="channel-settings-private" type="checkbox"> Özel kanal yap</label>
         <div class="role-access-list" id="channel-settings-role-list"></div>
-        <div class="voice-settings-note hidden" id="channel-settings-voice-note">
-          Ses kanalı: üyeler yalnızca izinli rolleri varsa katılabilir. Kamera ve ekran paylaşma 1.1 akışında kanala bağlı çalışır.
+        <div class="voice-channel-settings hidden" id="channel-settings-voice-note">
+          <label>Kullanıcı limiti<select id="channel-settings-user-limit">
+            <option value="0">Limitsiz</option><option value="4">4 kişi</option><option value="8">8 kişi</option>
+            <option value="12">12 kişi</option><option value="16">16 kişi</option><option value="25">25 kişi</option>
+          </select></label>
+          <label>Ses kalitesi<select id="channel-settings-audio-bitrate">
+            <option value="32">32 kbps - Veri tasarrufu</option><option value="64">64 kbps - Dengeli</option>
+            <option value="96">96 kbps - Net</option><option value="128">128 kbps - En yüksek</option>
+          </select></label>
+          <label>Performans modu<select id="channel-settings-quality-mode">
+            <option value="auto">Otomatik</option><option value="data">Veri tasarrufu</option><option value="high">Yüksek kalite</option>
+          </select></label>
         </div>
         <p class="form-error"></p>
         <footer>

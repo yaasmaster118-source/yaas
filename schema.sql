@@ -73,11 +73,17 @@ CREATE TABLE IF NOT EXISTS channels (
   position INTEGER NOT NULL DEFAULT 0,
   is_private BOOLEAN NOT NULL DEFAULT FALSE,
   allowed_role_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  user_limit INTEGER NOT NULL DEFAULT 12 CHECK(user_limit BETWEEN 0 AND 25),
+  audio_bitrate INTEGER NOT NULL DEFAULT 64 CHECK(audio_bitrate BETWEEN 32 AND 128),
+  quality_mode TEXT NOT NULL DEFAULT 'auto' CHECK(quality_mode IN ('auto', 'data', 'high')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(server_id, name, type)
 );
 
 ALTER TABLE channels ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES channel_categories(id) ON DELETE SET NULL;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS user_limit INTEGER NOT NULL DEFAULT 12;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS audio_bitrate INTEGER NOT NULL DEFAULT 64;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS quality_mode TEXT NOT NULL DEFAULT 'auto';
 
 CREATE TABLE IF NOT EXISTS messages (
   id UUID PRIMARY KEY,

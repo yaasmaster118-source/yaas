@@ -183,7 +183,8 @@ function arrayValue(value) {
 
 async function voiceAccess(channelId, userId) {
   const channelResult = await query(
-    `SELECT c.id, c.server_id, c.type, c.is_private, c.allowed_role_ids, s.owner_id
+    `SELECT c.id, c.server_id, c.type, c.is_private, c.allowed_role_ids,
+            c.user_limit, c.audio_bitrate, c.quality_mode, s.owner_id
        FROM channels c JOIN servers s ON s.id = c.server_id
        JOIN memberships m ON m.server_id = c.server_id
       WHERE c.id = $1 AND c.type = 'voice' AND m.user_id = $2`,
@@ -191,7 +192,16 @@ async function voiceAccess(channelId, userId) {
   );
   const channel = channelResult.rows[0];
   if (!channel) return null;
-  if (channel.owner_id === userId) return { join: true, speak: true };
+  if (channel.owner_id === userId) {
+    return {
+      join: true,
+      speak: true,
+      moderate: true,
+      userLimit: Number(channel.user_limit) || 0,
+      audioBitrate: Number(channel.audio_bitrate) || 64,
+      qualityMode: channel.quality_mode || "auto"
+    };
+  }
   const roles = await query(
     `SELECT r.id, r.permissions FROM member_roles mr
       JOIN roles r ON r.id = mr.role_id
@@ -203,7 +213,30 @@ async function voiceAccess(channelId, userId) {
     return null;
   }
   const permissions = new Set(roles.rows.flatMap((role) => arrayValue(role.permissions)));
-  return { join: permissions.has("voice.join"), speak: permissions.has("voice.speak") };
+  return {
+    join: permissions.has("voice.join"),
+    speak: permissions.has("voice.speak"),
+    moderate: permissions.has("voice.mute_members"),
+    userLimit: Number(channel.user_limit) || 0,
+    audioBitrate: Number(channel.audio_bitrate) || 64,
+    qualityMode: channel.quality_mode || "auto"
+  };
+}
+
+async function canModerateVoiceTarget(serverId, actorUserId, targetUserId) {
+  const server = await query("SELECT owner_id FROM servers WHERE id = $1", [serverId]);
+  const ownerId = server.rows[0]?.owner_id;
+  if (!ownerId || targetUserId === ownerId) return false;
+  if (actorUserId === ownerId) return true;
+  const positions = await query(
+    `SELECT mr.user_id, MAX(r.position) AS position
+       FROM member_roles mr JOIN roles r ON r.id = mr.role_id
+      WHERE mr.server_id = $1 AND mr.user_id IN ($2, $3)
+      GROUP BY mr.user_id`,
+    [serverId, actorUserId, targetUserId]
+  );
+  const byUser = new Map(positions.rows.map((row) => [row.user_id, Number(row.position) || 0]));
+  return (byUser.get(actorUserId) || 0) > (byUser.get(targetUserId) || 0);
 }
 
 async function handleVoiceApi(request, response) {
@@ -234,20 +267,42 @@ async function handleVoiceApi(request, response) {
       if (!access?.join) return sendJson(response, 403, { error: "Bu ses kanalına erişimin yok" });
       if (!voiceRooms.has(roomId)) voiceRooms.set(roomId, new Map());
       const room = voiceRooms.get(roomId);
-      const peers = [...room.values()].map(({ id, name: peerName }) => ({ id, name: peerName }));
+      for (const [existingClientId, existingClient] of room) {
+        if (existingClient.userId === user.id) room.delete(existingClientId);
+      }
+      if (access.userLimit > 0 && room.size >= access.userLimit) {
+        return sendJson(response, 409, { error: "Bu ses kanalı dolu" });
+      }
+      const peers = [...room.values()].map(({ id, name: peerName, selfMuted, serverMuted }) => ({
+        id,
+        name: peerName,
+        muted: selfMuted || serverMuted,
+        serverMuted
+      }));
       room.set(clientId, {
         id: clientId,
         userId: user.id,
         name: String(name || user.display_name || "YAAS üyesi").slice(0, 40),
+        selfMuted: !access.speak,
+        serverMuted: false,
         lastSeen: Date.now(),
         queue: []
       });
-      return sendJson(response, 200, { peers, canSpeak: access.speak });
+      return sendJson(response, 200, {
+        peers,
+        canSpeak: access.speak,
+        canModerate: access.moderate,
+        userLimit: access.userLimit,
+        audioBitrate: access.audioBitrate,
+        qualityMode: access.qualityMode
+      });
     }
 
     if (request.method === "POST" && url.pathname === "/api/voice/signal") {
       const { roomId, from, to, signal } = await readJson(request);
-      if (!voiceRooms.get(roomId)?.has(from)) {
+      const user = await getAuthenticatedUser(request);
+      const sender = voiceRooms.get(roomId)?.get(from);
+      if (!user || !sender || sender.userId !== user.id) {
         return sendJson(response, 403, { error: "Ses odasına bağlı değilsin" });
       }
       const target = voiceRooms.get(roomId)?.get(to);
@@ -257,18 +312,77 @@ async function handleVoiceApi(request, response) {
 
     if (request.method === "POST" && url.pathname === "/api/voice/leave") {
       const { roomId, clientId } = await readJson(request);
-      voiceRooms.get(roomId)?.delete(clientId);
+      const user = await getAuthenticatedUser(request);
+      const client = voiceRooms.get(roomId)?.get(clientId);
+      if (user && client?.userId === user.id) voiceRooms.get(roomId)?.delete(clientId);
+      return sendJson(response, 200, { ok: true });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/voice/state") {
+      const { roomId, clientId, muted } = await readJson(request);
+      const user = await getAuthenticatedUser(request);
+      const client = voiceRooms.get(roomId)?.get(clientId);
+      if (!user || !client || client.userId !== user.id) {
+        return sendJson(response, 403, { error: "Ses odasına bağlı değilsin" });
+      }
+      client.selfMuted = Boolean(muted);
+      client.lastSeen = Date.now();
+      return sendJson(response, 200, {
+        ok: true,
+        muted: client.selfMuted || client.serverMuted,
+        serverMuted: client.serverMuted
+      });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/voice/moderate") {
+      const { roomId, clientId, targetId, action } = await readJson(request);
+      const user = await getAuthenticatedUser(request);
+      const actor = voiceRooms.get(roomId)?.get(clientId);
+      const target = voiceRooms.get(roomId)?.get(targetId);
+      if (!user || !actor || actor.userId !== user.id || !target || actor.id === target.id) {
+        return sendJson(response, 403, { error: "Bu ses moderasyonu yapılamadı" });
+      }
+      const access = await voiceAccess(roomId, user.id);
+      if (!access?.moderate) return sendJson(response, 403, { error: "Üyeleri yönetme iznin yok" });
+      const channel = await query("SELECT server_id FROM channels WHERE id = $1", [roomId]);
+      if (!channel.rowCount || !(await canModerateVoiceTarget(channel.rows[0].server_id, user.id, target.userId))) {
+        return sendJson(response, 403, { error: "Bu üyeyi rol hiyerarşisi nedeniyle yönetemezsin" });
+      }
+      if (action === "disconnect") {
+        target.queue.push({ from: "system", signal: { type: "moderator-disconnect" } });
+        target.kickedAt = Date.now();
+      } else if (action === "mute" || action === "unmute") {
+        target.serverMuted = action === "mute";
+        target.queue.push({ from: "system", signal: { type: "moderator-mute", muted: target.serverMuted } });
+      } else {
+        return sendJson(response, 400, { error: "Geçersiz moderasyon işlemi" });
+      }
       return sendJson(response, 200, { ok: true });
     }
 
     if (request.method === "GET" && url.pathname === "/api/voice/poll") {
       const room = voiceRooms.get(url.searchParams.get("roomId"));
       const client = room?.get(url.searchParams.get("clientId"));
-      if (!client) return sendJson(response, 404, { error: "Oda bağlantısı bulunamadı" });
+      const user = await getAuthenticatedUser(request);
+      if (!client || !user || client.userId !== user.id) {
+        return sendJson(response, 404, { error: "Oda bağlantısı bulunamadı" });
+      }
       client.lastSeen = Date.now();
       const signals = client.queue.splice(0);
-      const participants = [...room.values()].map(({ id, name }) => ({ id, name }));
-      return sendJson(response, 200, { signals, participants });
+      const participants = [...room.values()].map(({ id, name, selfMuted, serverMuted }) => ({
+        id,
+        name,
+        muted: selfMuted || serverMuted,
+        serverMuted
+      }));
+      const shouldDisconnect = Boolean(client.kickedAt);
+      if (shouldDisconnect) room.delete(client.id);
+      return sendJson(response, 200, {
+        signals,
+        participants,
+        serverMuted: client.serverMuted,
+        shouldDisconnect
+      });
     }
 
     sendJson(response, 404, { error: "Bulunamadı" });

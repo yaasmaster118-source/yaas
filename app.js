@@ -41,7 +41,16 @@ const state = {
     pollTimer: null,
     pollFailures: 0,
     muted: false,
-    deafened: false
+    deafened: false,
+    serverMuted: false,
+    canSpeak: false,
+    canModerate: false,
+    audioBitrate: 64,
+    qualityMode: "auto",
+    userLimit: 12,
+    inputMode: "activity",
+    pttActive: false,
+    outputVolume: 1
   }
 };
 
@@ -197,6 +206,7 @@ async function openServer(serverId) {
     $("#channel-settings-category").innerHTML = $("#channel-category-input").innerHTML;
     roleAccessList($("#channel-create-role-list"), manageableRoles().map((role) => role.id));
     syncCreateRoleAccessVisibility();
+    syncCreateVoiceSettings();
     renderServers();
     renderChannels();
     renderMembers();
@@ -275,6 +285,10 @@ function selectedRoleAccess(container) {
 
 function syncCreateRoleAccessVisibility() {
   $("#channel-create-role-list").classList.toggle("hidden", !$("#channel-private-input").checked);
+}
+
+function syncCreateVoiceSettings() {
+  $("#channel-create-voice-settings").classList.toggle("hidden", $("#channel-type-input").value !== "voice");
 }
 
 function renderSettingsMembers() {
@@ -438,7 +452,9 @@ async function openChannel(channel) {
   $$(".channel-item").forEach((button) => button.classList.toggle("active", button.dataset.channelId === channel.id));
   $("#active-channel-name").textContent = channel.name;
   $("#channel-symbol").textContent = channel.type === "voice" ? "◖" : "#";
-  $("#channel-kind").textContent = channel.type === "voice" ? "Ses kanalı" : "Yazı kanalı";
+  $("#channel-kind").textContent = channel.type === "voice"
+    ? `Ses kanalı · ${channel.user_limit ? `${channel.user_limit} kişi` : "limitsiz"} · ${channel.audio_bitrate || 64} kbps`
+    : "Yazı kanalı";
   $("#channel-settings-button").classList.toggle("hidden", !state.activeServer.permissions.includes("channels.manage"));
   $("#empty-channel").classList.add("hidden");
   $("#message-view").classList.toggle("hidden", channel.type !== "text");
@@ -446,6 +462,11 @@ async function openChannel(channel) {
   $("#server-view").classList.remove("channels-open");
   if (channel.type === "voice") {
     $("#voice-channel-name").textContent = channel.name;
+    $(".voice-channel-view>p").textContent = channel.quality_mode === "data"
+      ? "Veri tasarruflu, kararlı ses ve görüntü modu."
+      : channel.quality_mode === "high"
+        ? "Yüksek kaliteli ses, kamera ve ekran paylaşımı."
+        : "Bağlantına göre otomatik ayarlanan ses ve görüntü.";
     return;
   }
   await loadMessages();
@@ -460,6 +481,9 @@ function openChannelSettings() {
   $("#channel-settings-private").checked = Boolean(channel.is_private);
   roleAccessList($("#channel-settings-role-list"), channel.allowed_role_ids || []);
   $("#channel-settings-voice-note").classList.toggle("hidden", channel.type !== "voice");
+  $("#channel-settings-user-limit").value = String(channel.user_limit ?? 12);
+  $("#channel-settings-audio-bitrate").value = String(channel.audio_bitrate ?? 64);
+  $("#channel-settings-quality-mode").value = channel.quality_mode || "auto";
   openModal("channel-settings-modal");
 }
 
@@ -481,10 +505,43 @@ async function voiceApi(path, options = {}) {
 
 function renderVoiceParticipants(participants = []) {
   const list = $("#voice-participants");
-  list.innerHTML = participants.map((participant) =>
-    `<span class="voice-person">${escapeHtml(participant.name)}${participant.id === state.voice.clientId ? " (sen)" : ""}</span>`
-  ).join("");
+  list.innerHTML = participants.map((participant) => {
+    const isSelf = participant.id === state.voice.clientId;
+    const status = participant.serverMuted ? "Sunucu susturdu" : participant.muted ? "Mikrofon kapalı" : "Konuşuyor";
+    const controls = state.voice.canModerate && !isSelf ? `
+      <span class="voice-moderation">
+        <button data-voice-action="${participant.serverMuted ? "unmute" : "mute"}" data-client-id="${participant.id}" type="button">
+          ${participant.serverMuted ? "Susturmayı kaldır" : "Sustur"}
+        </button>
+        <button class="danger" data-voice-action="disconnect" data-client-id="${participant.id}" type="button">Çıkar</button>
+      </span>` : "";
+    return `<span class="voice-person ${participant.muted ? "muted" : ""}">
+      <span class="voice-person-state">${participant.muted ? "◌" : "●"}</span>
+      <span><strong>${escapeHtml(participant.name)}${isSelf ? " (sen)" : ""}</strong><small>${status}</small></span>
+      ${controls}
+    </span>`;
+  }).join("");
   list.classList.toggle("hidden", participants.length === 0);
+  $$("[data-voice-action]", list).forEach((button) => button.addEventListener("click", () => {
+    moderateVoiceParticipant(button.dataset.clientId, button.dataset.voiceAction);
+  }));
+}
+
+async function moderateVoiceParticipant(targetId, action) {
+  try {
+    await voiceApi("moderate", {
+      method: "POST",
+      body: JSON.stringify({
+        roomId: state.voice.roomId,
+        clientId: state.voice.clientId,
+        targetId,
+        action
+      })
+    });
+    notify(action === "disconnect" ? "Üye ses kanalından çıkarıldı" : "Ses moderasyonu uygulandı");
+  } catch (error) {
+    notify(error.message, true);
+  }
 }
 
 async function sendVoiceSignal(to, signal) {
@@ -505,6 +562,29 @@ function attachRemoteAudio(peerId, stream) {
   }
   audio.srcObject = stream;
   audio.muted = state.voice.deafened;
+  audio.volume = state.voice.outputVolume;
+}
+
+function updateLocalAudioEnabled() {
+  const pushToTalkOpen = state.voice.inputMode !== "ptt" || state.voice.pttActive;
+  const enabled = state.voice.canSpeak
+    && !state.voice.muted
+    && !state.voice.serverMuted
+    && pushToTalkOpen;
+  state.voice.stream?.getAudioTracks().forEach((track) => { track.enabled = enabled; });
+}
+
+function reportVoiceState() {
+  if (!state.voice.roomId || !state.voice.clientId) return;
+  const pttClosed = state.voice.inputMode === "ptt" && !state.voice.pttActive;
+  voiceApi("state", {
+    method: "POST",
+    body: JSON.stringify({
+      roomId: state.voice.roomId,
+      clientId: state.voice.clientId,
+      muted: state.voice.muted || pttClosed
+    })
+  }).catch(() => {});
 }
 
 function attachRemoteVideo(peerId, track) {
@@ -554,6 +634,29 @@ function videoSender(connection) {
     .find((item) => item.receiver.track?.kind === "video")?.sender || null;
 }
 
+function effectiveVoiceQuality() {
+  if (state.voice.qualityMode !== "auto") return state.voice.qualityMode;
+  return state.voice.peers.size >= 4 ? "data" : "auto";
+}
+
+async function applySenderLimits(connection) {
+  const quality = effectiveVoiceQuality();
+  for (const sender of connection.getSenders()) {
+    if (!sender.track) continue;
+    const parameters = sender.getParameters();
+    if (!parameters.encodings?.length) parameters.encodings = [{}];
+    if (sender.track.kind === "audio") {
+      parameters.encodings[0].maxBitrate = state.voice.audioBitrate * 1000;
+    } else {
+      parameters.encodings[0].maxBitrate = quality === "data"
+        ? 450_000
+        : quality === "high" ? 2_500_000 : 1_200_000;
+      parameters.degradationPreference = "maintain-framerate";
+    }
+    await sender.setParameters(parameters).catch(() => {});
+  }
+}
+
 function removeVoicePeer(peerId) {
   const connection = state.voice.peers.get(peerId);
   state.voice.peers.delete(peerId);
@@ -569,6 +672,7 @@ function createVoicePeer(peerId, initiator) {
   const connection = new RTCPeerConnection(RTC_CONFIGURATION);
   state.voice.stream.getAudioTracks().forEach((track) => connection.addTrack(track, state.voice.stream));
   connection.addTransceiver("video", { direction: "sendrecv" });
+  applySenderLimits(connection);
   connection.onicecandidate = ({ candidate }) => {
     if (candidate) sendVoiceSignal(peerId, { type: "ice", candidate }).catch(() => {});
   };
@@ -593,6 +697,19 @@ function createVoicePeer(peerId, initiator) {
 }
 
 async function handleVoiceSignal(from, signal) {
+  if (signal.type === "moderator-disconnect") {
+    notify("Bir moderatör seni ses kanalından çıkardı", true);
+    await leaveVoice(false);
+    return;
+  }
+  if (signal.type === "moderator-mute") {
+    state.voice.serverMuted = Boolean(signal.muted);
+    updateLocalAudioEnabled();
+    $("#mute-voice-button").disabled = state.voice.serverMuted;
+    $("#voice-status").textContent = state.voice.serverMuted ? "Moderatör tarafından susturuldun" : "Bağlandı";
+    notify(state.voice.serverMuted ? "Moderatör mikrofonunu susturdu" : "Sunucu susturması kaldırıldı");
+    return;
+  }
   if (signal.type === "video-stop") {
     document.getElementById(`voice-video-tile-${from}`)?.classList.add("hidden");
     updateVideoGridVisibility();
@@ -623,8 +740,20 @@ async function pollVoice() {
       `poll?roomId=${encodeURIComponent(state.voice.roomId)}&clientId=${encodeURIComponent(state.voice.clientId)}`
     );
     renderVoiceParticipants(data.participants || []);
+    if (data.shouldDisconnect) {
+      notify("Ses kanalından çıkarıldın", true);
+      await leaveVoice(false);
+      return;
+    }
+    if (Boolean(data.serverMuted) !== state.voice.serverMuted) {
+      state.voice.serverMuted = Boolean(data.serverMuted);
+      updateLocalAudioEnabled();
+      $("#mute-voice-button").disabled = state.voice.serverMuted;
+    }
     state.voice.pollFailures = 0;
-    $("#voice-status").textContent = state.voice.muted ? "Mikrofon kapalı" : "Bağlandı";
+    $("#voice-status").textContent = state.voice.serverMuted
+      ? "Moderatör tarafından susturuldun"
+      : state.voice.muted ? "Mikrofon kapalı" : "Bağlandı";
     for (const item of data.signals || []) {
       await handleVoiceSignal(item.from, item.signal).catch(() => {});
     }
@@ -648,7 +777,13 @@ async function joinVoice() {
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+        sampleRate: 48000
+      },
       video: false
     });
     state.voice.roomId = state.activeChannel.id;
@@ -667,6 +802,16 @@ async function joinVoice() {
       stream.getAudioTracks().forEach((track) => { track.enabled = false; });
       state.voice.muted = true;
     }
+    Object.assign(state.voice, {
+      canSpeak: Boolean(data.canSpeak),
+      canModerate: Boolean(data.canModerate),
+      audioBitrate: Number(data.audioBitrate) || 64,
+      qualityMode: data.qualityMode || "auto",
+      userLimit: Number(data.userLimit) || 0,
+      serverMuted: false
+    });
+    updateLocalAudioEnabled();
+    reportVoiceState();
     $("#join-voice-button").classList.add("hidden");
     $("#mute-voice-button").classList.toggle("hidden", !data.canSpeak);
     $("#deafen-voice-button").classList.remove("hidden");
@@ -674,7 +819,12 @@ async function joinVoice() {
     $("#screen-voice-button").classList.remove("hidden");
     $("#leave-voice-button").classList.remove("hidden");
     $("#voice-status").textContent = data.canSpeak ? "Bağlandı" : "Dinleyici olarak bağlandı";
-    renderVoiceParticipants([{ id: state.voice.clientId, name: state.user.display_name || state.user.displayName }]);
+    renderVoiceParticipants([{
+      id: state.voice.clientId,
+      name: state.user.display_name || state.user.displayName,
+      muted: !data.canSpeak,
+      serverMuted: false
+    }]);
     for (const peer of data.peers || []) createVoicePeer(peer.id, true);
     pollVoice();
   } catch (error) {
@@ -691,6 +841,7 @@ async function setOutgoingVideo(track, stream, mode) {
   for (const [peerId, connection] of state.voice.peers) {
     const sender = videoSender(connection);
     if (sender) await sender.replaceTrack(track);
+    await applySenderLimits(connection);
     await sendVoiceSignal(peerId, { type: "video-start", mode }).catch(() => {});
   }
   previousStream?.getTracks().forEach((item) => {
@@ -729,8 +880,16 @@ async function toggleCamera() {
   if (!state.voice.roomId) return;
   if (state.voice.videoMode === "camera") return stopOutgoingVideo();
   try {
+    const quality = effectiveVoiceQuality();
+    const dataMode = quality === "data";
+    const highMode = quality === "high";
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+      video: {
+        width: { ideal: dataMode ? 640 : highMode ? 1280 : 960 },
+        height: { ideal: dataMode ? 360 : highMode ? 720 : 540 },
+        frameRate: { ideal: dataMode ? 20 : 24, max: highMode ? 30 : 24 },
+        facingMode: "user"
+      },
       audio: false
     });
     await setOutgoingVideo(stream.getVideoTracks()[0], stream, "camera");
@@ -746,8 +905,13 @@ async function toggleScreenShare() {
     return notify("Bu tarayıcı ekran paylaşımını desteklemiyor", true);
   }
   try {
+    const quality = effectiveVoiceQuality();
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 30, max: 60 } },
+      video: {
+        width: { ideal: quality === "data" ? 1280 : 1920 },
+        height: { ideal: quality === "data" ? 720 : 1080 },
+        frameRate: { ideal: quality === "data" ? 15 : 30, max: 30 }
+      },
       audio: false
     });
     await setOutgoingVideo(stream.getVideoTracks()[0], stream, "screen");
@@ -789,7 +953,16 @@ async function leaveVoice(notifyServer = true) {
     pollTimer: null,
     pollFailures: 0,
     muted: false,
-    deafened: false
+    deafened: false,
+    serverMuted: false,
+    canSpeak: false,
+    canModerate: false,
+    audioBitrate: 64,
+    qualityMode: "auto",
+    userLimit: 12,
+    inputMode: $("#voice-input-mode").value || "activity",
+    pttActive: false,
+    outputVolume: Number($("#voice-output-volume").value) / 100
   });
 }
 
@@ -868,6 +1041,7 @@ $("#builder-open-join").addEventListener("click", () => {
 });
 $("#channel-settings-button").addEventListener("click", openChannelSettings);
 $("#channel-private-input").addEventListener("change", syncCreateRoleAccessVisibility);
+$("#channel-type-input").addEventListener("change", syncCreateVoiceSettings);
 $$(".modal-close").forEach((button) => button.addEventListener("click", () => closeModal(button)));
 $$(".modal-layer").forEach((layer) => layer.addEventListener("click", (event) => {
   if (event.target === layer) layer.hidden = true;
@@ -1020,7 +1194,10 @@ $("#channel-form").addEventListener("submit", async (event) => {
         type: $("#channel-type-input").value,
         categoryId: $("#channel-category-input").value || null,
         isPrivate: $("#channel-private-input").checked,
-        allowedRoleIds: $("#channel-private-input").checked ? selectedRoleAccess($("#channel-create-role-list")) : []
+        allowedRoleIds: $("#channel-private-input").checked ? selectedRoleAccess($("#channel-create-role-list")) : [],
+        userLimit: $("#channel-user-limit-input").value,
+        audioBitrate: $("#channel-audio-bitrate-input").value,
+        qualityMode: $("#channel-quality-mode-input").value
       })
     });
     form.reset();
@@ -1060,7 +1237,10 @@ $("#channel-settings-form").addEventListener("submit", async (event) => {
         name: $("#channel-settings-name").value,
         categoryId: $("#channel-settings-category").value || null,
         isPrivate,
-        allowedRoleIds: isPrivate ? selectedRoleAccess($("#channel-settings-role-list")) : []
+        allowedRoleIds: isPrivate ? selectedRoleAccess($("#channel-settings-role-list")) : [],
+        userLimit: $("#channel-settings-user-limit").value,
+        audioBitrate: $("#channel-settings-audio-bitrate").value,
+        qualityMode: $("#channel-settings-quality-mode").value
       })
     });
     closeModal(form);
@@ -1247,11 +1427,13 @@ $("#role-form").addEventListener("submit", async (event) => {
 
 $("#join-voice-button").addEventListener("click", joinVoice);
 $("#leave-voice-button").addEventListener("click", () => leaveVoice());
-$("#mute-voice-button").addEventListener("click", () => {
+$("#mute-voice-button").addEventListener("click", async () => {
+  if (state.voice.serverMuted || !state.voice.canSpeak) return;
   state.voice.muted = !state.voice.muted;
-  state.voice.stream?.getAudioTracks().forEach((track) => { track.enabled = !state.voice.muted; });
+  updateLocalAudioEnabled();
   $("#mute-voice-button").textContent = state.voice.muted ? "Mikrofonu aç" : "Mikrofonu kapat";
   $("#voice-status").textContent = state.voice.muted ? "Mikrofon kapalı" : "Bağlandı";
+  reportVoiceState();
 });
 $("#deafen-voice-button").addEventListener("click", () => {
   state.voice.deafened = !state.voice.deafened;
@@ -1260,6 +1442,36 @@ $("#deafen-voice-button").addEventListener("click", () => {
 });
 $("#camera-voice-button").addEventListener("click", toggleCamera);
 $("#screen-voice-button").addEventListener("click", toggleScreenShare);
+$("#voice-input-mode").addEventListener("change", () => {
+  state.voice.inputMode = $("#voice-input-mode").value;
+  state.voice.pttActive = false;
+  updateLocalAudioEnabled();
+  reportVoiceState();
+  localStorage.setItem("yaas:voice-input-mode", state.voice.inputMode);
+  $("#voice-status").textContent = state.voice.inputMode === "ptt" ? "Konuşmak için boşluk tuşuna bas" : "Ses algılama açık";
+});
+$("#voice-output-volume").addEventListener("input", () => {
+  state.voice.outputVolume = Number($("#voice-output-volume").value) / 100;
+  $$("#remote-audio-container audio").forEach((audio) => { audio.volume = state.voice.outputVolume; });
+  localStorage.setItem("yaas:voice-output-volume", $("#voice-output-volume").value);
+});
+window.addEventListener("keydown", (event) => {
+  if (event.code !== "Space" || state.voice.inputMode !== "ptt" || !state.voice.roomId) return;
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+  event.preventDefault();
+  if (state.voice.pttActive) return;
+  state.voice.pttActive = true;
+  updateLocalAudioEnabled();
+  reportVoiceState();
+  $("#voice-status").textContent = "Konuşuyorsun";
+});
+window.addEventListener("keyup", (event) => {
+  if (event.code !== "Space" || state.voice.inputMode !== "ptt" || !state.voice.roomId) return;
+  state.voice.pttActive = false;
+  updateLocalAudioEnabled();
+  reportVoiceState();
+  $("#voice-status").textContent = "Konuşmak için boşluk tuşuna bas";
+});
 window.addEventListener("beforeunload", () => {
   if (state.voice.roomId) {
     navigator.sendBeacon("/api/voice/leave", JSON.stringify({
@@ -1272,6 +1484,19 @@ window.addEventListener("beforeunload", () => {
 $$("[data-mobile-view=channels]").forEach((button) => button.addEventListener("click", () => {
   $("#server-view").classList.toggle("channels-open");
 }));
+
+const savedVoiceInputMode = localStorage.getItem("yaas:voice-input-mode");
+if (["activity", "ptt"].includes(savedVoiceInputMode)) {
+  $("#voice-input-mode").value = savedVoiceInputMode;
+  state.voice.inputMode = savedVoiceInputMode;
+}
+const savedVoiceOutputValue = localStorage.getItem("yaas:voice-output-volume");
+const savedVoiceOutputVolume = Number(savedVoiceOutputValue);
+if (savedVoiceOutputValue !== null && Number.isFinite(savedVoiceOutputVolume)
+  && savedVoiceOutputVolume >= 0 && savedVoiceOutputVolume <= 100) {
+  $("#voice-output-volume").value = String(savedVoiceOutputVolume);
+  state.voice.outputVolume = savedVoiceOutputVolume / 100;
+}
 
 start().catch((error) => {
   console.error(error);

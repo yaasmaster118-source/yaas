@@ -83,6 +83,9 @@ function getLocalDatabase() {
       position INTEGER NOT NULL DEFAULT 0,
       is_private INTEGER NOT NULL DEFAULT 0,
       allowed_role_ids TEXT NOT NULL DEFAULT '[]',
+      user_limit INTEGER NOT NULL DEFAULT 12,
+      audio_bitrate INTEGER NOT NULL DEFAULT 64,
+      quality_mode TEXT NOT NULL DEFAULT 'auto',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(server_id, name, type)
     );
@@ -140,6 +143,15 @@ function getLocalDatabase() {
   const channelColumns = localDatabase.prepare("PRAGMA table_info(channels)").all();
   if (!channelColumns.some((column) => column.name === "category_id")) {
     localDatabase.exec("ALTER TABLE channels ADD COLUMN category_id TEXT");
+  }
+  if (!channelColumns.some((column) => column.name === "user_limit")) {
+    localDatabase.exec("ALTER TABLE channels ADD COLUMN user_limit INTEGER NOT NULL DEFAULT 12");
+  }
+  if (!channelColumns.some((column) => column.name === "audio_bitrate")) {
+    localDatabase.exec("ALTER TABLE channels ADD COLUMN audio_bitrate INTEGER NOT NULL DEFAULT 64");
+  }
+  if (!channelColumns.some((column) => column.name === "quality_mode")) {
+    localDatabase.exec("ALTER TABLE channels ADD COLUMN quality_mode TEXT NOT NULL DEFAULT 'auto'");
   }
   return localDatabase;
 }
