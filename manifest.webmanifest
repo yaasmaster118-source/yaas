@@ -4,8 +4,8 @@
   "description": "Topluluk, video ve fotoğraf paylaşım platformu.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0c0e12",
-  "theme_color": "#c9f34b",
+  "background_color": "#070707",
+  "theme_color": "#d6aa52",
   "icons": [
     {
       "src": "/icon.svg",
