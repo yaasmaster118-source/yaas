@@ -52,4 +52,6 @@ test("voice client applies adaptive quality and moderator controls", () => {
   assert.match(app, /moderateVoiceParticipant/);
   assert.match(app, /moderator-mute/);
   assert.match(app, /channel-settings-user-limit/);
+  assert.match(app, /syncVoiceStage/);
+  assert.match(app, /setVoiceControl/);
 });

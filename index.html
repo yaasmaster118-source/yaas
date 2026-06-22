@@ -12,8 +12,8 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.4">
-    <script src="app.js?v=1.1.4" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.5">
+    <script src="app.js?v=1.1.5" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -135,32 +135,36 @@
               </form>
             </div>
             <div class="voice-channel-view hidden" id="voice-channel-view">
-              <span class="voice-orb">◖</span>
-              <h3 id="voice-channel-name">Ses kanalı</h3>
-              <p>Sunucu üyeleriyle sesli konuş.</p>
-              <div class="voice-participants hidden" id="voice-participants"></div>
-              <div class="voice-video-grid hidden" id="voice-video-grid">
-                <figure class="voice-video-tile hidden" id="local-video-tile">
-                  <video id="local-video" autoplay muted playsinline></video>
-                  <figcaption>Sen</figcaption>
-                </figure>
+              <header class="voice-room-header">
+                <div><span class="voice-room-icon">◖</span><div><h3 id="voice-channel-name">Ses kanalı</h3><p>Bağlantına göre otomatik ayarlanan görüşme.</p></div></div>
+                <small class="voice-status" id="voice-status">Bağlı değil</small>
+              </header>
+              <div class="voice-stage">
+                <div class="voice-participants hidden" id="voice-participants"></div>
+                <div class="voice-video-grid hidden" id="voice-video-grid">
+                  <figure class="voice-video-tile hidden" id="local-video-tile">
+                    <video id="local-video" autoplay muted playsinline></video>
+                    <figcaption>Sen</figcaption>
+                  </figure>
+                </div>
               </div>
-              <div class="voice-controls">
-                <button class="primary" id="join-voice-button" type="button">Ses kanalına katıl</button>
-                <button class="secondary hidden" id="mute-voice-button" type="button">Mikrofonu kapat</button>
-                <button class="secondary hidden" id="deafen-voice-button" type="button">Sesi kapat</button>
-                <button class="secondary hidden" id="camera-voice-button" type="button">Kamerayı aç</button>
-                <button class="secondary hidden" id="screen-voice-button" type="button">Ekranı paylaş</button>
-                <button class="danger-button hidden" id="leave-voice-button" type="button">Ayrıl</button>
+              <div class="voice-dock">
+                <div class="voice-controls">
+                  <button class="primary join-voice-action" id="join-voice-button" type="button">Ses kanalına katıl</button>
+                  <button class="voice-control hidden" id="mute-voice-button" type="button"><span>🎙</span><small>Mikrofon</small></button>
+                  <button class="voice-control hidden" id="deafen-voice-button" type="button"><span>🎧</span><small>Ses</small></button>
+                  <button class="voice-control hidden" id="camera-voice-button" type="button"><span>▣</span><small>Kamera</small></button>
+                  <button class="voice-control hidden" id="screen-voice-button" type="button"><span>▤</span><small>Ekran</small></button>
+                  <button class="voice-control danger hidden" id="leave-voice-button" type="button"><span>☎</span><small>Ayrıl</small></button>
+                </div>
+                <div class="voice-personal-settings">
+                  <label>Giriş<select id="voice-input-mode">
+                    <option value="activity">Ses algılama</option>
+                    <option value="ptt">Bas-konuş (Boşluk)</option>
+                  </select></label>
+                  <label>Çıkış<input id="voice-output-volume" type="range" min="0" max="100" value="100"></label>
+                </div>
               </div>
-              <div class="voice-personal-settings">
-                <label>Giriş modu<select id="voice-input-mode">
-                  <option value="activity">Ses algılama</option>
-                  <option value="ptt">Bas-konuş (Boşluk)</option>
-                </select></label>
-                <label>Çıkış sesi<input id="voice-output-volume" type="range" min="0" max="100" value="100"></label>
-              </div>
-              <small class="voice-status" id="voice-status">Bağlı değil</small>
               <div id="remote-audio-container" hidden></div>
             </div>
           </section>

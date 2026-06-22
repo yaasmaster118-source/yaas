@@ -50,7 +50,8 @@ const state = {
     userLimit: 12,
     inputMode: "activity",
     pttActive: false,
-    outputVolume: 1
+    outputVolume: 1,
+    participants: new Map()
   }
 };
 
@@ -99,6 +100,12 @@ function escapeHtml(value) {
 
 function initials(name) {
   return String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+}
+
+function setVoiceControl(buttonId, icon, label, active = false) {
+  const button = $(`#${buttonId}`);
+  button.innerHTML = `<span>${icon}</span><small>${label}</small>`;
+  button.classList.toggle("active", active);
 }
 
 function safeColor(value, fallback = "#c9f34b") {
@@ -505,6 +512,11 @@ async function voiceApi(path, options = {}) {
 
 function renderVoiceParticipants(participants = []) {
   const list = $("#voice-participants");
+  state.voice.participants = new Map(participants.map((participant) => [participant.id, participant]));
+  for (const participant of participants) {
+    const caption = document.querySelector(`#voice-video-tile-${participant.id} figcaption`);
+    if (caption) caption.textContent = participant.name;
+  }
   list.innerHTML = participants.map((participant) => {
     const isSelf = participant.id === state.voice.clientId;
     const status = participant.serverMuted ? "Sunucu susturdu" : participant.muted ? "Mikrofon kapalı" : "Konuşuyor";
@@ -515,16 +527,31 @@ function renderVoiceParticipants(participants = []) {
         </button>
         <button class="danger" data-voice-action="disconnect" data-client-id="${participant.id}" type="button">Çıkar</button>
       </span>` : "";
-    return `<span class="voice-person ${participant.muted ? "muted" : ""}">
+    return `<article class="voice-person ${participant.muted ? "muted" : ""}" data-voice-participant="${participant.id}">
+      <span class="voice-avatar">${escapeHtml(initials(participant.name))}</span>
       <span class="voice-person-state">${participant.muted ? "◌" : "●"}</span>
-      <span><strong>${escapeHtml(participant.name)}${isSelf ? " (sen)" : ""}</strong><small>${status}</small></span>
+      <span class="voice-person-copy"><strong>${escapeHtml(participant.name)}${isSelf ? " (sen)" : ""}</strong><small>${status}</small></span>
       ${controls}
-    </span>`;
+    </article>`;
   }).join("");
-  list.classList.toggle("hidden", participants.length === 0);
+  syncVoiceStage();
   $$("[data-voice-action]", list).forEach((button) => button.addEventListener("click", () => {
     moderateVoiceParticipant(button.dataset.clientId, button.dataset.voiceAction);
   }));
+}
+
+function syncVoiceStage() {
+  const participantCards = $$("[data-voice-participant]", $("#voice-participants"));
+  for (const card of participantCards) {
+    const participantId = card.dataset.voiceParticipant;
+    const hasVideo = participantId === state.voice.clientId
+      ? !$("#local-video-tile").classList.contains("hidden")
+      : !document.getElementById(`voice-video-tile-${participantId}`)?.classList.contains("hidden");
+    card.classList.toggle("hidden", hasVideo);
+  }
+  const visibleCards = participantCards.some((card) => !card.classList.contains("hidden"));
+  $("#voice-participants").classList.toggle("hidden", !visibleCards);
+  updateVideoGridVisibility();
 }
 
 async function moderateVoiceParticipant(targetId, action) {
@@ -593,26 +620,27 @@ function attachRemoteVideo(peerId, track) {
     tile = document.createElement("figure");
     tile.id = `voice-video-tile-${peerId}`;
     tile.className = "voice-video-tile";
-    tile.innerHTML = `<video autoplay muted playsinline></video><figcaption>Katılımcı</figcaption>`;
+    tile.innerHTML = `<video autoplay playsinline></video><figcaption>Katılımcı</figcaption>`;
     $("#voice-video-grid").append(tile);
   }
+  $("figcaption", tile).textContent = state.voice.participants.get(peerId)?.name || "Katılımcı";
   const video = $("video", tile);
   video.srcObject = new MediaStream([track]);
   state.voice.remoteVideoTracks.set(peerId, track);
   tile.classList.toggle("hidden", track.muted);
-  updateVideoGridVisibility();
+  syncVoiceStage();
   track.onunmute = () => {
     tile.classList.remove("hidden");
-    updateVideoGridVisibility();
+    syncVoiceStage();
   };
   track.onmute = () => {
     tile.classList.add("hidden");
-    updateVideoGridVisibility();
+    syncVoiceStage();
   };
   track.onended = () => {
     state.voice.remoteVideoTracks.delete(peerId);
     tile.remove();
-    updateVideoGridVisibility();
+    syncVoiceStage();
   };
 }
 
@@ -664,7 +692,7 @@ function removeVoicePeer(peerId) {
   state.voice.remoteVideoTracks.delete(peerId);
   document.getElementById(`voice-audio-${peerId}`)?.remove();
   document.getElementById(`voice-video-tile-${peerId}`)?.remove();
-  updateVideoGridVisibility();
+  syncVoiceStage();
 }
 
 function createVoicePeer(peerId, initiator) {
@@ -850,9 +878,9 @@ async function setOutgoingVideo(track, stream, mode) {
   });
   $("#local-video").srcObject = stream;
   $("#local-video-tile").classList.remove("hidden");
-  $("#voice-video-grid").classList.remove("hidden");
-  $("#camera-voice-button").textContent = mode === "camera" ? "Kamerayı kapat" : "Kamerayı aç";
-  $("#screen-voice-button").textContent = mode === "screen" ? "Paylaşımı durdur" : "Ekranı paylaş";
+  syncVoiceStage();
+  setVoiceControl("camera-voice-button", "▣", mode === "camera" ? "Kapat" : "Kamera", mode === "camera");
+  setVoiceControl("screen-voice-button", "▤", mode === "screen" ? "Durdur" : "Ekran", mode === "screen");
   track.onended = () => {
     if (state.voice.videoStream === stream) stopOutgoingVideo();
   };
@@ -871,9 +899,9 @@ async function stopOutgoingVideo() {
   stream?.getTracks().forEach((track) => track.stop());
   $("#local-video").srcObject = null;
   $("#local-video-tile").classList.add("hidden");
-  $("#camera-voice-button").textContent = "Kamerayı aç";
-  $("#screen-voice-button").textContent = "Ekranı paylaş";
-  updateVideoGridVisibility();
+  setVoiceControl("camera-voice-button", "▣", "Kamera");
+  setVoiceControl("screen-voice-button", "▤", "Ekran");
+  syncVoiceStage();
 }
 
 async function toggleCamera() {
@@ -941,8 +969,8 @@ async function leaveVoice(notifyServer = true) {
   $("#screen-voice-button").classList.add("hidden");
   $("#leave-voice-button").classList.add("hidden");
   $("#voice-status").textContent = "Bağlı değil";
-  $("#mute-voice-button").textContent = "Mikrofonu kapat";
-  $("#deafen-voice-button").textContent = "Sesi kapat";
+  setVoiceControl("mute-voice-button", "🎙", "Mikrofon");
+  setVoiceControl("deafen-voice-button", "🎧", "Ses");
   Object.assign(state.voice, {
     roomId: null,
     clientId: null,
@@ -962,7 +990,8 @@ async function leaveVoice(notifyServer = true) {
     userLimit: 12,
     inputMode: $("#voice-input-mode").value || "activity",
     pttActive: false,
-    outputVolume: Number($("#voice-output-volume").value) / 100
+    outputVolume: Number($("#voice-output-volume").value) / 100,
+    participants: new Map()
   });
 }
 
@@ -1431,14 +1460,14 @@ $("#mute-voice-button").addEventListener("click", async () => {
   if (state.voice.serverMuted || !state.voice.canSpeak) return;
   state.voice.muted = !state.voice.muted;
   updateLocalAudioEnabled();
-  $("#mute-voice-button").textContent = state.voice.muted ? "Mikrofonu aç" : "Mikrofonu kapat";
+  setVoiceControl("mute-voice-button", "🎙", state.voice.muted ? "Aç" : "Mikrofon", state.voice.muted);
   $("#voice-status").textContent = state.voice.muted ? "Mikrofon kapalı" : "Bağlandı";
   reportVoiceState();
 });
 $("#deafen-voice-button").addEventListener("click", () => {
   state.voice.deafened = !state.voice.deafened;
   $$("#remote-audio-container audio").forEach((audio) => { audio.muted = state.voice.deafened; });
-  $("#deafen-voice-button").textContent = state.voice.deafened ? "Sesi aç" : "Sesi kapat";
+  setVoiceControl("deafen-voice-button", "🎧", state.voice.deafened ? "Aç" : "Ses", state.voice.deafened);
 });
 $("#camera-voice-button").addEventListener("click", toggleCamera);
 $("#screen-voice-button").addEventListener("click", toggleScreenShare);
