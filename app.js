@@ -32,6 +32,8 @@ const state = {
   activeDm: null,
   voice: {
     roomId: null,
+    roomName: null,
+    serverId: null,
     clientId: null,
     stream: null,
     videoStream: null,
@@ -39,7 +41,9 @@ const state = {
     peers: new Map(),
     remoteVideoTracks: new Map(),
     pollTimer: null,
+    pollInFlight: false,
     pollFailures: 0,
+    wakeLock: null,
     muted: false,
     deafened: false,
     serverMuted: false,
@@ -180,7 +184,7 @@ function renderServers() {
   $$(".server-item", list).forEach((button) => button.addEventListener("click", () => openServer(button.dataset.serverId)));
 }
 
-async function openServer(serverId) {
+async function openServer(serverId, preferredChannelId = null) {
   try {
     const data = await api(`/api/servers/${serverId}`);
     state.activeServer = data;
@@ -219,7 +223,9 @@ async function openServer(serverId) {
     renderMembers();
     renderSettingsMembers();
     renderRoles();
-    showNoChannel();
+    const preferredChannel = data.channels.find((channel) => channel.id === preferredChannelId);
+    if (preferredChannel) await openChannel(preferredChannel);
+    else showNoChannel();
     $("#server-panel").classList.remove("open");
   } catch (error) {
     notify(error.message, true);
@@ -454,7 +460,6 @@ function showNoChannel() {
 }
 
 async function openChannel(channel) {
-  if (state.voice.roomId && state.voice.roomId !== channel.id) await leaveVoice();
   state.activeChannel = channel;
   $$(".channel-item").forEach((button) => button.classList.toggle("active", button.dataset.channelId === channel.id));
   $("#active-channel-name").textContent = channel.name;
@@ -469,11 +474,12 @@ async function openChannel(channel) {
   $("#server-view").classList.remove("channels-open");
   if (channel.type === "voice") {
     $("#voice-channel-name").textContent = channel.name;
-    $(".voice-channel-view>p").textContent = channel.quality_mode === "data"
+    $(".voice-room-header p").textContent = channel.quality_mode === "data"
       ? "Veri tasarruflu, kararlı ses ve görüntü modu."
       : channel.quality_mode === "high"
         ? "Yüksek kaliteli ses, kamera ve ekran paylaşımı."
         : "Bağlantına göre otomatik ayarlanan ses ve görüntü.";
+    syncVoiceRoomControls();
     return;
   }
   await loadMessages();
@@ -599,6 +605,77 @@ function updateLocalAudioEnabled() {
     && !state.voice.serverMuted
     && pushToTalkOpen;
   state.voice.stream?.getAudioTracks().forEach((track) => { track.enabled = enabled; });
+}
+
+function voiceConnectionStatus() {
+  if (state.voice.serverMuted) return "Moderatör tarafından susturuldun";
+  if (state.voice.deafened) return "Gelen ses kapalı";
+  if (state.voice.muted) return "Mikrofon kapalı";
+  if (state.voice.inputMode === "ptt" && !state.voice.pttActive) return "Bas-konuş hazır";
+  return "Ses bağlantısı aktif";
+}
+
+function syncVoiceConnectionBar() {
+  const connected = Boolean(state.voice.roomId);
+  $("#voice-connection-bar").classList.toggle("hidden", !connected);
+  if (!connected) return;
+  $("#voice-connection-channel").textContent = state.voice.roomName || "Ses kanalı";
+  $("#voice-connection-status").textContent = voiceConnectionStatus();
+  $("#voice-bar-mute").textContent = state.voice.muted ? "Mikrofonu aç" : "Mikrofonu kapat";
+  $("#voice-bar-mute").classList.toggle("active", state.voice.muted);
+  $("#voice-bar-mute").disabled = state.voice.serverMuted || !state.voice.canSpeak;
+  $("#voice-bar-deafen").textContent = state.voice.deafened ? "Sesi aç" : "Sesi kapat";
+  $("#voice-bar-deafen").classList.toggle("active", state.voice.deafened);
+}
+
+function syncVoiceRoomControls() {
+  const viewingConnectedRoom = state.activeChannel?.id === state.voice.roomId;
+  $("#join-voice-button").classList.toggle("hidden", Boolean(state.voice.roomId));
+  $("#mute-voice-button").classList.toggle("hidden", !viewingConnectedRoom || !state.voice.canSpeak);
+  $("#deafen-voice-button").classList.toggle("hidden", !viewingConnectedRoom);
+  $("#camera-voice-button").classList.toggle("hidden", !viewingConnectedRoom);
+  $("#screen-voice-button").classList.toggle("hidden", !viewingConnectedRoom);
+  $("#leave-voice-button").classList.toggle("hidden", !viewingConnectedRoom);
+  if (state.activeChannel?.type === "voice") {
+    $("#voice-status").textContent = viewingConnectedRoom ? voiceConnectionStatus() : "Başka bir ses kanalına bağlısın";
+  }
+  syncVoiceConnectionBar();
+}
+
+async function toggleVoiceMute() {
+  if (!state.voice.roomId || state.voice.serverMuted || !state.voice.canSpeak) return;
+  state.voice.muted = !state.voice.muted;
+  updateLocalAudioEnabled();
+  setVoiceControl("mute-voice-button", "🎙", state.voice.muted ? "Aç" : "Mikrofon", state.voice.muted);
+  $("#voice-status").textContent = state.voice.muted ? "Mikrofon kapalı" : "Bağlandı";
+  syncVoiceConnectionBar();
+  reportVoiceState();
+}
+
+function toggleVoiceDeafen() {
+  if (!state.voice.roomId) return;
+  state.voice.deafened = !state.voice.deafened;
+  $$("#remote-audio-container audio").forEach((audio) => { audio.muted = state.voice.deafened; });
+  setVoiceControl("deafen-voice-button", "🎧", state.voice.deafened ? "Aç" : "Ses", state.voice.deafened);
+  syncVoiceConnectionBar();
+}
+
+async function requestVoiceWakeLock() {
+  if (!state.voice.roomId || document.hidden || !navigator.wakeLock?.request) return;
+  try {
+    state.voice.wakeLock = await navigator.wakeLock.request("screen");
+    state.voice.wakeLock.addEventListener("release", () => {
+      state.voice.wakeLock = null;
+    }, { once: true });
+  } catch {
+    state.voice.wakeLock = null;
+  }
+}
+
+async function releaseVoiceWakeLock() {
+  if (!state.voice.wakeLock) return;
+  await state.voice.wakeLock.release().catch(() => {});
+  state.voice.wakeLock = null;
 }
 
 function reportVoiceState() {
@@ -734,6 +811,7 @@ async function handleVoiceSignal(from, signal) {
     state.voice.serverMuted = Boolean(signal.muted);
     updateLocalAudioEnabled();
     $("#mute-voice-button").disabled = state.voice.serverMuted;
+    syncVoiceConnectionBar();
     $("#voice-status").textContent = state.voice.serverMuted ? "Moderatör tarafından susturuldun" : "Bağlandı";
     notify(state.voice.serverMuted ? "Moderatör mikrofonunu susturdu" : "Sunucu susturması kaldırıldı");
     return;
@@ -762,7 +840,8 @@ async function handleVoiceSignal(from, signal) {
 }
 
 async function pollVoice() {
-  if (!state.voice.roomId) return;
+  if (!state.voice.roomId || state.voice.pollInFlight) return;
+  state.voice.pollInFlight = true;
   try {
     const data = await voiceApi(
       `poll?roomId=${encodeURIComponent(state.voice.roomId)}&clientId=${encodeURIComponent(state.voice.clientId)}`
@@ -782,19 +861,23 @@ async function pollVoice() {
     $("#voice-status").textContent = state.voice.serverMuted
       ? "Moderatör tarafından susturuldun"
       : state.voice.muted ? "Mikrofon kapalı" : "Bağlandı";
+    syncVoiceConnectionBar();
     for (const item of data.signals || []) {
       await handleVoiceSignal(item.from, item.signal).catch(() => {});
     }
-    state.voice.pollTimer = setTimeout(pollVoice, 900);
+    state.voice.pollTimer = setTimeout(pollVoice, document.hidden ? 5000 : 900);
   } catch {
     state.voice.pollFailures += 1;
-    if (state.voice.pollFailures >= 5) {
+    if (state.voice.pollFailures >= (document.hidden ? 30 : 8)) {
       await leaveVoice(false);
       notify("Ses bağlantısı kesildi", true);
       return;
     }
     $("#voice-status").textContent = "Bağlantı yenileniyor...";
-    state.voice.pollTimer = setTimeout(pollVoice, 1500);
+    $("#voice-connection-status").textContent = "Bağlantı yenileniyor...";
+    state.voice.pollTimer = setTimeout(pollVoice, document.hidden ? 5000 : 1500);
+  } finally {
+    state.voice.pollInFlight = false;
   }
 }
 
@@ -815,6 +898,8 @@ async function joinVoice() {
       video: false
     });
     state.voice.roomId = state.activeChannel.id;
+    state.voice.roomName = state.activeChannel.name;
+    state.voice.serverId = state.activeServer.server.id;
     state.voice.clientId = crypto.randomUUID();
     state.voice.stream = stream;
     state.voice.pollFailures = 0;
@@ -847,6 +932,18 @@ async function joinVoice() {
     $("#screen-voice-button").classList.remove("hidden");
     $("#leave-voice-button").classList.remove("hidden");
     $("#voice-status").textContent = data.canSpeak ? "Bağlandı" : "Dinleyici olarak bağlandı";
+    syncVoiceConnectionBar();
+    requestVoiceWakeLock();
+    if ("mediaSession" in navigator && "MediaMetadata" in window) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: state.voice.roomName,
+        artist: state.activeServer.server.name,
+        album: "YAAS ses kanalı"
+      });
+      try {
+        navigator.mediaSession.setActionHandler("stop", () => leaveVoice());
+      } catch {}
+    }
     renderVoiceParticipants([{
       id: state.voice.clientId,
       name: state.user.display_name || state.user.displayName,
@@ -950,6 +1047,7 @@ async function toggleScreenShare() {
 
 async function leaveVoice(notifyServer = true) {
   clearTimeout(state.voice.pollTimer);
+  await releaseVoiceWakeLock();
   await stopOutgoingVideo();
   if (notifyServer && state.voice.roomId && state.voice.clientId) {
     await voiceApi("leave", {
@@ -973,12 +1071,15 @@ async function leaveVoice(notifyServer = true) {
   setVoiceControl("deafen-voice-button", "🎧", "Ses");
   Object.assign(state.voice, {
     roomId: null,
+    roomName: null,
+    serverId: null,
     clientId: null,
     stream: null,
     videoStream: null,
     videoMode: null,
     remoteVideoTracks: new Map(),
     pollTimer: null,
+    pollInFlight: false,
     pollFailures: 0,
     muted: false,
     deafened: false,
@@ -993,6 +1094,8 @@ async function leaveVoice(notifyServer = true) {
     outputVolume: Number($("#voice-output-volume").value) / 100,
     participants: new Map()
   });
+  if ("mediaSession" in navigator) navigator.mediaSession.metadata = null;
+  syncVoiceConnectionBar();
 }
 
 function messageTemplate(message) {
@@ -1456,19 +1559,15 @@ $("#role-form").addEventListener("submit", async (event) => {
 
 $("#join-voice-button").addEventListener("click", joinVoice);
 $("#leave-voice-button").addEventListener("click", () => leaveVoice());
-$("#mute-voice-button").addEventListener("click", async () => {
-  if (state.voice.serverMuted || !state.voice.canSpeak) return;
-  state.voice.muted = !state.voice.muted;
-  updateLocalAudioEnabled();
-  setVoiceControl("mute-voice-button", "🎙", state.voice.muted ? "Aç" : "Mikrofon", state.voice.muted);
-  $("#voice-status").textContent = state.voice.muted ? "Mikrofon kapalı" : "Bağlandı";
-  reportVoiceState();
+$("#mute-voice-button").addEventListener("click", toggleVoiceMute);
+$("#deafen-voice-button").addEventListener("click", toggleVoiceDeafen);
+$("#voice-bar-mute").addEventListener("click", toggleVoiceMute);
+$("#voice-bar-deafen").addEventListener("click", toggleVoiceDeafen);
+$("#voice-bar-return").addEventListener("click", () => {
+  if (!state.voice.roomId || !state.voice.serverId) return;
+  openServer(state.voice.serverId, state.voice.roomId).catch((error) => notify(error.message, true));
 });
-$("#deafen-voice-button").addEventListener("click", () => {
-  state.voice.deafened = !state.voice.deafened;
-  $$("#remote-audio-container audio").forEach((audio) => { audio.muted = state.voice.deafened; });
-  setVoiceControl("deafen-voice-button", "🎧", state.voice.deafened ? "Aç" : "Ses", state.voice.deafened);
-});
+$("#voice-bar-leave").addEventListener("click", () => leaveVoice());
 $("#camera-voice-button").addEventListener("click", toggleCamera);
 $("#screen-voice-button").addEventListener("click", toggleScreenShare);
 $("#voice-input-mode").addEventListener("change", () => {
@@ -1478,6 +1577,7 @@ $("#voice-input-mode").addEventListener("change", () => {
   reportVoiceState();
   localStorage.setItem("yaas:voice-input-mode", state.voice.inputMode);
   $("#voice-status").textContent = state.voice.inputMode === "ptt" ? "Konuşmak için boşluk tuşuna bas" : "Ses algılama açık";
+  syncVoiceConnectionBar();
 });
 $("#voice-output-volume").addEventListener("input", () => {
   state.voice.outputVolume = Number($("#voice-output-volume").value) / 100;
@@ -1493,6 +1593,7 @@ window.addEventListener("keydown", (event) => {
   updateLocalAudioEnabled();
   reportVoiceState();
   $("#voice-status").textContent = "Konuşuyorsun";
+  syncVoiceConnectionBar();
 });
 window.addEventListener("keyup", (event) => {
   if (event.code !== "Space" || state.voice.inputMode !== "ptt" || !state.voice.roomId) return;
@@ -1500,6 +1601,7 @@ window.addEventListener("keyup", (event) => {
   updateLocalAudioEnabled();
   reportVoiceState();
   $("#voice-status").textContent = "Konuşmak için boşluk tuşuna bas";
+  syncVoiceConnectionBar();
 });
 window.addEventListener("beforeunload", () => {
   if (state.voice.roomId) {
@@ -1508,6 +1610,21 @@ window.addEventListener("beforeunload", () => {
       clientId: state.voice.clientId
     }));
   }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!state.voice.roomId || document.hidden) return;
+  clearTimeout(state.voice.pollTimer);
+  state.voice.pollTimer = null;
+  requestVoiceWakeLock();
+  pollVoice();
+});
+
+window.addEventListener("online", () => {
+  if (!state.voice.roomId) return;
+  clearTimeout(state.voice.pollTimer);
+  state.voice.pollTimer = null;
+  pollVoice();
 });
 
 $$("[data-mobile-view=channels]").forEach((button) => button.addEventListener("click", () => {

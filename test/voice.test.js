@@ -55,3 +55,15 @@ test("voice client applies adaptive quality and moderator controls", () => {
   assert.match(app, /syncVoiceStage/);
   assert.match(app, /setVoiceControl/);
 });
+
+test("voice remains connected while navigating and recovers from background throttling", () => {
+  const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.doesNotMatch(app, /roomId !== channel\.id\) await leaveVoice/);
+  assert.match(app, /voice-connection-bar/);
+  assert.match(app, /visibilitychange/);
+  assert.match(app, /navigator\.wakeLock/);
+  assert.match(html, /id="voice-bar-return"/);
+  assert.match(server, /Date\.now\(\) - 300_000/);
+});

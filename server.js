@@ -162,7 +162,7 @@ function sendJson(response, status, data) {
 }
 
 function cleanVoiceRooms() {
-  const cutoff = Date.now() - 30_000;
+  const cutoff = Date.now() - 300_000;
   for (const [roomId, room] of voiceRooms) {
     for (const [clientId, client] of room) {
       if (client.lastSeen < cutoff) room.delete(clientId);

@@ -12,8 +12,8 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.7">
-    <script src="app.js?v=1.1.7" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.8">
+    <script src="app.js?v=1.1.8" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -181,6 +181,22 @@
         <header><strong>Üyeler</strong><button class="icon-button mobile-close" data-close-panel="member-panel" type="button">×</button></header>
         <div class="member-list" id="member-list"></div>
         <div class="member-empty" id="member-empty">Sunucu seçildiğinde gerçek üyeler burada görünür.</div>
+      </aside>
+
+      <aside class="voice-connection-bar hidden" id="voice-connection-bar" aria-live="polite">
+        <div class="voice-connection-info">
+          <span class="voice-connection-pulse"></span>
+          <div>
+            <strong id="voice-connection-channel">Ses kanalı</strong>
+            <small id="voice-connection-status">Bağlandı</small>
+          </div>
+        </div>
+        <div class="voice-connection-actions">
+          <button class="voice-bar-button" id="voice-bar-mute" type="button">Mikrofon</button>
+          <button class="voice-bar-button" id="voice-bar-deafen" type="button">Ses</button>
+          <button class="voice-bar-button primary" id="voice-bar-return" type="button">Kanala dön</button>
+          <button class="voice-bar-button danger" id="voice-bar-leave" type="button">Ayrıl</button>
+        </div>
       </aside>
 
       <nav class="mobile-nav">
