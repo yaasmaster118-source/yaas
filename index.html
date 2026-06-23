@@ -12,8 +12,8 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.8">
-    <script src="app.js?v=1.1.8" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.9">
+    <script src="app.js?v=1.1.9" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -45,6 +45,7 @@
             <label>E-posta<input id="login-email" type="email" autocomplete="email" required></label>
             <label>Şifre<input id="login-password" type="password" autocomplete="current-password" required></label>
             <p class="form-error" id="login-error"></p>
+            <small class="auth-help">Hesabına girince katıldığın sunucular aynen geri gelir.</small>
             <button class="primary wide" type="submit">Giriş yap <span>→</span></button>
           </form>
           <form class="auth-form" id="register-form">
@@ -52,6 +53,7 @@
             <label>E-posta<input id="register-email" type="email" autocomplete="email" required></label>
             <label>Şifre<input id="register-password" type="password" autocomplete="new-password" minlength="8" required></label>
             <p class="form-error" id="register-error"></p>
+            <small class="auth-help">Bir e-posta ile yalnızca bir YAAS hesabı açılır.</small>
             <button class="primary wide" type="submit">Hesap oluştur <span>→</span></button>
           </form>
           <div class="social-login">

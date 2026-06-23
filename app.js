@@ -160,6 +160,8 @@ function switchAuth(tab) {
   $$("[data-auth-tab]").forEach((button) => button.classList.toggle("active", button.dataset.authTab === tab));
   $("#login-form").classList.toggle("active", tab === "login");
   $("#register-form").classList.toggle("active", tab === "register");
+  $("#login-error").textContent = "";
+  $("#register-error").textContent = "";
   $("#auth-title").textContent = tab === "login" ? "Tekrar hoş geldin" : "YAAS'a katıl";
   $("#auth-subtitle").textContent = tab === "login"
     ? "Sunucularına kaldığın yerden devam et."

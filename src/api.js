@@ -17,6 +17,18 @@ function text(value, max) {
   return String(value || "").trim().slice(0, max);
 }
 
+function normalizeEmail(value) {
+  return text(value, 254).toLowerCase();
+}
+
+function validEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isUniqueConflict(error) {
+  return error?.code === "23505" || /unique|duplicate/i.test(String(error?.message || ""));
+}
+
 function boundedNumber(value, fallback, minimum, maximum) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, Math.round(number))) : fallback;
@@ -199,22 +211,29 @@ async function handleApi(request, response, helpers) {
 
     if (method === "POST" && url.pathname === "/api/auth/register") {
       const body = await readJson(request);
-      const email = text(body.email, 254).toLowerCase();
+      const email = normalizeEmail(body.email);
       const name = text(body.name, 40);
       const password = String(body.password || "");
-      if (!email.includes("@") || name.length < 2 || password.length < 8) {
+      if (!validEmail(email) || name.length < 2 || password.length < 8) {
         return sendJson(response, 400, { error: "Geçerli ad, e-posta ve en az 8 karakterli şifre gerekli" });
       }
       if ((await query("SELECT 1 FROM users WHERE email = $1", [email])).rowCount) {
-        return sendJson(response, 409, { error: "Bu e-posta zaten kayıtlı" });
+        return sendJson(response, 409, { error: "Bu e-posta zaten kayıtlı. Lütfen giriş yap." });
       }
       const user = { id: crypto.randomUUID(), email, name, handle: makeHandle(email) };
       const isSiteOwner = Boolean(process.env.OWNER_EMAIL)
         && email === process.env.OWNER_EMAIL.trim().toLowerCase();
-      await query(
-        "INSERT INTO users (id, email, display_name, handle, password_hash, is_site_owner) VALUES ($1, $2, $3, $4, $5, $6)",
-        [user.id, email, name, user.handle, await hashPassword(password), isSiteOwner]
-      );
+      try {
+        await query(
+          "INSERT INTO users (id, email, display_name, handle, password_hash, is_site_owner) VALUES ($1, $2, $3, $4, $5, $6)",
+          [user.id, email, name, user.handle, await hashPassword(password), isSiteOwner]
+        );
+      } catch (error) {
+        if (isUniqueConflict(error)) {
+          return sendJson(response, 409, { error: "Bu e-posta zaten kayıtlı. Lütfen giriş yap." });
+        }
+        throw error;
+      }
       await createSession(user.id, response);
       return sendJson(response, 201, {
         user: { id: user.id, email, displayName: name, handle: user.handle, is_site_owner: isSiteOwner }
@@ -225,7 +244,7 @@ async function handleApi(request, response, helpers) {
       const body = await readJson(request);
       const result = await query(
         "SELECT id, email, display_name, handle, password_hash, is_site_owner FROM users WHERE email = $1",
-        [text(body.email, 254).toLowerCase()]
+        [normalizeEmail(body.email)]
       );
       const user = result.rows[0];
       if (!user || !(await verifyPassword(String(body.password || ""), user.password_hash))) {

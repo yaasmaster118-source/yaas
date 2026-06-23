@@ -30,6 +30,46 @@ test("registered account remains available for later login", async () => {
   delete process.env.LOCAL_DATABASE_PATH;
 });
 
+test("accounts are unique by email and server memberships survive logout", async () => {
+  const databasePath = path.join(os.tmpdir(), `yaas-account-${crypto.randomUUID()}.sqlite`);
+  process.env.LOCAL_DATABASE_PATH = databasePath;
+  const { getPool, initializeDatabase, query } = require("../src/database");
+  const { hashPassword } = require("../src/auth");
+  const userId = crypto.randomUUID();
+  const serverId = crypto.randomUUID();
+
+  await initializeDatabase();
+  await query(
+    `INSERT INTO users (id, email, display_name, handle, password_hash, is_site_owner)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [userId, "tek@example.com", "Tek Hesap", "tek-hesap", await hashPassword("kalici-sifre-123"), false]
+  );
+  await assert.rejects(
+    query(
+      `INSERT INTO users (id, email, display_name, handle, password_hash, is_site_owner)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [crypto.randomUUID(), "tek@example.com", "Kopya", "kopya", await hashPassword("kalici-sifre-123"), false]
+    ),
+    /UNIQUE|unique|duplicate/i
+  );
+  await query(
+    "INSERT INTO servers (id, name, description, icon_color, owner_id) VALUES ($1, $2, $3, $4, $5)",
+    [serverId, "Kalici Sunucu", "", "lime", userId]
+  );
+  await query("INSERT INTO memberships (server_id, user_id) VALUES ($1, $2)", [serverId, userId]);
+  await query(
+    "INSERT INTO sessions (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, $4)",
+    [crypto.randomUUID(), userId, "logout-test-token", new Date(Date.now() + 86_400_000)]
+  );
+  await query("DELETE FROM sessions WHERE user_id = $1", [userId]);
+  const membership = await query("SELECT 1 FROM memberships WHERE server_id = $1 AND user_id = $2", [serverId, userId]);
+  assert.equal(membership.rowCount, 1);
+
+  await getPool().end();
+  fs.rmSync(databasePath, { force: true });
+  delete process.env.LOCAL_DATABASE_PATH;
+});
+
 test("Google and Apple login stay disabled until credentials are configured", () => {
   delete process.env.GOOGLE_CLIENT_ID;
   delete process.env.GOOGLE_CLIENT_SECRET;
