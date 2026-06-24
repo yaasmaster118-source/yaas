@@ -12,8 +12,8 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.10">
-    <script src="app.js?v=1.1.10" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.11">
+    <script src="app.js?v=1.1.11" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -74,7 +74,9 @@
       <aside class="server-panel" id="server-panel">
         <header>
           <div class="wordmark video-wordmark">
-            <video class="brand-loop-video" autoplay muted loop playsinline preload="metadata" aria-label="YAAS">
+            <img class="brand-loop-fallback" src="assets/yaas-premium-mark.png" alt="YAAS">
+            <video class="brand-loop-video" autoplay muted loop playsinline preload="metadata" aria-label="YAAS" oncanplay="this.classList.add('ready')" onerror="this.classList.remove('ready')">
+              <source src="assets/yaas-brand-loop.mp4" type="video/mp4">
               <source src="assets/yaas-brand-loop.mov" type="video/quicktime">
             </video>
           </div>
@@ -103,7 +105,9 @@
         <header class="mobile-header">
           <button class="icon-button" data-open-panel="server-panel" type="button">☰</button>
           <div class="wordmark video-wordmark">
-            <video class="brand-loop-video" autoplay muted loop playsinline preload="metadata" aria-label="YAAS">
+            <img class="brand-loop-fallback" src="assets/yaas-premium-mark.png" alt="YAAS">
+            <video class="brand-loop-video" autoplay muted loop playsinline preload="metadata" aria-label="YAAS" oncanplay="this.classList.add('ready')" onerror="this.classList.remove('ready')">
+              <source src="assets/yaas-brand-loop.mp4" type="video/mp4">
               <source src="assets/yaas-brand-loop.mov" type="video/quicktime">
             </video>
           </div>
