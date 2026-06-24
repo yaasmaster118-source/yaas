@@ -211,7 +211,16 @@ async function handleApi(request, response, helpers) {
     const oauthCallback = url.pathname.match(/^\/api\/auth\/oauth\/(google|apple)\/callback$/);
     if (oauthCallback && (method === "GET" || (method === "POST" && oauthCallback[1] === "apple"))) {
       const callbackValues = method === "POST" ? await readForm(request) : Object.fromEntries(url.searchParams);
-      await finishOAuth(oauthCallback[1], request, response, getOrigin(request), callbackValues);
+      try {
+        await finishOAuth(oauthCallback[1], request, response, getOrigin(request), callbackValues);
+      } catch (error) {
+        console.error(error);
+        const providerName = oauthCallback[1] === "google" ? "Google" : "Apple";
+        response.writeHead(302, {
+          Location: `/?authError=${encodeURIComponent(`${providerName} girişi tamamlanamadı. Client ID, secret ve yönlendirme adresini kontrol et.`)}`
+        });
+        response.end();
+      }
       return;
     }
 

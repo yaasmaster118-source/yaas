@@ -75,6 +75,13 @@ function inviteCodeFromLocation() {
   return pathMatch?.[1] || sessionStorage.getItem("yaasPendingInvite") || "";
 }
 
+function authErrorFromLocation() {
+  const message = new URLSearchParams(location.search).get("authError");
+  if (!message) return "";
+  history.replaceState({}, "", location.pathname);
+  return message.slice(0, 180);
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     credentials: "same-origin",
@@ -1145,16 +1152,18 @@ async function joinPendingInvite() {
 
 async function start() {
   buildPermissionGrid();
+  const socialAuthError = authErrorFromLocation();
   const providers = await api("/api/auth/providers");
   const enabledProviders = providers.providers || {};
   $$("[data-provider]").forEach((button) => {
     button.disabled = !enabledProviders[button.dataset.provider];
   });
   $("#social-login-note").textContent = enabledProviders.google || enabledProviders.apple
-    ? "Sosyal hesabın YAAS hesabın olarak kaydedilir."
-    : "Google ve Apple girişi yönetici ayarları tamamlanınca açılacak.";
+    ? "Google ile ilk girişte YAAS hesabın otomatik oluşur, sonraki girişlerde aynı hesaba girersin."
+    : "Google girişi Render ortam anahtarları tamamlanınca açılacak.";
   const data = await api("/api/me");
   if (!data.user) {
+    if (socialAuthError) $("#login-error").textContent = socialAuthError;
     const inviteCode = inviteCodeFromLocation();
     if (inviteCode) {
       sessionStorage.setItem("yaasPendingInvite", inviteCode);

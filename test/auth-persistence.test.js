@@ -96,6 +96,21 @@ test("Google and Apple login stay disabled until credentials are configured", ()
   assert.deepEqual(publicProviders(), { google: false, apple: false });
 });
 
+test("Google login can also create an account", () => {
+  const root = path.join(__dirname, "..");
+  const oauth = fs.readFileSync(path.join(root, "src", "oauth.js"), "utf8");
+  const api = fs.readFileSync(path.join(root, "src", "api.js"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+
+  assert.match(oauth, /INSERT INTO users/);
+  assert.match(oauth, /INSERT INTO oauth_accounts/);
+  assert.match(oauth, /openid email profile/);
+  assert.match(api, /authError=/);
+  assert.match(app, /Google ile ilk girişte YAAS hesabın otomatik oluşur/);
+  assert.match(html, /Google ile giriş yap \/ hesap oluştur/);
+});
+
 test("Apple client secret is generated as an ES256 JWT", () => {
   const { privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
   process.env.APPLE_CLIENT_ID = "com.yaas.web";
