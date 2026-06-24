@@ -25,6 +25,12 @@ function validEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function strongPassword(password) {
+  return String(password || "").length >= 8
+    && /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(password)
+    && /\d/.test(password);
+}
+
 function isUniqueConflict(error) {
   return error?.code === "23505" || /unique|duplicate/i.test(String(error?.message || ""));
 }
@@ -214,8 +220,8 @@ async function handleApi(request, response, helpers) {
       const email = normalizeEmail(body.email);
       const name = text(body.name, 40);
       const password = String(body.password || "");
-      if (!validEmail(email) || name.length < 2 || password.length < 8) {
-        return sendJson(response, 400, { error: "Geçerli ad, e-posta ve en az 8 karakterli şifre gerekli" });
+      if (!validEmail(email) || name.length < 2 || !strongPassword(password)) {
+        return sendJson(response, 400, { error: "Geçerli ad, e-posta ve en az 8 karakterli, harf ve rakam içeren şifre gerekli" });
       }
       if ((await query("SELECT 1 FROM users WHERE email = $1", [email])).rowCount) {
         return sendJson(response, 409, { error: "Bu e-posta zaten kayıtlı. Lütfen giriş yap." });
@@ -247,8 +253,11 @@ async function handleApi(request, response, helpers) {
         [normalizeEmail(body.email)]
       );
       const user = result.rows[0];
-      if (!user || !(await verifyPassword(String(body.password || ""), user.password_hash))) {
-        return sendJson(response, 401, { error: "E-posta veya şifre yanlış" });
+      if (!user) {
+        return sendJson(response, 404, { error: "Bu e-posta ile hesap bulunamadı. Önce hesap oluştur." });
+      }
+      if (!(await verifyPassword(String(body.password || ""), user.password_hash))) {
+        return sendJson(response, 401, { error: "Şifre yanlış. Lütfen tekrar dene." });
       }
       await createSession(user.id, response);
       return sendJson(response, 200, {

@@ -82,8 +82,18 @@ async function api(path, options = {}) {
     ...options
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "İşlem başarısız");
+  if (!response.ok) {
+    const error = new Error(data.error || "İşlem başarısız");
+    error.status = response.status;
+    throw error;
+  }
   return data;
+}
+
+function strongPassword(password) {
+  return String(password || "").length >= 8
+    && /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(password)
+    && /\d/.test(password);
 }
 
 function notify(message, error = false) {
@@ -1158,6 +1168,11 @@ async function start() {
 }
 
 $$("[data-auth-tab]").forEach((button) => button.addEventListener("click", () => switchAuth(button.dataset.authTab)));
+$("#open-register-from-login").addEventListener("click", () => {
+  $("#register-email").value = $("#login-email").value.trim();
+  switchAuth("register");
+  $("#register-name").focus();
+});
 $$("[data-open-modal]").forEach((button) => button.addEventListener("click", () => openModal(button.dataset.openModal)));
 $$("[data-server-template]").forEach((button) => button.addEventListener("click", () => {
   selectServerTemplate(button.dataset.serverTemplate);
@@ -1191,6 +1206,7 @@ $$("[data-provider]").forEach((button) => button.addEventListener("click", () =>
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  $("#login-error").textContent = "";
   try {
     const data = await api("/api/auth/login", {
       method: "POST",
@@ -1201,19 +1217,33 @@ $("#login-form").addEventListener("submit", async (event) => {
     if (!(await joinPendingInvite())) await loadServers();
   } catch (error) {
     $("#login-error").textContent = error.message;
+    if (error.status === 404) {
+      $("#register-email").value = $("#login-email").value.trim();
+    }
   }
 });
 
 $("#register-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  const password = $("#register-password").value;
+  const confirmation = $("#register-password-confirm").value;
+  $("#register-error").textContent = "";
+  if (password !== confirmation) {
+    $("#register-error").textContent = "Şifreler aynı olmalı.";
+    return;
+  }
+  if (!strongPassword(password)) {
+    $("#register-error").textContent = "Şifre en az 8 karakter, harf ve rakam içermeli.";
+    return;
+  }
   try {
     const data = await api("/api/auth/register", {
       method: "POST",
       body: JSON.stringify({
         name: $("#register-name").value,
         email: $("#register-email").value,
-        password: $("#register-password").value
+        password
       })
     });
     form.reset();

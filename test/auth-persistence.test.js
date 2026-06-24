@@ -70,6 +70,21 @@ test("accounts are unique by email and server memberships survive logout", async
   delete process.env.LOCAL_DATABASE_PATH;
 });
 
+test("authentication flow requires an existing account and stronger registration", () => {
+  const root = path.join(__dirname, "..");
+  const api = fs.readFileSync(path.join(root, "src", "api.js"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+
+  assert.match(api, /strongPassword/);
+  assert.match(api, /Bu e-posta ile hesap bulunamadı/);
+  assert.match(api, /Şifre yanlış/);
+  assert.match(app, /register-password-confirm/);
+  assert.match(app, /Şifreler aynı olmalı/);
+  assert.match(html, /id="register-password-confirm"/);
+  assert.match(html, /Hesabın yoksa giriş yapılamaz/);
+});
+
 test("Google and Apple login stay disabled until credentials are configured", () => {
   delete process.env.GOOGLE_CLIENT_ID;
   delete process.env.GOOGLE_CLIENT_SECRET;

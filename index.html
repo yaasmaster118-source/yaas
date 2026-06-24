@@ -12,8 +12,8 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.13">
-    <script src="app.js?v=1.1.13" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.14">
+    <script src="app.js?v=1.1.14" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -45,15 +45,16 @@
             <label>E-posta<input id="login-email" type="email" autocomplete="email" required></label>
             <label>Şifre<input id="login-password" type="password" autocomplete="current-password" required></label>
             <p class="form-error" id="login-error"></p>
-            <small class="auth-help">Hesabına girince katıldığın sunucular aynen geri gelir.</small>
+            <small class="auth-help">Hesabın yoksa giriş yapılamaz. Önce <button class="auth-inline-link" id="open-register-from-login" type="button">hesap oluştur</button>.</small>
             <button class="primary wide" type="submit">Giriş yap <span>→</span></button>
           </form>
           <form class="auth-form" id="register-form">
             <label>Adın<input id="register-name" autocomplete="name" minlength="2" maxlength="40" required></label>
             <label>E-posta<input id="register-email" type="email" autocomplete="email" required></label>
             <label>Şifre<input id="register-password" type="password" autocomplete="new-password" minlength="8" required></label>
+            <label>Şifre tekrar<input id="register-password-confirm" type="password" autocomplete="new-password" minlength="8" required></label>
             <p class="form-error" id="register-error"></p>
-            <small class="auth-help">Bir e-posta ile yalnızca bir YAAS hesabı açılır.</small>
+            <small class="auth-help">Bir e-posta ile yalnızca bir YAAS hesabı açılır. Şifre en az 8 karakter, harf ve rakam içermeli.</small>
             <button class="primary wide" type="submit">Hesap oluştur <span>→</span></button>
           </form>
           <div class="social-login">
