@@ -62,6 +62,7 @@ const state = {
 const RTC_CONFIGURATION = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
+const AVATAR_FRAME_CLASSES = ["avatar-frame-gold", "avatar-frame-emerald", "avatar-frame-royal", "avatar-frame-neon"];
 
 async function loadVoiceConfiguration() {
   const data = await voiceApi("config");
@@ -126,7 +127,8 @@ function initials(name) {
 function avatarContent(person, sizeClass = "") {
   const name = person?.display_name || person?.displayName || person?.name || "?";
   const avatarUrl = person?.avatar_url || person?.avatarUrl || "";
-  const className = `avatar ${sizeClass}`.trim();
+  const frame = person?.avatar_frame && person.avatar_frame !== "none" ? ` avatar-frame-${person.avatar_frame}` : "";
+  const className = `avatar ${sizeClass}${frame}`.trim();
   return avatarUrl
     ? `<span class="${className} avatar-photo"><img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(name)}"></span>`
     : `<span class="${className}">${escapeHtml(initials(name))}</span>`;
@@ -135,10 +137,41 @@ function avatarContent(person, sizeClass = "") {
 function setAvatar(element, person) {
   const name = person?.display_name || person?.displayName || person?.name || "?";
   const avatarUrl = person?.avatar_url || person?.avatarUrl || "";
+  const frame = person?.avatar_frame && person.avatar_frame !== "none" ? `avatar-frame-${person.avatar_frame}` : "";
+  element.classList.remove(...AVATAR_FRAME_CLASSES);
+  if (frame) element.classList.add(frame);
   element.classList.toggle("avatar-photo", Boolean(avatarUrl));
   element.innerHTML = avatarUrl
     ? `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(name)}">`
     : escapeHtml(initials(name));
+}
+
+function resizeAvatarFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith("image/")) {
+      reject(new Error("Lutfen bir fotograf sec"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Fotograf okunamadi"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Fotograf hazirlanamadi"));
+      image.onload = () => {
+        const size = 420;
+        const scale = Math.min(1, size / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function setVoiceControl(buttonId, icon, label, active = false) {
@@ -481,10 +514,20 @@ async function openDm(friend) {
 function fillProfileSettings() {
   $("#profile-display-name-input").value = state.user.display_name || state.user.displayName || "";
   $("#profile-avatar-url-input").value = state.user.avatar_url || "";
+  $("#profile-frame-input").value = state.user.avatar_frame || "none";
   $("#profile-bio-input").value = state.user.bio || "";
   $("#profile-settings-preview-name").textContent = state.user.display_name || state.user.displayName || "Kullanici";
   $("#profile-settings-preview-handle").textContent = `@${state.user.handle}`;
   setAvatar($("#profile-settings-preview"), state.user);
+}
+
+function updateProfilePreview() {
+  setAvatar($("#profile-settings-preview"), {
+    display_name: $("#profile-display-name-input").value || state.user.display_name || state.user.displayName,
+    avatar_url: $("#profile-avatar-url-input").value,
+    avatar_frame: $("#profile-frame-input").value
+  });
+  $("#profile-settings-preview-name").textContent = $("#profile-display-name-input").value || state.user.display_name || state.user.displayName || "Kullanici";
 }
 
 async function openUserProfile(userId) {
@@ -1277,6 +1320,22 @@ $("#account-settings-button").addEventListener("click", (event) => {
   fillProfileSettings();
   openModal("profile-settings-modal");
 });
+$("#profile-avatar-picker").addEventListener("click", () => $("#profile-avatar-file-input").click());
+$("#profile-avatar-file-input").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    $("#profile-avatar-url-input").value = await resizeAvatarFile(file);
+    updateProfilePreview();
+  } catch (error) {
+    $(".form-error", $("#profile-settings-form")).textContent = error.message;
+  } finally {
+    event.target.value = "";
+  }
+});
+$("#profile-frame-input").addEventListener("change", updateProfilePreview);
+$("#profile-display-name-input").addEventListener("input", updateProfilePreview);
+$("#profile-avatar-url-input").addEventListener("input", updateProfilePreview);
 $("#profile-card-friend-button").addEventListener("click", async () => {
   try {
     await sendFriendRequest($("#profile-card-friend-button").dataset.handle);
@@ -1355,6 +1414,7 @@ $("#profile-settings-form").addEventListener("submit", async (event) => {
       body: JSON.stringify({
         displayName: $("#profile-display-name-input").value,
         avatarUrl: $("#profile-avatar-url-input").value,
+        avatarFrame: $("#profile-frame-input").value,
         bio: $("#profile-bio-input").value
       })
     });

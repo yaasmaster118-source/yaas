@@ -25,15 +25,21 @@ function validEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function profileImageUrl(value) {
-  const url = text(value, 500);
-  if (!url) return "";
+function profileImageValue(value) {
+  const image = String(value || "").trim();
+  if (!image) return "";
+  if (image.length > 350_000) return null;
+  if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i.test(image)) return image;
   try {
-    const parsed = new URL(url);
-    return ["http:", "https:"].includes(parsed.protocol) ? url : null;
+    const parsed = new URL(image);
+    return ["http:", "https:"].includes(parsed.protocol) ? image.slice(0, 500) : null;
   } catch {
     return null;
   }
+}
+
+function avatarFrame(value) {
+  return ["none", "gold", "emerald", "royal", "neon"].includes(value) ? value : "none";
 }
 
 function strongPassword(password) {
@@ -262,14 +268,14 @@ async function handleApi(request, response, helpers) {
       }
       await createSession(user.id, response);
       return sendJson(response, 201, {
-        user: { id: user.id, email, displayName: name, handle: user.handle, bio: "", avatar_url: "", is_site_owner: isSiteOwner }
+        user: { id: user.id, email, displayName: name, handle: user.handle, bio: "", avatar_url: "", avatar_frame: "none", is_site_owner: isSiteOwner }
       });
     }
 
     if (method === "POST" && url.pathname === "/api/auth/login") {
       const body = await readJson(request);
       const result = await query(
-        "SELECT id, email, display_name, handle, bio, avatar_url, password_hash, is_site_owner FROM users WHERE email = $1",
+        "SELECT id, email, display_name, handle, bio, avatar_url, avatar_frame, password_hash, is_site_owner FROM users WHERE email = $1",
         [normalizeEmail(body.email)]
       );
       const user = result.rows[0];
@@ -288,6 +294,7 @@ async function handleApi(request, response, helpers) {
           handle: user.handle,
           bio: user.bio,
           avatar_url: user.avatar_url,
+          avatar_frame: user.avatar_frame,
           is_site_owner: user.is_site_owner
         }
       });
@@ -309,23 +316,25 @@ async function handleApi(request, response, helpers) {
       const body = await readJson(request);
       const displayName = body.displayName === undefined ? null : text(body.displayName, 40);
       const bio = body.bio === undefined ? null : text(body.bio, 240);
-      const avatarUrl = body.avatarUrl === undefined ? null : profileImageUrl(body.avatarUrl);
+      const avatarUrl = body.avatarUrl === undefined ? null : profileImageValue(body.avatarUrl);
+      const frame = body.avatarFrame === undefined ? null : avatarFrame(body.avatarFrame);
       if (displayName !== null && displayName.length < 2) {
         return sendJson(response, 400, { error: "Isim en az 2 karakter olmali" });
       }
       if (body.avatarUrl !== undefined && avatarUrl === null) {
-        return sendJson(response, 400, { error: "Profil fotografi icin gecerli bir http/https baglantisi kullan" });
+        return sendJson(response, 400, { error: "Profil fotografi icin gecerli bir fotograf veya http/https baglantisi kullan" });
       }
       await query(
         `UPDATE users SET
            display_name = COALESCE($2, display_name),
            bio = COALESCE($3, bio),
-           avatar_url = COALESCE($4, avatar_url)
+           avatar_url = COALESCE($4, avatar_url),
+           avatar_frame = COALESCE($5, avatar_frame)
          WHERE id = $1`,
-        [user.id, displayName, bio, avatarUrl]
+        [user.id, displayName, bio, avatarUrl, frame]
       );
       const updated = await query(
-        "SELECT id, email, display_name, handle, bio, avatar_url, is_site_owner FROM users WHERE id = $1",
+        "SELECT id, email, display_name, handle, bio, avatar_url, avatar_frame, is_site_owner FROM users WHERE id = $1",
         [user.id]
       );
       return sendJson(response, 200, { user: updated.rows[0] });
@@ -334,7 +343,7 @@ async function handleApi(request, response, helpers) {
     const profileRoute = url.pathname.match(/^\/api\/users\/([0-9a-f-]+)$/i);
     if (method === "GET" && profileRoute) {
       const result = await query(
-        `SELECT id, display_name, handle, bio, avatar_url, is_site_owner, created_at
+        `SELECT id, display_name, handle, bio, avatar_url, avatar_frame, is_site_owner, created_at
            FROM users WHERE id = $1`,
         [profileRoute[1]]
       );
@@ -368,7 +377,7 @@ async function handleApi(request, response, helpers) {
     if (method === "GET" && url.pathname === "/api/friends") {
       const [friends, incoming, outgoing] = await Promise.all([
         query(
-          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.is_site_owner
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner
              FROM friendships f
              JOIN users u ON u.id = CASE
                WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
@@ -377,13 +386,13 @@ async function handleApi(request, response, helpers) {
           [user.id]
         ),
         query(
-          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.is_site_owner, f.created_at
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner, f.created_at
              FROM friendships f JOIN users u ON u.id = f.requester_id
             WHERE f.addressee_id = $1 AND f.status = 'pending' ORDER BY f.created_at DESC`,
           [user.id]
         ),
         query(
-          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, f.created_at
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, f.created_at
              FROM friendships f JOIN users u ON u.id = f.addressee_id
             WHERE f.requester_id = $1 AND f.status = 'pending' ORDER BY f.created_at DESC`,
           [user.id]
@@ -400,7 +409,7 @@ async function handleApi(request, response, helpers) {
       const body = await readJson(request);
       const handle = text(body.handle, 30).replace(/^@/, "").toLowerCase();
       const targetResult = await query(
-        "SELECT id, display_name, handle, bio, avatar_url FROM users WHERE LOWER(handle) = $1",
+        "SELECT id, display_name, handle, bio, avatar_url, avatar_frame FROM users WHERE LOWER(handle) = $1",
         [handle]
       );
       const target = targetResult.rows[0];
@@ -585,7 +594,7 @@ async function handleApi(request, response, helpers) {
         query("SELECT id, name, position FROM channel_categories WHERE server_id = $1 ORDER BY position", [serverId]),
         query("SELECT id, category_id, name, type, position, is_private, allowed_role_ids, user_limit, audio_bitrate, quality_mode FROM channels WHERE server_id = $1 ORDER BY position", [serverId]),
         query(
-          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.is_site_owner, m.nickname, m.joined_at
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner, m.nickname, m.joined_at
              FROM memberships m JOIN users u ON u.id = m.user_id
             WHERE m.server_id = $1 ORDER BY m.joined_at`,
           [serverId]

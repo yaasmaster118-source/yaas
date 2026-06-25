@@ -106,15 +106,22 @@ test("profiles can be edited and opened from member lists", () => {
   const schema = fs.readFileSync(path.join(root, "schema.sql"), "utf8");
 
   assert.match(schema, /avatar_url TEXT NOT NULL DEFAULT ''/);
+  assert.match(schema, /avatar_frame TEXT NOT NULL DEFAULT 'none'/);
   assert.match(schema, /bio TEXT NOT NULL DEFAULT ''/);
   assert.match(database, /ALTER TABLE users ADD COLUMN avatar_url/);
-  assert.match(auth, /u\.bio, u\.avatar_url/);
+  assert.match(database, /ALTER TABLE users ADD COLUMN avatar_frame/);
+  assert.match(auth, /u\.bio, u\.avatar_url, u\.avatar_frame/);
   assert.match(api, /\/api\/me\/profile/);
+  assert.match(api, /profileImageValue/);
+  assert.match(api, /avatarFrame/);
   assert.match(api, /profileRoute/);
   assert.match(app, /openUserProfile/);
   assert.match(app, /profile-settings-form/);
+  assert.match(app, /resizeAvatarFile/);
+  assert.match(app, /profile-frame-input/);
   assert.match(html, /id="profile-settings-modal"/);
   assert.match(html, /id="user-profile-modal"/);
+  assert.match(html, /id="profile-avatar-file-input"/);
 });
 
 test("Google login can also create an account", () => {

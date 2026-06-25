@@ -12,8 +12,8 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.16">
-    <script src="app.js?v=1.1.16" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.17">
+    <script src="app.js?v=1.1.17" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -444,11 +444,22 @@
       <form class="modal profile-settings-modal" id="profile-settings-form">
         <header><div><strong>Profil ve ayarlar</strong><small>Ismini, notunu ve profil fotografini duzenle.</small></div><button class="icon-button modal-close" type="button">×</button></header>
         <div class="profile-editor-preview">
-          <span class="avatar large" id="profile-settings-preview">?</span>
+          <button class="profile-avatar-picker" id="profile-avatar-picker" type="button" title="Galeriden fotograf sec">
+            <span class="avatar large" id="profile-settings-preview">?</span>
+            <small>Foto sec</small>
+          </button>
           <div><strong id="profile-settings-preview-name">Kullanici</strong><small id="profile-settings-preview-handle">@yaas</small></div>
         </div>
+        <input id="profile-avatar-file-input" type="file" accept="image/*" hidden>
         <label>Gorunen isim<input id="profile-display-name-input" minlength="2" maxlength="40" required></label>
-        <label>Profil fotografi baglantisi<input id="profile-avatar-url-input" type="url" maxlength="500" placeholder="https://..."></label>
+        <label>Profil fotografi baglantisi<input id="profile-avatar-url-input" maxlength="350000" placeholder="Galeriden sec veya https://... yapistir"></label>
+        <label>Profil cercevesi<select id="profile-frame-input">
+          <option value="none">Cerceve yok</option>
+          <option value="gold">Altin</option>
+          <option value="emerald">Zumrut</option>
+          <option value="royal">Mor premium</option>
+          <option value="neon">Neon</option>
+        </select></label>
         <label>Profil notu<textarea id="profile-bio-input" maxlength="240" placeholder="Kendin hakkinda kisa bir not yaz."></textarea></label>
         <p class="form-error"></p>
         <footer><button class="secondary modal-close" type="button">Vazgec</button><button class="primary" type="submit">Profili kaydet</button></footer>

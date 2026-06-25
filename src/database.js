@@ -25,6 +25,7 @@ function getLocalDatabase() {
       password_hash TEXT NOT NULL,
       bio TEXT NOT NULL DEFAULT '',
       avatar_url TEXT NOT NULL DEFAULT '',
+      avatar_frame TEXT NOT NULL DEFAULT 'none',
       is_site_owner INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -161,6 +162,9 @@ function getLocalDatabase() {
   }
   if (!userColumns.some((column) => column.name === "avatar_url")) {
     localDatabase.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''");
+  }
+  if (!userColumns.some((column) => column.name === "avatar_frame")) {
+    localDatabase.exec("ALTER TABLE users ADD COLUMN avatar_frame TEXT NOT NULL DEFAULT 'none'");
   }
   return localDatabase;
 }
