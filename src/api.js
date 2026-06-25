@@ -25,6 +25,17 @@ function validEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function profileImageUrl(value) {
+  const url = text(value, 500);
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:"].includes(parsed.protocol) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 function strongPassword(password) {
   return String(password || "").length >= 8
     && /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(password)
@@ -251,14 +262,14 @@ async function handleApi(request, response, helpers) {
       }
       await createSession(user.id, response);
       return sendJson(response, 201, {
-        user: { id: user.id, email, displayName: name, handle: user.handle, is_site_owner: isSiteOwner }
+        user: { id: user.id, email, displayName: name, handle: user.handle, bio: "", avatar_url: "", is_site_owner: isSiteOwner }
       });
     }
 
     if (method === "POST" && url.pathname === "/api/auth/login") {
       const body = await readJson(request);
       const result = await query(
-        "SELECT id, email, display_name, handle, password_hash, is_site_owner FROM users WHERE email = $1",
+        "SELECT id, email, display_name, handle, bio, avatar_url, password_hash, is_site_owner FROM users WHERE email = $1",
         [normalizeEmail(body.email)]
       );
       const user = result.rows[0];
@@ -275,6 +286,8 @@ async function handleApi(request, response, helpers) {
           email: user.email,
           displayName: user.display_name,
           handle: user.handle,
+          bio: user.bio,
+          avatar_url: user.avatar_url,
           is_site_owner: user.is_site_owner
         }
       });
@@ -292,10 +305,70 @@ async function handleApi(request, response, helpers) {
     const user = await requireUser(request, response, sendJson);
     if (!user) return;
 
+    if (method === "PATCH" && url.pathname === "/api/me/profile") {
+      const body = await readJson(request);
+      const displayName = body.displayName === undefined ? null : text(body.displayName, 40);
+      const bio = body.bio === undefined ? null : text(body.bio, 240);
+      const avatarUrl = body.avatarUrl === undefined ? null : profileImageUrl(body.avatarUrl);
+      if (displayName !== null && displayName.length < 2) {
+        return sendJson(response, 400, { error: "Isim en az 2 karakter olmali" });
+      }
+      if (body.avatarUrl !== undefined && avatarUrl === null) {
+        return sendJson(response, 400, { error: "Profil fotografi icin gecerli bir http/https baglantisi kullan" });
+      }
+      await query(
+        `UPDATE users SET
+           display_name = COALESCE($2, display_name),
+           bio = COALESCE($3, bio),
+           avatar_url = COALESCE($4, avatar_url)
+         WHERE id = $1`,
+        [user.id, displayName, bio, avatarUrl]
+      );
+      const updated = await query(
+        "SELECT id, email, display_name, handle, bio, avatar_url, is_site_owner FROM users WHERE id = $1",
+        [user.id]
+      );
+      return sendJson(response, 200, { user: updated.rows[0] });
+    }
+
+    const profileRoute = url.pathname.match(/^\/api\/users\/([0-9a-f-]+)$/i);
+    if (method === "GET" && profileRoute) {
+      const result = await query(
+        `SELECT id, display_name, handle, bio, avatar_url, is_site_owner, created_at
+           FROM users WHERE id = $1`,
+        [profileRoute[1]]
+      );
+      if (!result.rowCount) return sendJson(response, 404, { error: "Profil bulunamadi" });
+      const [friendship, sharedServers] = await Promise.all([
+        query(
+          `SELECT status FROM friendships
+            WHERE (requester_id = $1 AND addressee_id = $2)
+               OR (requester_id = $2 AND addressee_id = $1)`,
+          [user.id, profileRoute[1]]
+        ),
+        query(
+          `SELECT s.id, s.name
+             FROM memberships mine
+             JOIN memberships theirs ON theirs.server_id = mine.server_id
+             JOIN servers s ON s.id = mine.server_id
+            WHERE mine.user_id = $1 AND theirs.user_id = $2
+            ORDER BY s.name LIMIT 6`,
+          [user.id, profileRoute[1]]
+        )
+      ]);
+      return sendJson(response, 200, {
+        profile: {
+          ...result.rows[0],
+          friendship: friendship.rows[0]?.status || null,
+          sharedServers: sharedServers.rows
+        }
+      });
+    }
+
     if (method === "GET" && url.pathname === "/api/friends") {
       const [friends, incoming, outgoing] = await Promise.all([
         query(
-          `SELECT u.id, u.display_name, u.handle, u.is_site_owner
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.is_site_owner
              FROM friendships f
              JOIN users u ON u.id = CASE
                WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
@@ -304,13 +377,13 @@ async function handleApi(request, response, helpers) {
           [user.id]
         ),
         query(
-          `SELECT u.id, u.display_name, u.handle, u.is_site_owner, f.created_at
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.is_site_owner, f.created_at
              FROM friendships f JOIN users u ON u.id = f.requester_id
             WHERE f.addressee_id = $1 AND f.status = 'pending' ORDER BY f.created_at DESC`,
           [user.id]
         ),
         query(
-          `SELECT u.id, u.display_name, u.handle, f.created_at
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, f.created_at
              FROM friendships f JOIN users u ON u.id = f.addressee_id
             WHERE f.requester_id = $1 AND f.status = 'pending' ORDER BY f.created_at DESC`,
           [user.id]
@@ -327,7 +400,7 @@ async function handleApi(request, response, helpers) {
       const body = await readJson(request);
       const handle = text(body.handle, 30).replace(/^@/, "").toLowerCase();
       const targetResult = await query(
-        "SELECT id, display_name, handle FROM users WHERE LOWER(handle) = $1",
+        "SELECT id, display_name, handle, bio, avatar_url FROM users WHERE LOWER(handle) = $1",
         [handle]
       );
       const target = targetResult.rows[0];
@@ -512,7 +585,7 @@ async function handleApi(request, response, helpers) {
         query("SELECT id, name, position FROM channel_categories WHERE server_id = $1 ORDER BY position", [serverId]),
         query("SELECT id, category_id, name, type, position, is_private, allowed_role_ids, user_limit, audio_bitrate, quality_mode FROM channels WHERE server_id = $1 ORDER BY position", [serverId]),
         query(
-          `SELECT u.id, u.display_name, u.handle, u.is_site_owner, m.nickname, m.joined_at
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.is_site_owner, m.nickname, m.joined_at
              FROM memberships m JOIN users u ON u.id = m.user_id
             WHERE m.server_id = $1 ORDER BY m.joined_at`,
           [serverId]

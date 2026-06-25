@@ -12,8 +12,8 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.15">
-    <script src="app.js?v=1.1.15" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.16">
+    <script src="app.js?v=1.1.16" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -95,7 +95,7 @@
           <strong>Henüz sunucun yok</strong>
           <p>Bir sunucu oluştur veya davet koduyla topluluğa katıl.</p>
         </div>
-        <footer class="account-bar">
+        <footer class="account-bar" id="account-settings-button" title="Profil ve ayarlar">
           <span class="avatar" id="account-avatar">?</span>
           <div><span class="account-name-row"><strong id="account-name">Kullanıcı</strong><i class="site-owner-badge hidden" id="account-owner-badge">YAAS SAHİBİ</i></span><small id="account-handle">@yaas</small></div>
           <button class="icon-button" id="logout-button" type="button" title="Çıkış yap">↪</button>
@@ -437,6 +437,39 @@
             </div>
           </section>
         </div>
+      </section>
+    </div>
+
+    <div class="modal-layer" id="profile-settings-modal" hidden>
+      <form class="modal profile-settings-modal" id="profile-settings-form">
+        <header><div><strong>Profil ve ayarlar</strong><small>Ismini, notunu ve profil fotografini duzenle.</small></div><button class="icon-button modal-close" type="button">×</button></header>
+        <div class="profile-editor-preview">
+          <span class="avatar large" id="profile-settings-preview">?</span>
+          <div><strong id="profile-settings-preview-name">Kullanici</strong><small id="profile-settings-preview-handle">@yaas</small></div>
+        </div>
+        <label>Gorunen isim<input id="profile-display-name-input" minlength="2" maxlength="40" required></label>
+        <label>Profil fotografi baglantisi<input id="profile-avatar-url-input" type="url" maxlength="500" placeholder="https://..."></label>
+        <label>Profil notu<textarea id="profile-bio-input" maxlength="240" placeholder="Kendin hakkinda kisa bir not yaz."></textarea></label>
+        <p class="form-error"></p>
+        <footer><button class="secondary modal-close" type="button">Vazgec</button><button class="primary" type="submit">Profili kaydet</button></footer>
+      </form>
+    </div>
+
+    <div class="modal-layer" id="user-profile-modal" hidden>
+      <section class="modal user-profile-modal">
+        <header><div><strong>Profil</strong><small id="profile-card-handle">@yaas</small></div><button class="icon-button modal-close" type="button">×</button></header>
+        <div class="profile-card-hero">
+          <span class="avatar large" id="profile-card-avatar">?</span>
+          <div><h3 id="profile-card-name">Kullanici</h3><p id="profile-card-bio">Henuz profil notu yok.</p></div>
+        </div>
+        <div class="profile-card-meta">
+          <span id="profile-card-owner-badge" class="site-owner-badge hidden">YAAS SAHIBI</span>
+          <small id="profile-card-shared">Ortak sunucu bilgisi yok.</small>
+        </div>
+        <footer>
+          <button class="secondary" id="profile-card-friend-button" type="button">Arkadas ekle</button>
+          <button class="primary hidden" id="profile-card-message-button" type="button">Mesaj gonder</button>
+        </footer>
       </section>
     </div>
 

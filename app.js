@@ -123,6 +123,24 @@ function initials(name) {
   return String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
 }
 
+function avatarContent(person, sizeClass = "") {
+  const name = person?.display_name || person?.displayName || person?.name || "?";
+  const avatarUrl = person?.avatar_url || person?.avatarUrl || "";
+  const className = `avatar ${sizeClass}`.trim();
+  return avatarUrl
+    ? `<span class="${className} avatar-photo"><img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(name)}"></span>`
+    : `<span class="${className}">${escapeHtml(initials(name))}</span>`;
+}
+
+function setAvatar(element, person) {
+  const name = person?.display_name || person?.displayName || person?.name || "?";
+  const avatarUrl = person?.avatar_url || person?.avatarUrl || "";
+  element.classList.toggle("avatar-photo", Boolean(avatarUrl));
+  element.innerHTML = avatarUrl
+    ? `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(name)}">`
+    : escapeHtml(initials(name));
+}
+
 function setVoiceControl(buttonId, icon, label, active = false) {
   const button = $(`#${buttonId}`);
   button.innerHTML = `<span>${icon}</span><small>${label}</small>`;
@@ -163,7 +181,7 @@ function showApp(user) {
   $("#app").classList.remove("hidden");
   $("#account-name").textContent = user.display_name || user.displayName;
   $("#account-handle").textContent = `@${user.handle}`;
-  $("#account-avatar").textContent = initials(user.display_name || user.displayName);
+  setAvatar($("#account-avatar"), user);
   $("#account-owner-badge").classList.toggle("hidden", !user.is_site_owner);
 }
 
@@ -281,14 +299,23 @@ function renderMembers() {
   const showContactActions = localStorage.getItem("yaas:server-dm-setting") !== "false";
   $("#member-empty").classList.toggle("hidden", members.length > 0);
   $("#member-list").innerHTML = members.map((member) => `
-    <article class="member-item">
-      <span class="avatar">${escapeHtml(initials(member.display_name))}</span>
+    <article class="member-item" data-profile-id="${member.id}" role="button" tabindex="0">
+      ${avatarContent(member)}
       <div><span class="member-name-row"><strong>${escapeHtml(member.nickname || member.display_name)}</strong>
       ${member.is_site_owner ? '<i class="site-owner-badge">YAAS SAHİBİ</i>' : ""}</span><small>@${escapeHtml(member.handle)}</small>
       <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}">${escapeHtml(role.name)}</i>`).join("")}</span>
       ${showContactActions && member.id !== state.user.id ? `<span class="member-actions"><button class="secondary add-friend-button" data-handle="${escapeHtml(member.handle)}" type="button">Arkadaş ekle</button></span>` : ""}
       </div>
     </article>`).join("");
+  $$("[data-profile-id]", $("#member-list")).forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      openUserProfile(item.dataset.profileId);
+    });
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") openUserProfile(item.dataset.profileId);
+    });
+  });
   $$(".add-friend-button").forEach((button) => button.addEventListener("click", () => {
     sendFriendRequest(button.dataset.handle).catch((error) => notify(error.message, true));
   }));
@@ -330,7 +357,7 @@ function renderSettingsMembers() {
   $("#settings-member-list").innerHTML = members.length
     ? members.map((member) => `
       <article class="settings-member-row">
-        <span class="avatar">${escapeHtml(initials(member.display_name))}</span>
+        ${avatarContent(member)}
         <div>
           <strong>${escapeHtml(member.nickname || member.display_name)}</strong>
           <small>@${escapeHtml(member.handle)}</small>
@@ -389,9 +416,9 @@ async function removeMemberRole(memberId, roleId) {
 
 function friendRow(person, actions = "") {
   return `<div class="friend-row">
-    <span class="avatar">${escapeHtml(initials(person.display_name))}</span>
+    ${avatarContent(person)}
     <div><strong>${escapeHtml(person.display_name)}</strong><small>@${escapeHtml(person.handle)}</small></div>
-    <span class="friend-actions">${actions}</span>
+    <span class="friend-actions"><button class="secondary view-profile-button" data-user-id="${person.id}" type="button">Profil</button>${actions}</span>
   </div>`;
 }
 
@@ -416,6 +443,9 @@ async function loadFriends() {
     answerFriendRequest(button.dataset.userId, "reject")));
   $$(".open-dm-button").forEach((button) => button.addEventListener("click", () => {
     openDm(state.friends.friends.find((item) => item.id === button.dataset.userId));
+  }));
+  $$(".view-profile-button").forEach((button) => button.addEventListener("click", () => {
+    openUserProfile(button.dataset.userId);
   }));
 }
 
@@ -442,10 +472,41 @@ async function openDm(friend) {
   state.activeDm = friend;
   $("#dm-empty").classList.add("hidden");
   $("#dm-view").classList.remove("hidden");
-  $("#dm-avatar").textContent = initials(friend.display_name);
+  setAvatar($("#dm-avatar"), friend);
   $("#dm-name").textContent = friend.display_name;
   $("#dm-handle").textContent = `@${friend.handle}`;
   await loadDmMessages();
+}
+
+function fillProfileSettings() {
+  $("#profile-display-name-input").value = state.user.display_name || state.user.displayName || "";
+  $("#profile-avatar-url-input").value = state.user.avatar_url || "";
+  $("#profile-bio-input").value = state.user.bio || "";
+  $("#profile-settings-preview-name").textContent = state.user.display_name || state.user.displayName || "Kullanici";
+  $("#profile-settings-preview-handle").textContent = `@${state.user.handle}`;
+  setAvatar($("#profile-settings-preview"), state.user);
+}
+
+async function openUserProfile(userId) {
+  try {
+    const data = await api(`/api/users/${userId}`);
+    const profile = data.profile;
+    $("#profile-card-name").textContent = profile.display_name;
+    $("#profile-card-handle").textContent = `@${profile.handle}`;
+    $("#profile-card-bio").textContent = profile.bio || "Henuz profil notu yok.";
+    $("#profile-card-owner-badge").classList.toggle("hidden", !profile.is_site_owner);
+    $("#profile-card-shared").textContent = profile.sharedServers?.length
+      ? `Ortak sunucular: ${profile.sharedServers.map((server) => server.name).join(", ")}`
+      : "Ortak sunucu bilgisi yok.";
+    setAvatar($("#profile-card-avatar"), profile);
+    $("#profile-card-friend-button").classList.toggle("hidden", profile.id === state.user.id || profile.friendship === "accepted");
+    $("#profile-card-friend-button").dataset.handle = profile.handle;
+    $("#profile-card-message-button").classList.toggle("hidden", profile.id === state.user.id || profile.friendship !== "accepted");
+    $("#profile-card-message-button").dataset.userId = profile.id;
+    openModal("user-profile-modal");
+  } catch (error) {
+    notify(error.message, true);
+  }
 }
 
 async function loadDmMessages() {
@@ -1211,6 +1272,26 @@ $$("[data-provider]").forEach((button) => button.addEventListener("click", () =>
   if (inviteCode) sessionStorage.setItem("yaasPendingInvite", inviteCode);
   location.href = `/api/auth/oauth/${button.dataset.provider}`;
 }));
+$("#account-settings-button").addEventListener("click", (event) => {
+  if (event.target.closest("#logout-button")) return;
+  fillProfileSettings();
+  openModal("profile-settings-modal");
+});
+$("#profile-card-friend-button").addEventListener("click", async () => {
+  try {
+    await sendFriendRequest($("#profile-card-friend-button").dataset.handle);
+    $("#profile-card-friend-button").classList.add("hidden");
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+$("#profile-card-message-button").addEventListener("click", async () => {
+  await loadFriends();
+  const friend = state.friends.friends.find((item) => item.id === $("#profile-card-message-button").dataset.userId);
+  closeModal($("#profile-card-message-button"));
+  openModal("friends-modal");
+  openDm(friend);
+});
 
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1260,6 +1341,33 @@ $("#register-form").addEventListener("submit", async (event) => {
     if (!(await joinPendingInvite())) await loadServers();
   } catch (error) {
     $("#register-error").textContent = error.message;
+  }
+});
+
+$("#profile-settings-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const error = $(".form-error", form);
+  error.textContent = "";
+  try {
+    const data = await api("/api/me/profile", {
+      method: "PATCH",
+      body: JSON.stringify({
+        displayName: $("#profile-display-name-input").value,
+        avatarUrl: $("#profile-avatar-url-input").value,
+        bio: $("#profile-bio-input").value
+      })
+    });
+    state.user = data.user;
+    showApp(data.user);
+    fillProfileSettings();
+    if (state.activeServer) {
+      await openServer(state.activeServer.server.id, state.activeChannel?.id);
+    }
+    closeModal(form);
+    notify("Profil kaydedildi");
+  } catch (failure) {
+    error.textContent = failure.message;
   }
 });
 

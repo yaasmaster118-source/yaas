@@ -96,6 +96,27 @@ test("Google and Apple login stay disabled until credentials are configured", ()
   assert.deepEqual(publicProviders(), { google: false, apple: false });
 });
 
+test("profiles can be edited and opened from member lists", () => {
+  const root = path.join(__dirname, "..");
+  const api = fs.readFileSync(path.join(root, "src", "api.js"), "utf8");
+  const auth = fs.readFileSync(path.join(root, "src", "auth.js"), "utf8");
+  const database = fs.readFileSync(path.join(root, "src", "database.js"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const schema = fs.readFileSync(path.join(root, "schema.sql"), "utf8");
+
+  assert.match(schema, /avatar_url TEXT NOT NULL DEFAULT ''/);
+  assert.match(schema, /bio TEXT NOT NULL DEFAULT ''/);
+  assert.match(database, /ALTER TABLE users ADD COLUMN avatar_url/);
+  assert.match(auth, /u\.bio, u\.avatar_url/);
+  assert.match(api, /\/api\/me\/profile/);
+  assert.match(api, /profileRoute/);
+  assert.match(app, /openUserProfile/);
+  assert.match(app, /profile-settings-form/);
+  assert.match(html, /id="profile-settings-modal"/);
+  assert.match(html, /id="user-profile-modal"/);
+});
+
 test("Google login can also create an account", () => {
   const root = path.join(__dirname, "..");
   const oauth = fs.readFileSync(path.join(root, "src", "oauth.js"), "utf8");

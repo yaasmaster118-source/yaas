@@ -23,6 +23,8 @@ function getLocalDatabase() {
       display_name TEXT NOT NULL,
       handle TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
+      bio TEXT NOT NULL DEFAULT '',
+      avatar_url TEXT NOT NULL DEFAULT '',
       is_site_owner INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -152,6 +154,13 @@ function getLocalDatabase() {
   }
   if (!channelColumns.some((column) => column.name === "quality_mode")) {
     localDatabase.exec("ALTER TABLE channels ADD COLUMN quality_mode TEXT NOT NULL DEFAULT 'auto'");
+  }
+  const userColumns = localDatabase.prepare("PRAGMA table_info(users)").all();
+  if (!userColumns.some((column) => column.name === "bio")) {
+    localDatabase.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
+  }
+  if (!userColumns.some((column) => column.name === "avatar_url")) {
+    localDatabase.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''");
   }
   return localDatabase;
 }
