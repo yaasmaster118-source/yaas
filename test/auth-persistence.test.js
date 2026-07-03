@@ -77,8 +77,8 @@ test("authentication flow requires an existing account and stronger registration
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
   assert.match(api, /strongPassword/);
-  assert.match(api, /Bu e-posta ile hesap bulunamadı/);
-  assert.match(api, /Şifre yanlış/);
+  assert.match(api, /E-posta veya sifre hatali/);
+  assert.doesNotMatch(api, /Bu e-posta ile hesap bulunamad/);
   assert.match(app, /register-password-confirm/);
   assert.match(app, /Şifreler aynı olmalı/);
   assert.match(html, /id="register-password-confirm"/);

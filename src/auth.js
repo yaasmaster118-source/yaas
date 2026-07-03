@@ -47,7 +47,7 @@ async function createSession(userId, response) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   response.setHeader(
     "Set-Cookie",
-    `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure}`
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Priority=High; Max-Age=${SESSION_DAYS * 86400}${secure}`
   );
 }
 
@@ -56,7 +56,7 @@ async function destroySession(request, response) {
   if (token) await query("DELETE FROM sessions WHERE token_hash = $1", [hashToken(token)]);
   response.setHeader(
     "Set-Cookie",
-    `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`
+    `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Priority=High; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`
   );
 }
 

@@ -279,11 +279,8 @@ async function handleApi(request, response, helpers) {
         [normalizeEmail(body.email)]
       );
       const user = result.rows[0];
-      if (!user) {
-        return sendJson(response, 404, { error: "Bu e-posta ile hesap bulunamadı. Önce hesap oluştur." });
-      }
-      if (!(await verifyPassword(String(body.password || ""), user.password_hash))) {
-        return sendJson(response, 401, { error: "Şifre yanlış. Lütfen tekrar dene." });
+      if (!user || !(await verifyPassword(String(body.password || ""), user.password_hash))) {
+        return sendJson(response, 401, { error: "E-posta veya sifre hatali" });
       }
       await createSession(user.id, response);
       return sendJson(response, 200, {
@@ -954,6 +951,12 @@ async function handleApi(request, response, helpers) {
 
     sendJson(response, 404, { error: "API yolu bulunamadı" });
   } catch (error) {
+    if (error.statusCode === 413) {
+      return sendJson(response, 413, { error: "Istek cok buyuk" });
+    }
+    if (error.statusCode === 400) {
+      return sendJson(response, 400, { error: "Gecersiz istek" });
+    }
     if (error.code === "23505" || /UNIQUE constraint failed/i.test(error.message)) {
       return sendJson(response, 409, { error: "Bu kayıt zaten mevcut" });
     }
