@@ -29,6 +29,7 @@ const state = {
   activeServer: null,
   activeChannel: null,
   friends: { friends: [], incoming: [], outgoing: [] },
+  notifications: { friendRequests: 0, total: 0 },
   activeDm: null,
   voice: {
     roomId: null,
@@ -206,6 +207,9 @@ function switchSettingsTab(tab) {
   $$("[data-settings-panel]").forEach((panel) => {
     panel.classList.toggle("active", panel.dataset.settingsPanel === tab);
   });
+  if (tab === "invites" && state.activeServer?.permissions?.includes("invites.create")) {
+    renderServerInvites().catch((error) => notify(error.message, true));
+  }
 }
 
 function showApp(user) {
@@ -216,6 +220,22 @@ function showApp(user) {
   $("#account-handle").textContent = `@${user.handle}`;
   setAvatar($("#account-avatar"), user);
   $("#account-owner-badge").classList.toggle("hidden", !user.is_site_owner);
+}
+
+function updateNotificationBadges(count) {
+  const total = Number(count || 0);
+  ["#friends-notification-badge", "#mobile-notification-badge"].forEach((selector) => {
+    const badge = $(selector);
+    if (!badge) return;
+    badge.textContent = total > 99 ? "99+" : String(total);
+    badge.classList.toggle("hidden", total <= 0);
+  });
+}
+
+async function loadNotificationSummary() {
+  const data = await api("/api/notifications/summary");
+  state.notifications = data.notifications || { friendRequests: 0, total: 0 };
+  updateNotificationBadges(state.notifications.total);
 }
 
 function showAuth() {
@@ -457,6 +477,12 @@ function friendRow(person, actions = "") {
 
 async function loadFriends() {
   state.friends = await api("/api/friends");
+  state.notifications = {
+    ...state.notifications,
+    friendRequests: state.friends.incoming.length,
+    total: state.friends.incoming.length
+  };
+  updateNotificationBadges(state.notifications.total);
   $("#incoming-friend-list").innerHTML = state.friends.incoming.length
     ? state.friends.incoming.map((person) => friendRow(person,
       `<button class="primary accept-friend-button" data-user-id="${person.id}" type="button">Kabul</button>
@@ -1276,6 +1302,7 @@ async function start() {
     return showAuth();
   }
   showApp(data.user);
+  await loadNotificationSummary().catch(() => {});
   await loadVoiceConfiguration().catch(() => {});
   if (!(await joinPendingInvite())) await loadServers();
 }
@@ -1363,6 +1390,7 @@ $("#login-form").addEventListener("submit", async (event) => {
     });
     form.reset();
     showApp(data.user);
+    await loadNotificationSummary().catch(() => {});
     if (!(await joinPendingInvite())) await loadServers();
   } catch (error) {
     $("#login-error").textContent = error.message;
@@ -1397,6 +1425,7 @@ $("#register-form").addEventListener("submit", async (event) => {
     });
     form.reset();
     showApp(data.user);
+    await loadNotificationSummary().catch(() => {});
     if (!(await joinPendingInvite())) await loadServers();
   } catch (error) {
     $("#register-error").textContent = error.message;
@@ -1437,7 +1466,9 @@ $("#logout-button").addEventListener("click", async () => {
   state.servers = [];
   state.activeServer = null;
   state.friends = { friends: [], incoming: [], outgoing: [] };
+  state.notifications = { friendRequests: 0, total: 0 };
   state.activeDm = null;
+  updateNotificationBadges(0);
   showAuth();
 });
 
@@ -1446,6 +1477,17 @@ $("#friends-button").addEventListener("click", async () => {
     await loadFriends();
     openModal("friends-modal");
     $("#server-panel").classList.remove("open");
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+
+$("#mobile-friends-button").addEventListener("click", async () => {
+  try {
+    await loadFriends();
+    openModal("friends-modal");
+    $("#server-view").classList.remove("channels-open");
+    $("#member-panel").classList.remove("open");
   } catch (error) {
     notify(error.message, true);
   }
@@ -1610,13 +1652,57 @@ $("#delete-channel-button").addEventListener("click", async () => {
   }
 });
 
+function formatInviteDate(value) {
+  if (!value) return "Suresiz";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Suresiz";
+  return date.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
+}
+
+async function renderServerInvites() {
+  const list = $("#settings-invite-list");
+  if (!list || !state.activeServer?.server?.id) return;
+  list.innerHTML = '<small class="empty-list">Davetler yukleniyor...</small>';
+  const data = await api(`/api/servers/${state.activeServer.server.id}/invites`);
+  list.innerHTML = data.invites.length ? data.invites.map((invite) => `
+    <article class="invite-list-row">
+      <div>
+        <strong>${escapeHtml(invite.code)}</strong>
+        <small>${escapeHtml(invite.creator_name || "YAAS")} tarafindan olusturuldu</small>
+        <small>${invite.uses || 0}${invite.max_uses ? `/${invite.max_uses}` : ""} kullanim · ${escapeHtml(formatInviteDate(invite.expires_at))}</small>
+      </div>
+      <span>
+        <button class="secondary copy-managed-invite" data-invite-url="${escapeHtml(invite.url)}" type="button">Kopyala</button>
+        <button class="danger-button delete-managed-invite" data-invite-id="${invite.id}" type="button">Sil</button>
+      </span>
+    </article>`).join("") : '<small class="empty-list">Aktif davet yok</small>';
+  $$(".copy-managed-invite", list).forEach((button) => button.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(button.dataset.inviteUrl);
+    notify("Davet kopyalandi");
+  }));
+  $$(".delete-managed-invite", list).forEach((button) => button.addEventListener("click", async () => {
+    await api(`/api/servers/${state.activeServer.server.id}/invites/${button.dataset.inviteId}`, {
+      method: "DELETE",
+      body: "{}"
+    });
+    await renderServerInvites();
+    notify("Davet silindi");
+  }));
+}
+
 async function createActiveServerInvite() {
   try {
+    const expiresInHours = $("#invite-expiry-input")?.value;
+    const maxUses = Number($("#invite-max-uses-input")?.value || 0);
     const data = await api(`/api/servers/${state.activeServer.server.id}/invites`, {
       method: "POST",
-      body: JSON.stringify({ expiresInHours: 168 })
+      body: JSON.stringify({
+        expiresInHours: expiresInHours ? Number(expiresInHours) : null,
+        maxUses: maxUses > 0 ? maxUses : null
+      })
     });
     $("#invite-link-output").value = data.invite.url;
+    await renderServerInvites().catch(() => {});
     openModal("invite-modal");
   } catch (error) {
     notify(error.message, true);

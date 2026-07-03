@@ -405,6 +405,20 @@ async function handleApi(request, response, helpers) {
       });
     }
 
+    if (method === "GET" && url.pathname === "/api/notifications/summary") {
+      const friendRequests = await query(
+        "SELECT COUNT(*)::int AS count FROM friendships WHERE addressee_id = $1 AND status = 'pending'",
+        [user.id]
+      );
+      const total = Number(friendRequests.rows[0]?.count || 0);
+      return sendJson(response, 200, {
+        notifications: {
+          friendRequests: total,
+          total
+        }
+      });
+    }
+
     if (method === "POST" && url.pathname === "/api/friends/requests") {
       const body = await readJson(request);
       const handle = text(body.handle, 30).replace(/^@/, "").toLowerCase();
@@ -835,6 +849,28 @@ async function handleApi(request, response, helpers) {
     }
 
     const inviteRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/invites$/i);
+    if (method === "GET" && inviteRoute) {
+      const serverId = inviteRoute[1];
+      if (!(await requirePermission(response, sendJson, serverId, user.id, "invites.create"))) return;
+      const result = await query(
+        `SELECT i.id, i.code, i.expires_at, i.max_uses, i.uses, i.created_at,
+                u.display_name AS creator_name, u.handle AS creator_handle
+           FROM invites i
+           JOIN users u ON u.id = i.created_by
+          WHERE i.server_id = $1
+            AND (i.expires_at IS NULL OR i.expires_at > NOW())
+            AND (i.max_uses IS NULL OR i.uses < i.max_uses)
+          ORDER BY i.created_at DESC`,
+        [serverId]
+      );
+      return sendJson(response, 200, {
+        invites: result.rows.map((invite) => ({
+          ...invite,
+          url: `${getOrigin(request)}/invite/${invite.code}`
+        }))
+      });
+    }
+
     if (method === "POST" && inviteRoute) {
       const serverId = inviteRoute[1];
       if (!(await requirePermission(response, sendJson, serverId, user.id, "invites.create"))) return;
@@ -846,6 +882,18 @@ async function handleApi(request, response, helpers) {
         [crypto.randomUUID(), serverId, code, user.id, expiresAt, body.maxUses ? Math.min(Number(body.maxUses), 1000) : null]
       );
       return sendJson(response, 201, { invite: { code, url: `${getOrigin(request)}/invite/${code}` } });
+    }
+
+    const inviteItemRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/invites\/([0-9a-f-]+)$/i);
+    if (method === "DELETE" && inviteItemRoute) {
+      const [serverId, inviteId] = [inviteItemRoute[1], inviteItemRoute[2]];
+      if (!(await requirePermission(response, sendJson, serverId, user.id, "invites.create"))) return;
+      const result = await query(
+        "DELETE FROM invites WHERE id = $1 AND server_id = $2",
+        [inviteId, serverId]
+      );
+      if (!result.rowCount) return sendJson(response, 404, { error: "Davet bulunamadi" });
+      return sendJson(response, 200, { ok: true });
     }
 
     const joinRoute = url.pathname.match(/^\/api\/invites\/([A-Za-z0-9_-]+)\/join$/);

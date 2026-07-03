@@ -86,7 +86,7 @@
         <div class="server-actions">
           <button class="primary" data-open-modal="create-server-modal" type="button">＋ Sunucu oluştur</button>
           <button class="secondary" data-open-modal="join-server-modal" type="button">Davetle katıl</button>
-          <button class="secondary friends-button" id="friends-button" type="button">Arkadaşlar ve DM</button>
+          <button class="secondary friends-button" id="friends-button" type="button">Arkadaşlar ve DM <span class="notification-badge hidden" id="friends-notification-badge">0</span></button>
         </div>
         <p class="section-label">SUNUCULARIN</p>
         <nav class="server-list" id="server-list"></nav>
@@ -217,6 +217,7 @@
       <nav class="mobile-nav">
         <button data-open-panel="server-panel" type="button"><span>◇</span>Sunucular</button>
         <button data-mobile-view="channels" type="button"><span>#</span>Kanallar</button>
+        <button id="mobile-friends-button" type="button"><span>✉</span>DM <b class="notification-badge hidden" id="mobile-notification-badge">0</b></button>
         <button data-open-panel="member-panel" type="button"><span>♙</span>Üyeler</button>
       </nav>
     </div>
@@ -370,7 +371,23 @@
             <section class="settings-panel" data-settings-panel="invites">
               <h3>Üyeleri davet et</h3>
               <p>Arkadaşlarının sunucuya katılması için güvenli bir davet bağlantısı oluştur.</p>
+              <div class="invite-settings-grid">
+                <label>Davet süresi
+                  <select id="invite-expiry-input">
+                    <option value="168">7 gün</option>
+                    <option value="24">24 saat</option>
+                    <option value="1">1 saat</option>
+                    <option value="">Süresiz</option>
+                  </select>
+                </label>
+                <label>Kullanım limiti
+                  <input id="invite-max-uses-input" min="0" max="1000" placeholder="Sınırsız" type="number">
+                </label>
+              </div>
               <button class="primary" id="settings-create-invite" type="button">Davet bağlantısı oluştur</button>
+              <div class="invite-list" id="settings-invite-list">
+                <small class="empty-list">Davetler yüklenmedi</small>
+              </div>
             </section>
             <section class="settings-panel" data-settings-panel="preferences">
               <h3>Gizlilik ve görünüm</h3>
