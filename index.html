@@ -421,9 +421,17 @@
 
     <div class="modal-layer" id="friends-modal" hidden>
       <section class="modal friends-modal">
-        <header><div><strong>Arkadaşlar ve DM</strong><small>İstek gönder, kabul et ve özel mesajlaş.</small></div><button class="icon-button modal-close" type="button">×</button></header>
+        <header>
+          <button class="secondary dm-back-button" id="dm-back-button" type="button">← Geri dön</button>
+          <div><strong>Arkadaşlar ve DM</strong><small>İstek gönder, kabul et ve özel mesajlaş.</small></div>
+          <button class="icon-button modal-close" type="button">×</button>
+        </header>
         <div class="friends-layout">
           <aside class="friends-sidebar">
+            <div class="friends-sidebar-title">
+              <strong>Mesajlar</strong>
+              <small>Arkadaşını seç ve konuşmaya başla.</small>
+            </div>
             <form id="friend-request-form">
               <label>Kullanıcı adı<input id="friend-handle-input" placeholder="@kullanici" required></label>
               <button class="primary wide" type="submit">Arkadaşlık isteği gönder</button>
@@ -443,10 +451,26 @@
             </div>
           </aside>
           <section class="dm-panel">
-            <div class="dm-empty" id="dm-empty">Mesajlaşmak için bir arkadaş seç.</div>
+            <div class="dm-empty" id="dm-empty">
+              <span>✉</span>
+              <strong>Mesajlaşmak için bir arkadaş seç.</strong>
+              <small>Sol taraftan birini seçince konuşma burada açılır.</small>
+            </div>
             <div class="dm-view hidden" id="dm-view">
-              <header><span class="avatar" id="dm-avatar">?</span><div><strong id="dm-name">Arkadaş</strong><small id="dm-handle">@kullanici</small></div></header>
+              <header>
+                <button class="icon-button dm-thread-back" id="dm-thread-back" type="button">‹</button>
+                <span class="avatar" id="dm-avatar">?</span>
+                <div><strong id="dm-name">Arkadaş</strong><small id="dm-handle">@kullanici</small></div>
+              </header>
               <div class="dm-message-list" id="dm-message-list"></div>
+              <div class="dm-emoji-bar" aria-label="Hızlı emoji seç">
+                <button type="button" data-dm-emoji="😀">😀</button>
+                <button type="button" data-dm-emoji="😂">😂</button>
+                <button type="button" data-dm-emoji="❤️">❤️</button>
+                <button type="button" data-dm-emoji="🔥">🔥</button>
+                <button type="button" data-dm-emoji="👍">👍</button>
+                <button type="button" data-dm-emoji="👀">👀</button>
+              </div>
               <form class="message-form" id="dm-message-form">
                 <input id="dm-message-input" maxlength="4000" placeholder="Özel mesaj gönder..." autocomplete="off">
                 <button class="primary" type="submit">Gönder</button>

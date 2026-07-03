@@ -468,7 +468,7 @@ async function removeMemberRole(memberId, roleId) {
 }
 
 function friendRow(person, actions = "") {
-  return `<div class="friend-row">
+  return `<div class="friend-row" data-friend-id="${person.id}">
     ${avatarContent(person)}
     <div><strong>${escapeHtml(person.display_name)}</strong><small>@${escapeHtml(person.handle)}</small></div>
     <span class="friend-actions"><button class="secondary view-profile-button" data-user-id="${person.id}" type="button">Profil</button>${actions}</span>
@@ -531,10 +531,21 @@ async function openDm(friend) {
   state.activeDm = friend;
   $("#dm-empty").classList.add("hidden");
   $("#dm-view").classList.remove("hidden");
+  $("#friends-modal").classList.add("dm-open");
+  $$(".friend-row").forEach((row) => row.classList.toggle("active", row.dataset.friendId === friend.id));
   setAvatar($("#dm-avatar"), friend);
   $("#dm-name").textContent = friend.display_name;
   $("#dm-handle").textContent = `@${friend.handle}`;
   await loadDmMessages();
+  $("#dm-message-input").focus();
+}
+
+function closeDmThread() {
+  state.activeDm = null;
+  $("#dm-view").classList.add("hidden");
+  $("#dm-empty").classList.remove("hidden");
+  $("#friends-modal").classList.remove("dm-open");
+  $$(".friend-row").forEach((row) => row.classList.remove("active"));
 }
 
 function fillProfileSettings() {
@@ -1521,6 +1532,21 @@ $("#dm-message-form").addEventListener("submit", async (event) => {
     notify(error.message, true);
   }
 });
+
+$("#dm-back-button").addEventListener("click", () => {
+  closeModal($("#dm-back-button"));
+});
+
+$("#dm-thread-back").addEventListener("click", closeDmThread);
+
+$$("[data-dm-emoji]").forEach((button) => button.addEventListener("click", () => {
+  const input = $("#dm-message-input");
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  input.value = `${input.value.slice(0, start)}${button.dataset.dmEmoji}${input.value.slice(end)}`;
+  input.focus();
+  input.setSelectionRange(start + button.dataset.dmEmoji.length, start + button.dataset.dmEmoji.length);
+}));
 
 $("#create-server-form").addEventListener("submit", async (event) => {
   event.preventDefault();

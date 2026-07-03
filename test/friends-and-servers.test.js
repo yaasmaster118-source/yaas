@@ -11,6 +11,8 @@ test("server deletion is owner-only and friends can use direct messages", () => 
   const database = fs.readFileSync(path.join(root, "src", "database.js"), "utf8");
   const api = fs.readFileSync(path.join(root, "src", "api.js"), "utf8");
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 
   assert.match(schema, /CREATE TABLE IF NOT EXISTS friendships/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS direct_messages/);
@@ -20,4 +22,9 @@ test("server deletion is owner-only and friends can use direct messages", () => 
   assert.match(app, /delete-server-button/);
   assert.match(app, /friend-request-form/);
   assert.match(app, /dm-message-form/);
+  assert.match(app, /closeDmThread/);
+  assert.match(html, /id="dm-back-button"/);
+  assert.match(html, /data-dm-emoji/);
+  assert.match(css, /\.dm-emoji-bar/);
+  assert.match(css, /\.friends-modal\.dm-open/);
 });
