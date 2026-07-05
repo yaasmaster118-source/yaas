@@ -29,6 +29,7 @@ const state = {
   activeServer: null,
   activeChannel: null,
   friends: { friends: [], incoming: [], outgoing: [] },
+  messageRequests: [],
   notifications: { friendRequests: 0, total: 0 },
   activeDm: null,
   voice: {
@@ -475,6 +476,71 @@ function friendRow(person, actions = "") {
   </div>`;
 }
 
+function messageRequestRow(request) {
+  return `<div class="friend-row message-request-row" data-message-request-id="${request.id}" data-sender-id="${request.sender_id}">
+    ${avatarContent({
+      display_name: request.sender_name,
+      avatar_url: request.avatar_url,
+      avatar_frame: request.avatar_frame
+    })}
+    <div>
+      <strong>${escapeHtml(request.sender_name)}</strong>
+      <small>@${escapeHtml(request.sender_handle)}</small>
+      <p>${escapeHtml(request.content)}</p>
+    </div>
+    <span class="friend-actions">
+      <button class="primary accept-message-request-button" data-request-id="${request.id}" type="button">Kabul</button>
+      <button class="secondary reject-message-request-button" data-request-id="${request.id}" type="button">Sil</button>
+    </span>
+  </div>`;
+}
+
+function renderDmNotifications() {
+  const notifications = [];
+  if (state.friends.incoming.length) notifications.push(`${state.friends.incoming.length} arkadaşlık isteği var`);
+  if (state.messageRequests.length) notifications.push(`${state.messageRequests.length} mesaj isteği var`);
+  $("#dm-notification-list").innerHTML = notifications.length
+    ? notifications.map((item) => `<div class="notification-item">${escapeHtml(item)}</div>`).join("")
+    : '<small class="empty-list">Yeni bildirim yok</small>';
+}
+
+async function loadMessageRequests() {
+  const data = await api("/api/message-requests");
+  state.messageRequests = data.requests || [];
+  $("#message-request-list").innerHTML = state.messageRequests.length
+    ? state.messageRequests.map(messageRequestRow).join("")
+    : '<small class="empty-list">Mesaj isteği yok</small>';
+  $$(".accept-message-request-button").forEach((button) => button.addEventListener("click", () =>
+    answerMessageRequest(button.dataset.requestId, "accept")));
+  $$(".reject-message-request-button").forEach((button) => button.addEventListener("click", () =>
+    answerMessageRequest(button.dataset.requestId, "reject")));
+  renderDmNotifications();
+}
+
+async function answerMessageRequest(requestId, action) {
+  const data = await api(`/api/message-requests/${requestId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action })
+  });
+  await loadFriends();
+  await loadMessageRequests();
+  notify(action === "accept" ? "Mesaj isteği kabul edildi" : "Mesaj isteği silindi");
+  if (action === "accept" && data.friendId) {
+    const friend = state.friends.friends.find((item) => item.id === data.friendId);
+    if (friend) await openDm(friend);
+  }
+}
+
+async function openMessengerPage(preselectedFriend = null) {
+  await loadFriends();
+  await loadMessageRequests();
+  openModal("friends-modal");
+  $("#server-panel").classList.remove("open");
+  $("#server-view").classList.remove("channels-open");
+  $("#member-panel").classList.remove("open");
+  if (preselectedFriend) await openDm(preselectedFriend);
+}
+
 async function loadFriends() {
   state.friends = await api("/api/friends");
   state.notifications = {
@@ -506,6 +572,7 @@ async function loadFriends() {
   $$(".view-profile-button").forEach((button) => button.addEventListener("click", () => {
     openUserProfile(button.dataset.userId);
   }));
+  renderDmNotifications();
 }
 
 async function sendFriendRequest(handle) {
@@ -1386,8 +1453,7 @@ $("#profile-card-message-button").addEventListener("click", async () => {
   await loadFriends();
   const friend = state.friends.friends.find((item) => item.id === $("#profile-card-message-button").dataset.userId);
   closeModal($("#profile-card-message-button"));
-  openModal("friends-modal");
-  openDm(friend);
+  await openMessengerPage(friend);
 });
 
 $("#login-form").addEventListener("submit", async (event) => {
@@ -1477,6 +1543,7 @@ $("#logout-button").addEventListener("click", async () => {
   state.servers = [];
   state.activeServer = null;
   state.friends = { friends: [], incoming: [], outgoing: [] };
+  state.messageRequests = [];
   state.notifications = { friendRequests: 0, total: 0 };
   state.activeDm = null;
   updateNotificationBadges(0);
@@ -1485,9 +1552,7 @@ $("#logout-button").addEventListener("click", async () => {
 
 $("#friends-button").addEventListener("click", async () => {
   try {
-    await loadFriends();
-    openModal("friends-modal");
-    $("#server-panel").classList.remove("open");
+    await openMessengerPage();
   } catch (error) {
     notify(error.message, true);
   }
@@ -1495,10 +1560,7 @@ $("#friends-button").addEventListener("click", async () => {
 
 $("#mobile-friends-button").addEventListener("click", async () => {
   try {
-    await loadFriends();
-    openModal("friends-modal");
-    $("#server-view").classList.remove("channels-open");
-    $("#member-panel").classList.remove("open");
+    await openMessengerPage();
   } catch (error) {
     notify(error.message, true);
   }

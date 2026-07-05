@@ -526,6 +526,77 @@ async function handleApi(request, response, helpers) {
       });
     }
 
+    if (method === "GET" && url.pathname === "/api/message-requests") {
+      const result = await query(
+        `SELECT mr.id, mr.sender_id, mr.recipient_id, mr.content, mr.created_at,
+                u.display_name AS sender_name, u.handle AS sender_handle, u.avatar_url, u.avatar_frame
+           FROM message_requests mr
+           JOIN users u ON u.id = mr.sender_id
+          WHERE mr.recipient_id = $1 AND mr.status = 'pending'
+          ORDER BY mr.created_at DESC LIMIT 50`,
+        [user.id]
+      );
+      return sendJson(response, 200, { requests: result.rows });
+    }
+
+    if (method === "POST" && url.pathname === "/api/message-requests") {
+      const body = await readJson(request);
+      const handle = text(body.handle, 30).replace(/^@/, "").toLowerCase();
+      const content = text(body.content, 4000);
+      if (!handle || !content) return sendJson(response, 400, { error: "Kullanici ve mesaj gerekli" });
+      const targetResult = await query(
+        "SELECT id FROM users WHERE LOWER(handle) = $1",
+        [handle]
+      );
+      const target = targetResult.rows[0];
+      if (!target || target.id === user.id) return sendJson(response, 404, { error: "Kullanici bulunamadi" });
+      if (await areFriends(user.id, target.id)) {
+        return sendJson(response, 409, { error: "Bu kisi zaten arkadasin. DM kullan." });
+      }
+      await query(
+        "INSERT INTO message_requests (id, sender_id, recipient_id, content) VALUES ($1, $2, $3, $4)",
+        [crypto.randomUUID(), user.id, target.id, content]
+      );
+      return sendJson(response, 201, { ok: true });
+    }
+
+    const messageRequestRoute = url.pathname.match(/^\/api\/message-requests\/([0-9a-f-]+)$/i);
+    if (method === "PATCH" && messageRequestRoute) {
+      const body = await readJson(request);
+      const requestId = messageRequestRoute[1];
+      const requestResult = await query(
+        "SELECT * FROM message_requests WHERE id = $1 AND recipient_id = $2 AND status = 'pending'",
+        [requestId, user.id]
+      );
+      const messageRequest = requestResult.rows[0];
+      if (!messageRequest) return sendJson(response, 404, { error: "Mesaj istegi bulunamadi" });
+      if (body.action === "reject") {
+        await query(
+          "UPDATE message_requests SET status = 'rejected', updated_at = NOW() WHERE id = $1",
+          [requestId]
+        );
+        return sendJson(response, 200, { ok: true });
+      }
+      if (body.action !== "accept") return sendJson(response, 400, { error: "Gecersiz islem" });
+      await transaction(async (client) => {
+        await client.query(
+          `INSERT INTO friendships (requester_id, addressee_id, status)
+           VALUES ($1, $2, 'accepted')
+           ON CONFLICT(requester_id, addressee_id) DO UPDATE SET status = 'accepted', updated_at = NOW()`,
+          [messageRequest.sender_id, user.id]
+        );
+        await client.query(
+          "INSERT INTO direct_messages (id, sender_id, recipient_id, content) VALUES ($1, $2, $3, $4)",
+          [crypto.randomUUID(), messageRequest.sender_id, user.id, messageRequest.content]
+        );
+        await client.query(
+          "UPDATE message_requests SET status = 'accepted', updated_at = NOW() WHERE id = $1",
+          [requestId]
+        );
+      });
+      return sendJson(response, 200, { ok: true, friendId: messageRequest.sender_id });
+    }
+
     if (method === "GET" && url.pathname === "/api/servers") {
       const result = await query(
         `SELECT s.id, s.name, s.description, s.icon_color, s.owner_id, m.joined_at,

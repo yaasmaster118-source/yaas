@@ -419,18 +419,18 @@
       </section>
     </div>
 
-    <div class="modal-layer" id="friends-modal" hidden>
-      <section class="modal friends-modal">
+    <div class="modal-layer messenger-layer" id="friends-modal" hidden>
+      <section class="modal friends-modal messenger-page">
         <header>
           <button class="secondary dm-back-button" id="dm-back-button" type="button">← Geri dön</button>
-          <div><strong>Arkadaşlar ve DM</strong><small>İstek gönder, kabul et ve özel mesajlaş.</small></div>
+          <div><strong>Mesajlar</strong><small>Messenger gibi tam ekran özel mesaj merkezi.</small></div>
           <button class="icon-button modal-close" type="button">×</button>
         </header>
         <div class="friends-layout">
           <aside class="friends-sidebar">
             <div class="friends-sidebar-title">
-              <strong>Mesajlar</strong>
-              <small>Arkadaşını seç ve konuşmaya başla.</small>
+              <strong>DM Kutusu</strong>
+              <small>Arkadaşların, istekler ve bildirimler burada.</small>
             </div>
             <form id="friend-request-form">
               <label>Kullanıcı adı<input id="friend-handle-input" placeholder="@kullanici" required></label>
@@ -438,16 +438,26 @@
               <p class="form-error"></p>
             </form>
             <div class="friend-section">
-              <strong>GELEN İSTEKLER</strong>
-              <div id="incoming-friend-list"></div>
-            </div>
-            <div class="friend-section">
-              <strong>ARKADAŞLAR</strong>
+              <strong>KONUŞMALAR VE ARKADAŞLAR</strong>
               <div id="friend-list"></div>
             </div>
             <div class="friend-section">
-              <strong>GÖNDERİLENLER</strong>
+              <strong>ARKADAŞLIK İSTEKLERİ</strong>
+              <div id="incoming-friend-list"></div>
+            </div>
+            <div class="friend-section">
+              <strong>MESAJ İSTEKLERİ</strong>
+              <div id="message-request-list"></div>
+            </div>
+            <div class="friend-section compact">
+              <strong>GÖNDERİLEN ARKADAŞ İSTEKLERİ</strong>
               <div id="outgoing-friend-list"></div>
+            </div>
+            <div class="friend-section compact">
+              <strong>BİLDİRİM KUTUSU</strong>
+              <div class="notification-list" id="dm-notification-list">
+                <small class="empty-list">Yeni bildirim yok</small>
+              </div>
             </div>
           </aside>
           <section class="dm-panel">

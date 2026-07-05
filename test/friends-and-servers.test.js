@@ -16,15 +16,25 @@ test("server deletion is owner-only and friends can use direct messages", () => 
 
   assert.match(schema, /CREATE TABLE IF NOT EXISTS friendships/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS direct_messages/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS message_requests/);
   assert.match(database, /CREATE TABLE IF NOT EXISTS friendships/);
-  assert.match(api, /Yalnızca sunucu sahibi sunucuyu silebilir/);
-  assert.match(api, /Özel mesaj için önce arkadaş olmalısınız/);
+  assert.match(database, /CREATE TABLE IF NOT EXISTS message_requests/);
+  assert.match(api, /sunucu sahibi/);
+  assert.match(api, /message_requests/);
+  assert.match(api, /\/api\/message-requests/);
   assert.match(app, /delete-server-button/);
   assert.match(app, /friend-request-form/);
   assert.match(app, /dm-message-form/);
   assert.match(app, /closeDmThread/);
+  assert.match(app, /openMessengerPage/);
+  assert.match(app, /loadMessageRequests/);
   assert.match(html, /id="dm-back-button"/);
+  assert.match(html, /id="message-request-list"/);
+  assert.match(html, /id="dm-notification-list"/);
+  assert.match(html, /messenger-page/);
   assert.match(html, /data-dm-emoji/);
   assert.match(css, /\.dm-emoji-bar/);
+  assert.match(css, /\.messenger-layer/);
+  assert.match(css, /\.messenger-page/);
   assert.match(css, /\.friends-modal\.dm-open/);
 });

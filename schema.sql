@@ -146,5 +146,16 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS message_requests (
+  id UUID PRIMARY KEY,
+  sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  content TEXT NOT NULL CHECK(char_length(content) BETWEEN 1 AND 4000),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships(addressee_id, status);
 CREATE INDEX IF NOT EXISTS direct_messages_pair_idx ON direct_messages(sender_id, recipient_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS message_requests_recipient_idx ON message_requests(recipient_id, status, created_at DESC);
