@@ -73,6 +73,59 @@
   border-radius: 14px !important;
 }
 
+.server-logo {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid #5a4727;
+  background: #070708 !important;
+}
+
+.server-logo img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.active-server-title {
+  min-width: 0;
+  display: flex !important;
+  align-items: center;
+  flex-direction: row !important;
+  gap: 10px;
+}
+
+.active-server-title > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.active-server-logo {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+}
+
+.server-logo-field {
+  display: grid;
+  gap: 7px;
+  margin: 0 16px 12px;
+  color: #a5abb4;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.server-logo-field input {
+  height: 42px;
+  border: 1px solid #343a44;
+  outline: 0;
+  padding: 0 11px;
+  border-radius: 8px;
+  color: var(--text);
+  background: #0f1216;
+}
+
 .account-bar {
   margin: 10px 12px 12px !important;
   border: 1px solid #282118 !important;
@@ -271,6 +324,108 @@
   border-radius: 13px !important;
 }
 
+.settings-panel[data-settings-panel="roles"] .role-layout {
+  grid-template-columns: 280px minmax(0, 1fr) !important;
+  gap: 0 !important;
+  border: 1px solid #30291e !important;
+  border-radius: 18px !important;
+  background: #30291e !important;
+}
+
+.settings-panel[data-settings-panel="roles"] .role-layout > div,
+.settings-panel[data-settings-panel="roles"] .role-layout > form {
+  background: #0d0e10 !important;
+}
+
+.settings-panel[data-settings-panel="roles"] .role-layout > div {
+  padding: 14px !important;
+}
+
+.settings-panel[data-settings-panel="roles"] .role-layout > form {
+  display: grid;
+  gap: 14px;
+  padding: 18px !important;
+}
+
+.permission-grid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)) !important;
+  gap: 9px !important;
+}
+
+.permission-grid label {
+  min-height: 48px;
+  border: 1px solid #2b251d !important;
+  border-radius: 12px !important;
+  background: #121315 !important;
+}
+
+.permission-grid label:hover {
+  border-color: #8c6b32 !important;
+  background: #18140f !important;
+}
+
+.voice-channel-view {
+  background: #060607 !important;
+}
+
+.voice-room-header {
+  height: 68px !important;
+  padding: 0 20px !important;
+  background: #090a0c !important;
+}
+
+.voice-room-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #5a4727;
+  border-radius: 12px;
+  background: #14110c;
+  font-size: 18px !important;
+}
+
+.voice-stage {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+  gap: 14px !important;
+  padding: 20px !important;
+}
+
+.voice-stage .voice-person,
+.voice-stage .voice-video-tile {
+  min-height: 210px !important;
+  border-radius: 18px !important;
+  background: radial-gradient(circle at 50% 30%, #2a2418, #111214 68%) !important;
+}
+
+.voice-stage .voice-person:not(.muted),
+.voice-video-tile#local-video-tile {
+  border-color: #39b56b !important;
+  box-shadow: 0 0 0 1px #39b56b55, 0 18px 40px #0008 !important;
+}
+
+.voice-dock {
+  min-height: 86px;
+  justify-content: space-between !important;
+  padding: 14px 18px !important;
+  background: #090a0c !important;
+}
+
+.voice-control,
+.join-voice-action {
+  border-radius: 14px !important;
+}
+
+.voice-control {
+  width: 72px !important;
+  height: 54px !important;
+}
+
+.voice-personal-settings {
+  width: 340px !important;
+  border-radius: 14px !important;
+}
+
 .modal {
   border-radius: 18px !important;
 }
@@ -366,5 +521,18 @@
   .voice-connection-bar {
     left: 8px !important;
     right: 8px !important;
+  }
+
+  .settings-panel[data-settings-panel="roles"] .role-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .voice-dock {
+    display: grid !important;
+    gap: 10px;
+  }
+
+  .voice-personal-settings {
+    width: 100% !important;
   }
 }

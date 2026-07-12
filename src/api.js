@@ -170,9 +170,15 @@ const SERVER_TEMPLATES = {
 async function createServer(client, user, body) {
   const serverId = crypto.randomUUID();
   const iconColor = /^#[0-9a-f]{6}$/i.test(String(body.iconColor || "")) ? body.iconColor : "#c9f34b";
+  const logoUrl = profileImageValue(body.logoUrl);
+  if (logoUrl === null) {
+    const error = new Error("Sunucu logosu icin gecerli bir gorsel baglantisi kullanmalisin");
+    error.statusCode = 400;
+    throw error;
+  }
   await client.query(
-    "INSERT INTO servers (id, name, description, icon_color, owner_id) VALUES ($1, $2, $3, $4, $5)",
-    [serverId, text(body.name, 40), text(body.description, 180), iconColor, user.id]
+    "INSERT INTO servers (id, name, description, icon_color, logo_url, owner_id) VALUES ($1, $2, $3, $4, $5, $6)",
+    [serverId, text(body.name, 40), text(body.description, 180), iconColor, logoUrl, user.id]
   );
   await client.query("INSERT INTO memberships (server_id, user_id) VALUES ($1, $2)", [serverId, user.id]);
   const roles = {};
@@ -599,7 +605,7 @@ async function handleApi(request, response, helpers) {
 
     if (method === "GET" && url.pathname === "/api/servers") {
       const result = await query(
-        `SELECT s.id, s.name, s.description, s.icon_color, s.owner_id, m.joined_at,
+        `SELECT s.id, s.name, s.description, s.icon_color, s.logo_url, s.owner_id, m.joined_at,
                 COUNT(m2.user_id)::int AS member_count
            FROM memberships m
            JOIN servers s ON s.id = m.server_id
@@ -614,7 +620,12 @@ async function handleApi(request, response, helpers) {
     if (method === "POST" && url.pathname === "/api/servers") {
       const body = await readJson(request);
       if (text(body.name, 40).length < 2) return sendJson(response, 400, { error: "Sunucu adı gerekli" });
-      return sendJson(response, 201, { server: await transaction((client) => createServer(client, user, body)) });
+      try {
+        return sendJson(response, 201, { server: await transaction((client) => createServer(client, user, body)) });
+      } catch (error) {
+        if (error.statusCode) return sendJson(response, error.statusCode, { error: error.message });
+        throw error;
+      }
     }
 
     const serverRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)$/i);
@@ -624,23 +635,29 @@ async function handleApi(request, response, helpers) {
       const body = await readJson(request);
       const name = body.name === undefined ? null : text(body.name, 40);
       const iconColor = body.iconColor === undefined ? null : text(body.iconColor, 20);
+      const logoUrl = body.logoUrl === undefined ? null : profileImageValue(body.logoUrl);
       if (body.name !== undefined && name.length < 2) {
         return sendJson(response, 400, { error: "Sunucu adı en az 2 karakter olmalı" });
       }
       if (iconColor !== null && !/^#[0-9a-f]{6}$/i.test(iconColor)) {
         return sendJson(response, 400, { error: "Geçerli bir simge rengi seçmelisin" });
       }
+      if (logoUrl === null) {
+        return sendJson(response, 400, { error: "Sunucu logosu icin gecerli bir gorsel baglantisi kullanmalisin" });
+      }
       await query(
         `UPDATE servers SET
            name = COALESCE($2, name),
            description = COALESCE($3, description),
-           icon_color = COALESCE($4, icon_color)
+           icon_color = COALESCE($4, icon_color),
+           logo_url = COALESCE($5, logo_url)
          WHERE id = $1`,
         [
           serverId,
           name,
           body.description === undefined ? null : text(body.description, 180),
-          iconColor
+          iconColor,
+          logoUrl
         ]
       );
       return sendJson(response, 200, { ok: true });
@@ -672,7 +689,7 @@ async function handleApi(request, response, helpers) {
       const granted = await permissions(serverId, user.id);
       if (!granted) return sendJson(response, 404, { error: "Sunucu bulunamadı" });
       const [server, categories, channels, members, memberRoles, roles] = await Promise.all([
-        query("SELECT id, name, description, icon_color, owner_id, created_at FROM servers WHERE id = $1", [serverId]),
+        query("SELECT id, name, description, icon_color, logo_url, owner_id, created_at FROM servers WHERE id = $1", [serverId]),
         query("SELECT id, name, position FROM channel_categories WHERE server_id = $1 ORDER BY position", [serverId]),
         query("SELECT id, category_id, name, type, position, is_private, allowed_role_ids, user_limit, audio_bitrate, quality_mode FROM channels WHERE server_id = $1 ORDER BY position", [serverId]),
         query(

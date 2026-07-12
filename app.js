@@ -268,7 +268,7 @@ function renderServers() {
   const list = $("#server-list");
   list.innerHTML = state.servers.map((server) => `
     <button class="server-item ${state.activeServer?.server?.id === server.id ? "active" : ""}" data-server-id="${server.id}" type="button">
-      <span class="server-icon" style="background:${safeColor(server.icon_color)}">${escapeHtml(initials(server.name))}</span>
+      ${serverIconMarkup(server)}
       <span><strong>${escapeHtml(server.name)}</strong><small>${server.member_count} üye</small></span>
     </button>`).join("");
   $("#server-list-empty").classList.toggle("hidden", state.servers.length > 0);
@@ -284,6 +284,7 @@ async function openServer(serverId, preferredChannelId = null) {
     $("#server-view").classList.remove("hidden");
     $("#active-server-name").textContent = data.server.name;
     $("#active-server-description").textContent = data.server.description || `${data.members.length} üye`;
+    setServerIcon($("#active-server-logo"), data.server);
     const canOpenSettings = ["server.manage", "roles.manage", "members.view", "invites.create"]
       .some((permission) => data.permissions.includes(permission));
     $(".manage-server-button").classList.toggle("hidden", !canOpenSettings);
@@ -295,6 +296,7 @@ async function openServer(serverId, preferredChannelId = null) {
     $("#settings-server-name").textContent = `${data.server.name} ayarları`;
     $("#settings-server-name-input").value = data.server.name;
     $("#settings-server-description-input").value = data.server.description || "";
+    $("#settings-server-logo-url-input").value = data.server.logo_url || "";
     $("#settings-server-color-input").value = /^#[0-9a-f]{6}$/i.test(data.server.icon_color || "")
       ? data.server.icon_color
       : "#c9f34b";
@@ -373,6 +375,22 @@ function renderMembers() {
   $$(".add-friend-button").forEach((button) => button.addEventListener("click", () => {
     sendFriendRequest(button.dataset.handle).catch((error) => notify(error.message, true));
   }));
+}
+
+function serverIconMarkup(server) {
+  const logo = String(server.logo_url || "").trim();
+  if (logo) {
+    return `<span class="server-icon server-logo" style="background:${safeColor(server.icon_color)}"><img src="${escapeHtml(logo)}" alt="${escapeHtml(server.name)}"></span>`;
+  }
+  return `<span class="server-icon" style="background:${safeColor(server.icon_color)}">${escapeHtml(initials(server.name))}</span>`;
+}
+
+function setServerIcon(element, server) {
+  element.className = `server-icon active-server-logo${server.logo_url ? " server-logo" : ""}`;
+  element.style.background = safeColor(server.icon_color);
+  element.innerHTML = server.logo_url
+    ? `<img src="${escapeHtml(server.logo_url)}" alt="${escapeHtml(server.name)}">`
+    : escapeHtml(initials(server.name));
 }
 
 function manageableRoles() {
@@ -1688,6 +1706,7 @@ $("#create-server-form").addEventListener("submit", async (event) => {
       body: JSON.stringify({
         name: $("#server-name-input").value,
         description: $("#server-description-input").value,
+        logoUrl: $("#server-logo-url-input").value,
         template: $("#server-template-input").value
       })
     });
@@ -1913,6 +1932,7 @@ $("#server-settings-form").addEventListener("submit", async (event) => {
       body: JSON.stringify({
         name: $("#settings-server-name-input").value,
         description: $("#settings-server-description-input").value,
+        logoUrl: $("#settings-server-logo-url-input").value,
         iconColor: $("#settings-server-color-input").value
       })
     });

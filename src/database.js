@@ -41,6 +41,7 @@ function getLocalDatabase() {
       name TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
       icon_color TEXT NOT NULL DEFAULT 'lime',
+      logo_url TEXT NOT NULL DEFAULT '',
       owner_id TEXT NOT NULL REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -166,6 +167,10 @@ function getLocalDatabase() {
   if (!channelColumns.some((column) => column.name === "quality_mode")) {
     localDatabase.exec("ALTER TABLE channels ADD COLUMN quality_mode TEXT NOT NULL DEFAULT 'auto'");
   }
+  const serverColumns = localDatabase.prepare("PRAGMA table_info(servers)").all();
+  if (!serverColumns.some((column) => column.name === "logo_url")) {
+    localDatabase.exec("ALTER TABLE servers ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''");
+  }
   const userColumns = localDatabase.prepare("PRAGMA table_info(users)").all();
   if (!userColumns.some((column) => column.name === "bio")) {
     localDatabase.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
@@ -247,6 +252,7 @@ async function initializeDatabase() {
   } else {
     const schema = fs.readFileSync(path.join(__dirname, "..", "schema.sql"), "utf8");
     await getPool().query(schema);
+    await getPool().query("ALTER TABLE servers ADD COLUMN IF NOT EXISTS logo_url TEXT NOT NULL DEFAULT ''");
   }
 
   const ownerEmail = process.env.OWNER_EMAIL?.trim().toLowerCase();

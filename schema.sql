@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS servers (
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   icon_color TEXT NOT NULL DEFAULT 'lime',
+  logo_url TEXT NOT NULL DEFAULT '',
   owner_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
