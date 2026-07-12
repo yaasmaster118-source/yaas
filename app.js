@@ -680,6 +680,73 @@ function renderRoles() {
   }));
 }
 
+function channelGlyph(channel) {
+  if (channel.is_private) return "lock";
+  if (channel.type === "voice") return "voice";
+  const name = (channel.name || "").toLowerCase();
+  if (name.includes("ticket") || name.includes("support")) return "ticket";
+  if (name.includes("rule") || name.includes("kural")) return "rules";
+  if (name.includes("role") || name.includes("rol")) return "roles";
+  if (name.includes("news") || name.includes("duyuru")) return "news";
+  if (name.includes("media") || name.includes("foto")) return "media";
+  return "#";
+}
+
+function channelFlavor(channel) {
+  if (channel.is_private) return "Ozel kanal";
+  if (channel.type === "voice") return `${channel.user_limit ? `${channel.user_limit} kisi` : "Limitsiz"} ses`;
+  const name = (channel.name || "").toLowerCase();
+  if (name.includes("ticket") || name.includes("support")) return "Destek ve ticket";
+  if (name.includes("role") || name.includes("rol")) return "Rol secimi";
+  if (name.includes("news") || name.includes("duyuru")) return "Duyurular";
+  if (name.includes("media") || name.includes("foto")) return "Medya paylasimi";
+  return "Topluluk sohbeti";
+}
+
+function renderChannels() {
+  const categories = state.activeServer.categories || [];
+  const showEmptyCategories = localStorage.getItem("yaas:show-all-channels-setting") !== "false";
+  const grouped = categories.map((category) => ({
+    ...category,
+    channels: state.activeServer.channels.filter((channel) => channel.category_id === category.id)
+  })).filter((category) => showEmptyCategories || category.channels.length);
+  const uncategorized = state.activeServer.channels.filter((channel) => !channel.category_id);
+  const channelButtons = (channels) => channels.map((channel) => `
+      <button class="channel-item channel-template-item" data-channel-id="${channel.id}" type="button">
+        <span class="channel-glyph">${escapeHtml(channelGlyph(channel))}</span>
+        <span class="channel-copy"><strong>${escapeHtml(channel.name)}</strong><small>${escapeHtml(channelFlavor(channel))}</small></span>
+        ${channel.is_private ? '<small class="private-channel-lock" title="Ozel kanal">lock</small>' : ""}
+      </button>`).join("");
+  $("#channel-list").innerHTML = grouped.map((category) => `
+    <section class="channel-category channel-template-category">
+      <div class="channel-category-header template-category-header"><span>diamond</span><strong>${escapeHtml(category.name)}</strong><small>${category.channels.length}</small></div>
+      ${channelButtons(category.channels)}
+    </section>`).join("")
+    + (uncategorized.length ? `<section class="channel-category channel-template-category"><div class="channel-category-header template-category-header"><span>star</span><strong>Main</strong><small>${uncategorized.length}</small></div>${channelButtons(uncategorized)}</section>` : "");
+  $$(".channel-item").forEach((button) => button.addEventListener("click", () => {
+    const channel = state.activeServer.channels.find((item) => item.id === button.dataset.channelId);
+    openChannel(channel);
+  }));
+}
+
+function renderRoles() {
+  const roles = state.activeServer?.roles || [];
+  $("#role-list").innerHTML = roles.map((role) => {
+    const permissionCount = Array.isArray(role.permissions) ? role.permissions.length : 0;
+    const badge = role.name === "Owner" ? "lider" : permissionCount ? `${permissionCount} izin` : "etiket";
+    return `
+    <button class="role-item role-template-card" data-role-id="${role.id}" type="button" style="--role-color:${escapeHtml(role.color)}">
+      <span class="role-dot" style="background:${escapeHtml(role.color)}"></span>
+      <span class="role-template-copy"><strong>${escapeHtml(role.name)}</strong><small>${escapeHtml(badge)}</small></span>
+      <em>${escapeHtml(badge)}</em>
+    </button>`;
+  }).join("");
+  $$(".role-item").forEach((button) => button.addEventListener("click", () => {
+    const role = roles.find((item) => item.id === button.dataset.roleId);
+    editRole(role);
+  }));
+}
+
 function showNoChannel() {
   $("#empty-channel").classList.remove("hidden");
   $("#message-view").classList.add("hidden");
