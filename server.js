@@ -501,7 +501,7 @@ async function handleVoiceApi(request, response) {
 
 initializeDatabase()
   .then(() => {
-    server.listen(port, "0.0.0.0", () => {
+    server.listen(port, () => {
       console.log(`YAAS is running at http://localhost:${port}`);
     });
   })
