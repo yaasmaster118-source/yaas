@@ -13,6 +13,7 @@ test("server deletion is owner-only and friends can use direct messages", () => 
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+  const cleanCss = fs.readFileSync(path.join(root, "clean.css"), "utf8");
 
   assert.match(schema, /CREATE TABLE IF NOT EXISTS friendships/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS direct_messages/);
@@ -35,6 +36,7 @@ test("server deletion is owner-only and friends can use direct messages", () => 
   assert.match(html, /id="dm-notification-list"/);
   assert.match(html, /messenger-quick-tabs/);
   assert.match(html, /messenger-page/);
+  assert.match(html, /clean\.css/);
   assert.match(html, /data-dm-emoji/);
   assert.match(css, /\.dm-emoji-bar/);
   assert.match(css, /\.messenger-layer/);
@@ -42,5 +44,9 @@ test("server deletion is owner-only and friends can use direct messages", () => 
   assert.match(css, /\.messenger-quick-tabs/);
   assert.match(css, /\.channel-template-item/);
   assert.match(css, /\.role-template-card/);
+  assert.match(cleanCss, /YAAS clean layout pass/);
+  assert.match(cleanCss, /\.server-actions/);
+  assert.match(cleanCss, /\.channel-template-item/);
+  assert.match(cleanCss, /\.messenger-page \.friends-layout/);
   assert.match(css, /\.friends-modal\.dm-open/);
 });

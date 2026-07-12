@@ -1,0 +1,370 @@
+/* YAAS clean layout pass: keeps features, makes the app easier to read. */
+.app {
+  grid-template-columns: 272px minmax(640px, 1fr) 270px !important;
+  background: #050506;
+}
+
+.server-panel,
+.channel-panel,
+.content-panel,
+.member-panel {
+  background: #0b0c0e !important;
+}
+
+.server-panel,
+.channel-panel,
+.member-panel {
+  border-color: #241f18 !important;
+}
+
+.server-panel > header,
+.channel-panel > header,
+.content-panel > header,
+.member-panel > header {
+  height: 64px !important;
+  background: #0a0a0b !important;
+  border-color: #241f18 !important;
+}
+
+.server-actions {
+  grid-template-columns: 1fr !important;
+  gap: 9px !important;
+  padding: 16px !important;
+}
+
+.server-actions button {
+  min-height: 42px !important;
+  justify-content: center;
+  border: 1px solid #31291c;
+  border-radius: 12px !important;
+  font-size: 11px !important;
+}
+
+.server-actions .friends-button {
+  order: 3;
+}
+
+.section-label {
+  margin: 6px 0 8px !important;
+  color: #d6aa52 !important;
+  letter-spacing: 2px !important;
+}
+
+.server-list {
+  display: grid;
+  gap: 7px;
+  padding: 0 12px 12px !important;
+}
+
+.server-item {
+  min-height: 58px;
+  border: 1px solid transparent;
+  border-radius: 14px !important;
+}
+
+.server-item:hover,
+.server-item.active {
+  border-color: #3b3020 !important;
+  background: linear-gradient(135deg, #19150f, #101113) !important;
+}
+
+.server-icon,
+.avatar {
+  border-radius: 14px !important;
+}
+
+.account-bar {
+  margin: 10px 12px 12px !important;
+  border: 1px solid #282118 !important;
+  border-radius: 16px !important;
+  background: #101011 !important;
+}
+
+.workspace {
+  background: radial-gradient(circle at 50% 0, #15110a 0, transparent 30%), #070708 !important;
+}
+
+.server-view {
+  grid-template-columns: 260px minmax(0, 1fr) !important;
+}
+
+.channel-list {
+  padding: 14px 11px !important;
+}
+
+.channel-template-category {
+  margin-bottom: 12px !important;
+  padding: 5px !important;
+  border-radius: 14px !important;
+  background: #0f1012 !important;
+}
+
+.template-category-header {
+  margin-bottom: 5px !important;
+  padding: 6px 7px !important;
+}
+
+.channel-template-item {
+  height: 42px !important;
+  margin: 3px 0 !important;
+  border-radius: 11px !important;
+}
+
+.channel-template-item .channel-glyph {
+  width: 31px !important;
+  height: 28px !important;
+  border-radius: 9px !important;
+  font-size: 8px !important;
+}
+
+.channel-copy strong {
+  font-size: 11px !important;
+}
+
+.channel-copy small {
+  font-size: 8px !important;
+}
+
+.add-channel-button {
+  margin: 0 12px 8px !important;
+  min-height: 38px;
+  border-radius: 11px !important;
+}
+
+.content-panel {
+  min-width: 0;
+  background: linear-gradient(180deg, #08090a, #060607) !important;
+}
+
+.content-panel > header {
+  padding: 0 18px !important;
+}
+
+.content-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.content-actions button {
+  min-height: 38px;
+  border-radius: 11px !important;
+}
+
+.message-list {
+  padding: 22px !important;
+}
+
+.message {
+  max-width: 900px;
+  margin: 0 auto 8px;
+  border: 1px solid transparent;
+  border-radius: 14px !important;
+}
+
+.message:hover {
+  border-color: #282118 !important;
+  background: #101113 !important;
+}
+
+.message-form {
+  max-width: 940px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 14px 22px 18px !important;
+}
+
+.message-form input {
+  height: 48px !important;
+  border-radius: 14px !important;
+  background: #0d0e10 !important;
+}
+
+.member-list {
+  display: grid;
+  gap: 8px;
+  padding: 14px !important;
+}
+
+.member-item {
+  min-height: 58px;
+  border: 1px solid transparent;
+  border-radius: 14px !important;
+  background: #0f1012;
+}
+
+.member-item:hover {
+  border-color: #342a1d !important;
+  background: #15120d !important;
+}
+
+.welcome-view {
+  padding: 48px 26px !important;
+}
+
+.welcome-logo {
+  width: min(220px, 60vw) !important;
+  height: 96px !important;
+  margin-bottom: 18px !important;
+}
+
+.welcome-view h2 {
+  font-size: clamp(30px, 4vw, 46px) !important;
+  letter-spacing: -1.2px;
+}
+
+.welcome-view p {
+  max-width: 560px !important;
+  margin-bottom: 24px !important;
+}
+
+.welcome-view > div:last-child {
+  gap: 10px !important;
+}
+
+.welcome-view > div:last-child button {
+  min-height: 42px;
+  border-radius: 12px !important;
+}
+
+.voice-stage {
+  padding: 24px !important;
+}
+
+.voice-dock {
+  padding: 14px 18px !important;
+}
+
+.voice-controls {
+  gap: 10px !important;
+}
+
+.messenger-page .friends-layout {
+  grid-template-columns: 360px minmax(0, 1fr) !important;
+}
+
+.messenger-quick-tabs {
+  padding: 10px 12px !important;
+}
+
+.messenger-quick-tabs button {
+  min-height: 40px !important;
+  border-radius: 11px !important;
+}
+
+.friend-section {
+  padding: 11px 13px !important;
+}
+
+.friend-row {
+  min-height: 54px !important;
+  border-radius: 13px !important;
+}
+
+.dm-message-list {
+  padding: 20px !important;
+}
+
+.role-template-card {
+  min-height: 48px !important;
+  border-radius: 13px !important;
+}
+
+.modal {
+  border-radius: 18px !important;
+}
+
+.primary {
+  background: linear-gradient(135deg, #f0d185, #c69234) !important;
+}
+
+.primary:hover {
+  filter: brightness(1.08);
+}
+
+.secondary {
+  border: 1px solid #30291e;
+  background: #171719 !important;
+}
+
+.secondary:hover {
+  border-color: #8c6b32;
+  color: #ffe7a4;
+}
+
+@media (max-width: 1120px) {
+  .app {
+    grid-template-columns: 255px minmax(0, 1fr) !important;
+  }
+
+  .server-view {
+    grid-template-columns: 245px minmax(0, 1fr) !important;
+  }
+
+  .member-panel {
+    width: 280px !important;
+  }
+
+  .voice-connection-bar {
+    left: 270px !important;
+    right: 18px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .app {
+    display: block !important;
+  }
+
+  .server-actions {
+    padding: 13px !important;
+  }
+
+  .workspace {
+    height: calc(100vh - 60px) !important;
+  }
+
+  .server-view {
+    grid-template-columns: 1fr !important;
+  }
+
+  .content-panel > header {
+    padding: 0 10px !important;
+  }
+
+  .content-actions button {
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: 9px;
+  }
+
+  .message-list {
+    padding: 12px !important;
+  }
+
+  .message-form {
+    padding: 10px !important;
+  }
+
+  .welcome-view {
+    padding: 26px 18px !important;
+  }
+
+  .welcome-logo {
+    width: min(190px, 72vw) !important;
+  }
+
+  .messenger-page .friends-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .messenger-quick-tabs {
+    grid-template-columns: 1fr !important;
+  }
+
+  .voice-connection-bar {
+    left: 8px !important;
+    right: 8px !important;
+  }
+}
