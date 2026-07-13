@@ -6,6 +6,13 @@ if (location.protocol === "file:") {
 
 const $ = (selector, parent = document) => parent.querySelector(selector);
 const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
+const UI_VERSION = "1.1.20";
+
+if (localStorage.getItem("yaas:ui-version") !== UI_VERSION) {
+  localStorage.setItem("yaas:ui-version", UI_VERSION);
+  localStorage.setItem("yaas:show-all-channels-setting", "true");
+  localStorage.removeItem("yaas:server-dm-setting");
+}
 
 const PERMISSIONS = {
   "server.view": "Sunucuyu gör",
@@ -352,7 +359,7 @@ function renderChannels() {
 
 function renderMembers() {
   const members = state.activeServer.members || [];
-  const showContactActions = localStorage.getItem("yaas:server-dm-setting") !== "false";
+  const showContactActions = true;
   $("#member-empty").classList.toggle("hidden", members.length > 0);
   $("#member-list").innerHTML = members.map((member) => `
     <article class="member-item" data-profile-id="${member.id}" role="button" tabindex="0">
@@ -1313,9 +1320,30 @@ async function stopOutgoingVideo() {
   syncVoiceStage();
 }
 
+function mediaFeatureAvailable(feature) {
+  if (!window.isSecureContext) {
+    notify("Kamera ve ekran paylasimi icin site guvenli baglantida acilmali", true);
+    return false;
+  }
+  if (!navigator.mediaDevices) {
+    notify("Bu tarayici medya izinlerini desteklemiyor", true);
+    return false;
+  }
+  if (feature === "screen" && !navigator.mediaDevices.getDisplayMedia) {
+    notify("Bu tarayici ekran paylasimini desteklemiyor", true);
+    return false;
+  }
+  if (feature === "camera" && !navigator.mediaDevices.getUserMedia) {
+    notify("Bu tarayici kamerayi desteklemiyor", true);
+    return false;
+  }
+  return true;
+}
+
 async function toggleCamera() {
   if (!state.voice.roomId) return;
   if (state.voice.videoMode === "camera") return stopOutgoingVideo();
+  if (!mediaFeatureAvailable("camera")) return;
   try {
     const quality = effectiveVoiceQuality();
     const dataMode = quality === "data";
@@ -1329,7 +1357,9 @@ async function toggleCamera() {
       },
       audio: false
     });
-    await setOutgoingVideo(stream.getVideoTracks()[0], stream, "camera");
+    const [track] = stream.getVideoTracks();
+    if (!track) throw new Error("Kamera goruntusu baslatilamadi");
+    await setOutgoingVideo(track, stream, "camera");
   } catch (error) {
     notify(error.name === "NotAllowedError" ? "Kamera izni verilmedi" : "Kamera açılamadı", true);
   }
@@ -1354,6 +1384,23 @@ async function toggleScreenShare() {
     await setOutgoingVideo(stream.getVideoTracks()[0], stream, "screen");
   } catch (error) {
     if (error.name !== "NotAllowedError") notify("Ekran paylaşımı başlatılamadı", true);
+  }
+}
+
+async function toggleScreenShare() {
+  if (!state.voice.roomId) return;
+  if (state.voice.videoMode === "screen") return stopOutgoingVideo();
+  if (!mediaFeatureAvailable("screen")) return;
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: false
+    });
+    const [track] = stream.getVideoTracks();
+    if (!track) throw new Error("Ekran goruntusu baslatilamadi");
+    await setOutgoingVideo(track, stream, "screen");
+  } catch (error) {
+    if (error.name !== "NotAllowedError") notify(error.message || "Ekran paylasimi baslatilamadi", true);
   }
 }
 
@@ -1981,7 +2028,7 @@ $("#leave-server-button").addEventListener("click", async () => {
   }
 });
 
-const preferenceInputs = ["show-all-channels-setting", "server-dm-setting"];
+const preferenceInputs = ["show-all-channels-setting"];
 for (const inputId of preferenceInputs) {
   const input = $(`#${inputId}`);
   const saved = localStorage.getItem(`yaas:${inputId}`);

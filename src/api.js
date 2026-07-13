@@ -738,7 +738,7 @@ async function handleApi(request, response, helpers) {
         server: server.rows[0],
         categories: categories.rows,
         channels: visibleChannels,
-        members: granted.has("members.view") ? normalizedMembers : [],
+        members: normalizedMembers,
         roles: (granted.has("roles.manage") || granted.has("channels.manage") || granted.has("members.manage")) ? normalizedRoles : [],
         permissions: [...granted]
       });

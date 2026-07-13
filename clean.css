@@ -448,6 +448,10 @@
   color: #ffe7a4;
 }
 
+.setting-switch:has(#server-dm-setting) {
+  display: none !important;
+}
+
 @media (max-width: 1120px) {
   .app {
     grid-template-columns: 255px minmax(0, 1fr) !important;
