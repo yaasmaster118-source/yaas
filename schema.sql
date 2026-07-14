@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS roles (
   server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   color TEXT NOT NULL DEFAULT '#c9f34b',
+  role_icon TEXT NOT NULL DEFAULT '',
   position INTEGER NOT NULL DEFAULT 0,
   permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
   is_system BOOLEAN NOT NULL DEFAULT FALSE,

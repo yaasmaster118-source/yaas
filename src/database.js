@@ -50,6 +50,7 @@ function getLocalDatabase() {
       server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       color TEXT NOT NULL DEFAULT '#c9f34b',
+      role_icon TEXT NOT NULL DEFAULT '',
       position INTEGER NOT NULL DEFAULT 0,
       permissions TEXT NOT NULL DEFAULT '[]',
       is_system INTEGER NOT NULL DEFAULT 0,
@@ -171,6 +172,10 @@ function getLocalDatabase() {
   if (!serverColumns.some((column) => column.name === "logo_url")) {
     localDatabase.exec("ALTER TABLE servers ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''");
   }
+  const roleColumns = localDatabase.prepare("PRAGMA table_info(roles)").all();
+  if (!roleColumns.some((column) => column.name === "role_icon")) {
+    localDatabase.exec("ALTER TABLE roles ADD COLUMN role_icon TEXT NOT NULL DEFAULT ''");
+  }
   const userColumns = localDatabase.prepare("PRAGMA table_info(users)").all();
   if (!userColumns.some((column) => column.name === "bio")) {
     localDatabase.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
@@ -253,6 +258,7 @@ async function initializeDatabase() {
     const schema = fs.readFileSync(path.join(__dirname, "..", "schema.sql"), "utf8");
     await getPool().query(schema);
     await getPool().query("ALTER TABLE servers ADD COLUMN IF NOT EXISTS logo_url TEXT NOT NULL DEFAULT ''");
+    await getPool().query("ALTER TABLE roles ADD COLUMN IF NOT EXISTS role_icon TEXT NOT NULL DEFAULT ''");
   }
 
   const ownerEmail = process.env.OWNER_EMAIL?.trim().toLowerCase();

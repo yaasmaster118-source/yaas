@@ -15,19 +15,28 @@ test("channels support categories and roles enforce hierarchy", () => {
 
   assert.match(schema, /CREATE TABLE IF NOT EXISTS channel_categories/);
   assert.match(schema, /category_id UUID/);
+  assert.match(schema, /role_icon TEXT/);
   assert.match(api, /highestRolePosition/);
+  assert.match(api, /roleIconValue/);
+  assert.match(api, /role_icon/);
   assert.match(api, /Kendi rolüne eşit veya yüksek bir rolü yönetemezsin/);
   assert.match(api, /Bu rolü veremezsin/);
   assert.match(app, /channel-category-input/);
   assert.match(app, /category-form/);
   assert.match(app, /serverIconMarkup/);
+  assert.match(app, /function roleIcon/);
+  assert.match(app, /profile-role-tools/);
+  assert.match(app, /roleIcon: \$\("#role-icon-input"\)/);
   assert.doesNotMatch(app, /event\.currentTarget\.reset\(\)/);
   assert.match(api, /SERVER_TEMPLATES/);
   assert.match(api, /leaveServerRoute/);
   assert.match(html, /data-server-template="gaming"/);
   assert.match(html, /data-settings-panel="overview"/);
   assert.match(html, /settings-server-logo-url-input/);
+  assert.match(html, /role-icon-input/);
+  assert.match(html, /profile-role-select/);
   assert.match(cleanCss, /settings-panel\[data-settings-panel="roles"\]/);
+  assert.match(cleanCss, /role-icon-badge/);
   assert.match(cleanCss, /\.voice-dock/);
   assert.match(cleanCss, /\.server-logo/);
 });

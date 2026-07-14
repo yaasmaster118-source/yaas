@@ -39,6 +39,7 @@ const state = {
   messageRequests: [],
   notifications: { friendRequests: 0, total: 0 },
   activeDm: null,
+  activeDmTab: "friends",
   voice: {
     roomId: null,
     roomName: null,
@@ -191,6 +192,17 @@ function setVoiceControl(buttonId, icon, label, active = false) {
 
 function safeColor(value, fallback = "#c9f34b") {
   return /^#[0-9a-f]{6}$/i.test(String(value || "")) ? value : fallback;
+}
+
+function roleIcon(role = {}) {
+  const custom = String(role.role_icon || role.roleIcon || "").trim();
+  if (custom) return custom;
+  const name = String(role.name || "").toLowerCase();
+  if (name.includes("owner") || name.includes("lider")) return "👑";
+  if (name.includes("admin")) return "🛡";
+  if (name.includes("mod")) return "🔨";
+  if (name.includes("staff")) return "⭐";
+  return "◆";
 }
 
 function openModal(id) {
@@ -366,7 +378,7 @@ function renderMembers() {
       ${avatarContent(member)}
       <div><span class="member-name-row"><strong>${escapeHtml(member.nickname || member.display_name)}</strong>
       ${member.is_site_owner ? '<i class="site-owner-badge">YAAS SAHİBİ</i>' : ""}</span><small>@${escapeHtml(member.handle)}</small>
-      <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}">${escapeHtml(role.name)}</i>`).join("")}</span>
+      <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}"><span>${escapeHtml(roleIcon(role))}</span>${escapeHtml(role.name)}</i>`).join("")}</span>
       ${showContactActions && member.id !== state.user.id ? `<span class="member-actions"><button class="secondary add-friend-button" data-handle="${escapeHtml(member.handle)}" type="button">Arkadaş ekle</button></span>` : ""}
       </div>
     </article>`).join("");
@@ -412,7 +424,7 @@ function roleAccessList(container, selectedRoleIds = []) {
       <label class="role-access-row">
         <input type="checkbox" value="${role.id}" ${selected.has(role.id) ? "checked" : ""}>
         <span class="role-dot" style="background:${escapeHtml(role.color)}"></span>
-        ${escapeHtml(role.name)}
+        <span class="role-access-icon">${escapeHtml(roleIcon(role))}</span>${escapeHtml(role.name)}
       </label>`).join("")}`
     : '<small class="empty-list">Özel kanal için önce rol oluşturmalısın.</small>';
 }
@@ -463,30 +475,34 @@ function renderSettingsMembers() {
   }));
 }
 
-async function assignMemberRole(memberId, roleId) {
+async function assignMemberRole(memberId, roleId, options = {}) {
   try {
     await api(`/api/servers/${state.activeServer.server.id}/members/${memberId}/roles/${roleId}`, {
       method: "PUT",
       body: "{}"
     });
     await openServer(state.activeServer.server.id);
-    openModal("manage-server-modal");
-    switchSettingsTab("members");
+    if (!options.keepProfileOpen) {
+      openModal("manage-server-modal");
+      switchSettingsTab("members");
+    }
     notify("Rol verildi");
   } catch (error) {
     notify(error.message, true);
   }
 }
 
-async function removeMemberRole(memberId, roleId) {
+async function removeMemberRole(memberId, roleId, options = {}) {
   try {
     await api(`/api/servers/${state.activeServer.server.id}/members/${memberId}/roles/${roleId}`, {
       method: "DELETE",
       body: "{}"
     });
     await openServer(state.activeServer.server.id);
-    openModal("manage-server-modal");
-    switchSettingsTab("members");
+    if (!options.keepProfileOpen) {
+      openModal("manage-server-modal");
+      switchSettingsTab("members");
+    }
     notify("Rol kaldırıldı");
   } catch (error) {
     notify(error.message, true);
@@ -529,6 +545,63 @@ function renderDmNotifications() {
     : '<small class="empty-list">Yeni bildirim yok</small>';
 }
 
+function notificationRows() {
+  return [
+    ...state.messageRequests.map((request) => ({
+      title: `${request.sender_name} mesaj istegi gonderdi`,
+      detail: request.content
+    }))
+  ];
+}
+
+function showDmDetail(title, detail) {
+  closeDmThread();
+  $("#dm-empty").innerHTML = `<span>!</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small>`;
+}
+
+function renderDmTabContent() {
+  const content = $("#dm-tab-content");
+  if (!content) return;
+  $$("[data-dm-tab]").forEach((button) => button.classList.toggle("active", button.dataset.dmTab === state.activeDmTab));
+  $("#friend-request-form").classList.toggle("hidden", state.activeDmTab !== "friends");
+  if (state.activeDmTab === "friends") {
+    const friendRows = state.friends.friends.length
+      ? state.friends.friends.map((person) => friendRow(person, `<button class="primary open-dm-button" data-user-id="${person.id}" type="button">Mesaj</button>`)).join("")
+      : '<small class="empty-list">Henuz arkadasin yok</small>';
+    content.innerHTML = `<section class="dm-tab-section"><strong>Arkadaslar</strong>${friendRows}</section>`;
+  } else if (state.activeDmTab === "requests") {
+    content.innerHTML = state.messageRequests.length
+      ? `<section class="dm-tab-section"><strong>Mesaj istekleri</strong>${state.messageRequests.map(messageRequestRow).join("")}</section>`
+      : '<section class="dm-tab-section"><strong>Mesaj istekleri</strong><small class="empty-list">Mesaj istegi yok</small></section>';
+  } else {
+    const rows = notificationRows();
+    const incomingRows = state.friends.incoming.map((person) => friendRow(person,
+      `<button class="primary accept-friend-button" data-user-id="${person.id}" type="button">Kabul</button>
+       <button class="secondary reject-friend-button" data-user-id="${person.id}" type="button">Sil</button>`)).join("");
+    const outgoingRows = state.friends.outgoing.map((person) => friendRow(person, "<small>Bekliyor</small>")).join("");
+    content.innerHTML = rows.length || incomingRows || outgoingRows
+      ? `<section class="dm-tab-section"><strong>Bildirimler</strong>${incomingRows}${outgoingRows}${rows.map((item, index) => `
+        <button class="notification-item dm-notification-row" data-notification-index="${index}" type="button">
+          <strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small>
+        </button>`).join("")}</section>`
+      : '<section class="dm-tab-section"><strong>Bildirimler</strong><small class="empty-list">Yeni bildirim yok</small></section>';
+  }
+  bindDmSidebarActions();
+}
+
+function bindDmSidebarActions() {
+  $$(".accept-friend-button").forEach((button) => button.addEventListener("click", () => answerFriendRequest(button.dataset.userId, "accept")));
+  $$(".reject-friend-button").forEach((button) => button.addEventListener("click", () => answerFriendRequest(button.dataset.userId, "reject")));
+  $$(".open-dm-button").forEach((button) => button.addEventListener("click", () => openDm(state.friends.friends.find((item) => item.id === button.dataset.userId))));
+  $$(".view-profile-button").forEach((button) => button.addEventListener("click", () => openUserProfile(button.dataset.userId)));
+  $$(".accept-message-request-button").forEach((button) => button.addEventListener("click", () => answerMessageRequest(button.dataset.requestId, "accept")));
+  $$(".reject-message-request-button").forEach((button) => button.addEventListener("click", () => answerMessageRequest(button.dataset.requestId, "reject")));
+  $$(".dm-notification-row").forEach((button) => button.addEventListener("click", () => {
+    const item = notificationRows()[Number(button.dataset.notificationIndex)];
+    if (item) showDmDetail(item.title, item.detail);
+  }));
+}
+
 async function loadMessageRequests() {
   const data = await api("/api/message-requests");
   state.messageRequests = data.requests || [];
@@ -540,6 +613,7 @@ async function loadMessageRequests() {
   $$(".reject-message-request-button").forEach((button) => button.addEventListener("click", () =>
     answerMessageRequest(button.dataset.requestId, "reject")));
   renderDmNotifications();
+  renderDmTabContent();
 }
 
 async function answerMessageRequest(requestId, action) {
@@ -559,6 +633,8 @@ async function answerMessageRequest(requestId, action) {
 async function openMessengerPage(preselectedFriend = null) {
   await loadFriends();
   await loadMessageRequests();
+  if (preselectedFriend) state.activeDmTab = "friends";
+  renderDmTabContent();
   openModal("friends-modal");
   $("#server-panel").classList.remove("open");
   $("#server-view").classList.remove("channels-open");
@@ -598,6 +674,7 @@ async function loadFriends() {
     openUserProfile(button.dataset.userId);
   }));
   renderDmNotifications();
+  renderDmTabContent();
 }
 
 async function sendFriendRequest(handle) {
@@ -659,6 +736,33 @@ function updateProfilePreview() {
   $("#profile-settings-preview-name").textContent = $("#profile-display-name-input").value || state.user.display_name || state.user.displayName || "Kullanici";
 }
 
+function renderProfileRoleTools(profile) {
+  const tools = $("#profile-role-tools");
+  const server = state.activeServer;
+  const member = server?.members?.find((item) => item.id === profile.id);
+  const canManage = Boolean(server?.permissions?.includes("members.manage") && member && profile.id !== state.user.id);
+  tools.classList.toggle("hidden", !canManage);
+  tools.dataset.userId = profile.id;
+  if (!canManage) return;
+  const currentRoles = member.roles || [];
+  const roles = manageableRoles();
+  $("#profile-role-list").innerHTML = currentRoles.length
+    ? currentRoles.map((role) => `
+      <span class="profile-role-pill" style="color:${escapeHtml(role.color)}">
+        <b>${escapeHtml(roleIcon(role))}</b>${escapeHtml(role.name)}
+        ${role.name !== "Owner" ? `<button data-profile-remove-role="${role.id}" type="button">×</button>` : ""}
+      </span>`).join("")
+    : '<small class="empty-list">Bu uyede henuz rol yok.</small>';
+  $("#profile-role-select").innerHTML = '<option value="">Rol sec</option>' + roles
+    .filter((role) => !currentRoles.some((item) => item.id === role.id))
+    .map((role) => `<option value="${role.id}">${escapeHtml(roleIcon(role))} ${escapeHtml(role.name)}</option>`)
+    .join("");
+  $$("[data-profile-remove-role]", tools).forEach((button) => button.addEventListener("click", async () => {
+    await removeMemberRole(profile.id, button.dataset.profileRemoveRole, { keepProfileOpen: true });
+    await openUserProfile(profile.id);
+  }));
+}
+
 async function openUserProfile(userId) {
   try {
     const data = await api(`/api/users/${userId}`);
@@ -675,6 +779,7 @@ async function openUserProfile(userId) {
     $("#profile-card-friend-button").dataset.handle = profile.handle;
     $("#profile-card-message-button").classList.toggle("hidden", profile.id === state.user.id || profile.friendship !== "accepted");
     $("#profile-card-message-button").dataset.userId = profile.id;
+    renderProfileRoleTools(profile);
     openModal("user-profile-modal");
   } catch (error) {
     notify(error.message, true);
@@ -762,6 +867,7 @@ function renderRoles() {
     return `
     <button class="role-item role-template-card" data-role-id="${role.id}" type="button" style="--role-color:${escapeHtml(role.color)}">
       <span class="role-dot" style="background:${escapeHtml(role.color)}"></span>
+      <span class="role-icon-badge">${escapeHtml(roleIcon(role))}</span>
       <span class="role-template-copy"><strong>${escapeHtml(role.name)}</strong><small>${escapeHtml(badge)}</small></span>
       <em>${escapeHtml(badge)}</em>
     </button>`;
@@ -1473,6 +1579,7 @@ function editRole(role) {
   $("#role-id-input").value = role.id;
   $("#role-name-input").value = role.name;
   $("#role-color-input").value = role.color;
+  $("#role-icon-input").value = role.role_icon || roleIcon(role);
   buildPermissionGrid(role.permissions || []);
 }
 
@@ -1586,6 +1693,14 @@ $("#profile-card-message-button").addEventListener("click", async () => {
   const friend = state.friends.friends.find((item) => item.id === $("#profile-card-message-button").dataset.userId);
   closeModal($("#profile-card-message-button"));
   await openMessengerPage(friend);
+});
+
+$("#profile-role-assign-button").addEventListener("click", async () => {
+  const userId = $("#profile-role-tools").dataset.userId;
+  const roleId = $("#profile-role-select").value;
+  if (!userId || !roleId) return notify("Once bir rol sec", true);
+  await assignMemberRole(userId, roleId, { keepProfileOpen: true });
+  await openUserProfile(userId);
 });
 
 $("#login-form").addEventListener("submit", async (event) => {
@@ -1732,6 +1847,13 @@ $("#dm-back-button").addEventListener("click", () => {
 });
 
 $("#dm-thread-back").addEventListener("click", closeDmThread);
+
+$$("[data-dm-tab]").forEach((button) => button.addEventListener("click", () => {
+  state.activeDmTab = button.dataset.dmTab;
+  closeDmThread();
+  $("#dm-empty").innerHTML = '<span>✉</span><strong>Bir öğe seç.</strong><small>Soldaki listeden arkadaş, mesaj isteği veya bildirim seçince burada açılır.</small>';
+  renderDmTabContent();
+}));
 
 $$("[data-dm-emoji]").forEach((button) => button.addEventListener("click", () => {
   const input = $("#dm-message-input");
@@ -2059,6 +2181,7 @@ $("#role-form").addEventListener("submit", async (event) => {
   const payload = {
     name: $("#role-name-input").value,
     color: $("#role-color-input").value,
+    roleIcon: $("#role-icon-input").value,
     permissions: $$("input[name=permission]:checked").map((input) => input.value)
   };
   try {

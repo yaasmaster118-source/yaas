@@ -360,6 +360,7 @@
                   <input id="role-id-input" type="hidden">
                   <label>Rol adı<input id="role-name-input" maxlength="30" required></label>
                   <label>Renk<input id="role-color-input" type="color" value="#8d7aff"></label>
+                  <label>Rol ikonu<input id="role-icon-input" maxlength="8" placeholder="👑, 🛡, ⭐"></label>
                   <div class="permission-grid" id="permission-grid"></div>
                   <p class="form-error"></p>
                   <button class="primary" type="submit">Rolü kaydet</button>
@@ -436,15 +437,16 @@
               <small>Arkadaşların, istekler ve bildirimler burada.</small>
             </div>
             <div class="messenger-quick-tabs" aria-label="Mesaj merkezi menusu">
-              <button class="active" type="button"><span>Mail</span>Mesaj istekleri <i>Yeni</i></button>
-              <button type="button"><span>DM</span>Arkadaslar</button>
-              <button type="button"><span>Bell</span>Bildirimler</button>
+              <button class="active" data-dm-tab="friends" type="button"><span>DM</span>Arkadaslar</button>
+              <button data-dm-tab="requests" type="button"><span>Mail</span>Mesaj istekleri <i>Yeni</i></button>
+              <button data-dm-tab="notifications" type="button"><span>Bell</span>Bildirimler</button>
             </div>
             <form id="friend-request-form">
               <label>Kullanıcı adı<input id="friend-handle-input" placeholder="@kullanici" required></label>
               <button class="primary wide" type="submit">Arkadaşlık isteği gönder</button>
               <p class="form-error"></p>
             </form>
+            <div class="dm-tab-content" id="dm-tab-content"></div>
             <div class="friend-section">
               <strong>KONUŞMALAR VE ARKADAŞLAR</strong>
               <div id="friend-list"></div>
@@ -535,6 +537,14 @@
         <div class="profile-card-meta">
           <span id="profile-card-owner-badge" class="site-owner-badge hidden">YAAS SAHIBI</span>
           <small id="profile-card-shared">Ortak sunucu bilgisi yok.</small>
+        </div>
+        <div class="profile-role-tools hidden" id="profile-role-tools">
+          <strong>Sunucu rolleri</strong>
+          <div class="profile-role-list" id="profile-role-list"></div>
+          <label>Rol ver
+            <select id="profile-role-select"><option value="">Rol seç</option></select>
+          </label>
+          <button class="secondary" id="profile-role-assign-button" type="button">Rol ver</button>
         </div>
         <footer>
           <button class="secondary" id="profile-card-friend-button" type="button">Arkadas ekle</button>
