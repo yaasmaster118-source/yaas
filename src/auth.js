@@ -47,7 +47,7 @@ async function createSession(userId, response) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   response.setHeader(
     "Set-Cookie",
-    `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure}`
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Priority=High; Max-Age=${SESSION_DAYS * 86400}${secure}`
   );
 }
 
@@ -56,7 +56,7 @@ async function destroySession(request, response) {
   if (token) await query("DELETE FROM sessions WHERE token_hash = $1", [hashToken(token)]);
   response.setHeader(
     "Set-Cookie",
-    `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`
+    `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Priority=High; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`
   );
 }
 
@@ -64,7 +64,7 @@ async function getAuthenticatedUser(request) {
   const token = parseCookies(request)[SESSION_COOKIE];
   if (!token) return null;
   const result = await query(
-    `SELECT u.id, u.email, u.display_name, u.handle, u.bio, u.avatar_url, u.is_site_owner
+    `SELECT u.id, u.email, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner
        FROM sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1 AND s.expires_at > NOW()`,
