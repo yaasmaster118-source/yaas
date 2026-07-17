@@ -25,15 +25,32 @@ function validEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function profileImageUrl(value) {
-  const url = text(value, 500);
-  if (!url) return "";
+function profileImageValue(value) {
+  const image = String(value || "").trim();
+  if (!image) return "";
+  if (image.length > 350_000) return null;
+  if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i.test(image)) return image;
   try {
-    const parsed = new URL(url);
-    return ["http:", "https:"].includes(parsed.protocol) ? url : null;
+    const parsed = new URL(image);
+    return ["http:", "https:"].includes(parsed.protocol) ? image.slice(0, 500) : null;
   } catch {
     return null;
   }
+}
+
+function avatarFrame(value) {
+  return ["none", "gold", "emerald", "royal", "neon"].includes(value) ? value : "none";
+}
+
+function roleIconValue(value, name = "") {
+  const icon = text(value, 8);
+  if (icon) return icon;
+  const lowerName = String(name || "").toLowerCase();
+  if (lowerName.includes("owner") || lowerName.includes("lider")) return "👑";
+  if (lowerName.includes("admin")) return "🛡";
+  if (lowerName.includes("mod")) return "🔨";
+  if (lowerName.includes("staff")) return "⭐";
+  return "◆";
 }
 
 function strongPassword(password) {
@@ -164,9 +181,15 @@ const SERVER_TEMPLATES = {
 async function createServer(client, user, body) {
   const serverId = crypto.randomUUID();
   const iconColor = /^#[0-9a-f]{6}$/i.test(String(body.iconColor || "")) ? body.iconColor : "#c9f34b";
+  const logoUrl = profileImageValue(body.logoUrl);
+  if (logoUrl === null) {
+    const error = new Error("Sunucu logosu icin gecerli bir gorsel baglantisi kullanmalisin");
+    error.statusCode = 400;
+    throw error;
+  }
   await client.query(
-    "INSERT INTO servers (id, name, description, icon_color, owner_id) VALUES ($1, $2, $3, $4, $5)",
-    [serverId, text(body.name, 40), text(body.description, 180), iconColor, user.id]
+    "INSERT INTO servers (id, name, description, icon_color, logo_url, owner_id) VALUES ($1, $2, $3, $4, $5, $6)",
+    [serverId, text(body.name, 40), text(body.description, 180), iconColor, logoUrl, user.id]
   );
   await client.query("INSERT INTO memberships (server_id, user_id) VALUES ($1, $2)", [serverId, user.id]);
   const roles = {};
@@ -174,9 +197,9 @@ async function createServer(client, user, body) {
     const roleId = crypto.randomUUID();
     roles[template.name] = roleId;
     await client.query(
-      `INSERT INTO roles (id, server_id, name, color, position, permissions, is_system)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, TRUE)`,
-      [roleId, serverId, template.name, template.color, template.position, JSON.stringify(template.permissions)]
+      `INSERT INTO roles (id, server_id, name, color, role_icon, role_hoist, position, permissions, is_system)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, TRUE)`,
+      [roleId, serverId, template.name, template.color, roleIconValue("", template.name), template.name === "Owner", template.position, JSON.stringify(template.permissions)]
     );
   }
   await client.query(
@@ -262,22 +285,19 @@ async function handleApi(request, response, helpers) {
       }
       await createSession(user.id, response);
       return sendJson(response, 201, {
-        user: { id: user.id, email, displayName: name, handle: user.handle, bio: "", avatar_url: "", is_site_owner: isSiteOwner }
+        user: { id: user.id, email, displayName: name, handle: user.handle, bio: "", avatar_url: "", avatar_frame: "none", is_site_owner: isSiteOwner }
       });
     }
 
     if (method === "POST" && url.pathname === "/api/auth/login") {
       const body = await readJson(request);
       const result = await query(
-        "SELECT id, email, display_name, handle, bio, avatar_url, password_hash, is_site_owner FROM users WHERE email = $1",
+        "SELECT id, email, display_name, handle, bio, avatar_url, avatar_frame, password_hash, is_site_owner FROM users WHERE email = $1",
         [normalizeEmail(body.email)]
       );
       const user = result.rows[0];
-      if (!user) {
-        return sendJson(response, 404, { error: "Bu e-posta ile hesap bulunamadı. Önce hesap oluştur." });
-      }
-      if (!(await verifyPassword(String(body.password || ""), user.password_hash))) {
-        return sendJson(response, 401, { error: "Şifre yanlış. Lütfen tekrar dene." });
+      if (!user || !(await verifyPassword(String(body.password || ""), user.password_hash))) {
+        return sendJson(response, 401, { error: "E-posta veya sifre hatali" });
       }
       await createSession(user.id, response);
       return sendJson(response, 200, {
@@ -288,6 +308,7 @@ async function handleApi(request, response, helpers) {
           handle: user.handle,
           bio: user.bio,
           avatar_url: user.avatar_url,
+          avatar_frame: user.avatar_frame,
           is_site_owner: user.is_site_owner
         }
       });
@@ -309,23 +330,25 @@ async function handleApi(request, response, helpers) {
       const body = await readJson(request);
       const displayName = body.displayName === undefined ? null : text(body.displayName, 40);
       const bio = body.bio === undefined ? null : text(body.bio, 240);
-      const avatarUrl = body.avatarUrl === undefined ? null : profileImageUrl(body.avatarUrl);
+      const avatarUrl = body.avatarUrl === undefined ? null : profileImageValue(body.avatarUrl);
+      const frame = body.avatarFrame === undefined ? null : avatarFrame(body.avatarFrame);
       if (displayName !== null && displayName.length < 2) {
         return sendJson(response, 400, { error: "Isim en az 2 karakter olmali" });
       }
       if (body.avatarUrl !== undefined && avatarUrl === null) {
-        return sendJson(response, 400, { error: "Profil fotografi icin gecerli bir http/https baglantisi kullan" });
+        return sendJson(response, 400, { error: "Profil fotografi icin gecerli bir fotograf veya http/https baglantisi kullan" });
       }
       await query(
         `UPDATE users SET
            display_name = COALESCE($2, display_name),
            bio = COALESCE($3, bio),
-           avatar_url = COALESCE($4, avatar_url)
+           avatar_url = COALESCE($4, avatar_url),
+           avatar_frame = COALESCE($5, avatar_frame)
          WHERE id = $1`,
-        [user.id, displayName, bio, avatarUrl]
+        [user.id, displayName, bio, avatarUrl, frame]
       );
       const updated = await query(
-        "SELECT id, email, display_name, handle, bio, avatar_url, is_site_owner FROM users WHERE id = $1",
+        "SELECT id, email, display_name, handle, bio, avatar_url, avatar_frame, is_site_owner FROM users WHERE id = $1",
         [user.id]
       );
       return sendJson(response, 200, { user: updated.rows[0] });
@@ -334,7 +357,7 @@ async function handleApi(request, response, helpers) {
     const profileRoute = url.pathname.match(/^\/api\/users\/([0-9a-f-]+)$/i);
     if (method === "GET" && profileRoute) {
       const result = await query(
-        `SELECT id, display_name, handle, bio, avatar_url, is_site_owner, created_at
+        `SELECT id, display_name, handle, bio, avatar_url, avatar_frame, is_site_owner, created_at
            FROM users WHERE id = $1`,
         [profileRoute[1]]
       );
@@ -368,7 +391,7 @@ async function handleApi(request, response, helpers) {
     if (method === "GET" && url.pathname === "/api/friends") {
       const [friends, incoming, outgoing] = await Promise.all([
         query(
-          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.is_site_owner
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner
              FROM friendships f
              JOIN users u ON u.id = CASE
                WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
@@ -377,13 +400,13 @@ async function handleApi(request, response, helpers) {
           [user.id]
         ),
         query(
-          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.is_site_owner, f.created_at
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner, f.created_at
              FROM friendships f JOIN users u ON u.id = f.requester_id
             WHERE f.addressee_id = $1 AND f.status = 'pending' ORDER BY f.created_at DESC`,
           [user.id]
         ),
         query(
-          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, f.created_at
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, f.created_at
              FROM friendships f JOIN users u ON u.id = f.addressee_id
             WHERE f.requester_id = $1 AND f.status = 'pending' ORDER BY f.created_at DESC`,
           [user.id]
@@ -396,11 +419,25 @@ async function handleApi(request, response, helpers) {
       });
     }
 
+    if (method === "GET" && url.pathname === "/api/notifications/summary") {
+      const friendRequests = await query(
+        "SELECT COUNT(*)::int AS count FROM friendships WHERE addressee_id = $1 AND status = 'pending'",
+        [user.id]
+      );
+      const total = Number(friendRequests.rows[0]?.count || 0);
+      return sendJson(response, 200, {
+        notifications: {
+          friendRequests: total,
+          total
+        }
+      });
+    }
+
     if (method === "POST" && url.pathname === "/api/friends/requests") {
       const body = await readJson(request);
       const handle = text(body.handle, 30).replace(/^@/, "").toLowerCase();
       const targetResult = await query(
-        "SELECT id, display_name, handle, bio, avatar_url FROM users WHERE LOWER(handle) = $1",
+        "SELECT id, display_name, handle, bio, avatar_url, avatar_frame FROM users WHERE LOWER(handle) = $1",
         [handle]
       );
       const target = targetResult.rows[0];
@@ -506,9 +543,80 @@ async function handleApi(request, response, helpers) {
       });
     }
 
+    if (method === "GET" && url.pathname === "/api/message-requests") {
+      const result = await query(
+        `SELECT mr.id, mr.sender_id, mr.recipient_id, mr.content, mr.created_at,
+                u.display_name AS sender_name, u.handle AS sender_handle, u.avatar_url, u.avatar_frame
+           FROM message_requests mr
+           JOIN users u ON u.id = mr.sender_id
+          WHERE mr.recipient_id = $1 AND mr.status = 'pending'
+          ORDER BY mr.created_at DESC LIMIT 50`,
+        [user.id]
+      );
+      return sendJson(response, 200, { requests: result.rows });
+    }
+
+    if (method === "POST" && url.pathname === "/api/message-requests") {
+      const body = await readJson(request);
+      const handle = text(body.handle, 30).replace(/^@/, "").toLowerCase();
+      const content = text(body.content, 4000);
+      if (!handle || !content) return sendJson(response, 400, { error: "Kullanici ve mesaj gerekli" });
+      const targetResult = await query(
+        "SELECT id FROM users WHERE LOWER(handle) = $1",
+        [handle]
+      );
+      const target = targetResult.rows[0];
+      if (!target || target.id === user.id) return sendJson(response, 404, { error: "Kullanici bulunamadi" });
+      if (await areFriends(user.id, target.id)) {
+        return sendJson(response, 409, { error: "Bu kisi zaten arkadasin. DM kullan." });
+      }
+      await query(
+        "INSERT INTO message_requests (id, sender_id, recipient_id, content) VALUES ($1, $2, $3, $4)",
+        [crypto.randomUUID(), user.id, target.id, content]
+      );
+      return sendJson(response, 201, { ok: true });
+    }
+
+    const messageRequestRoute = url.pathname.match(/^\/api\/message-requests\/([0-9a-f-]+)$/i);
+    if (method === "PATCH" && messageRequestRoute) {
+      const body = await readJson(request);
+      const requestId = messageRequestRoute[1];
+      const requestResult = await query(
+        "SELECT * FROM message_requests WHERE id = $1 AND recipient_id = $2 AND status = 'pending'",
+        [requestId, user.id]
+      );
+      const messageRequest = requestResult.rows[0];
+      if (!messageRequest) return sendJson(response, 404, { error: "Mesaj istegi bulunamadi" });
+      if (body.action === "reject") {
+        await query(
+          "UPDATE message_requests SET status = 'rejected', updated_at = NOW() WHERE id = $1",
+          [requestId]
+        );
+        return sendJson(response, 200, { ok: true });
+      }
+      if (body.action !== "accept") return sendJson(response, 400, { error: "Gecersiz islem" });
+      await transaction(async (client) => {
+        await client.query(
+          `INSERT INTO friendships (requester_id, addressee_id, status)
+           VALUES ($1, $2, 'accepted')
+           ON CONFLICT(requester_id, addressee_id) DO UPDATE SET status = 'accepted', updated_at = NOW()`,
+          [messageRequest.sender_id, user.id]
+        );
+        await client.query(
+          "INSERT INTO direct_messages (id, sender_id, recipient_id, content) VALUES ($1, $2, $3, $4)",
+          [crypto.randomUUID(), messageRequest.sender_id, user.id, messageRequest.content]
+        );
+        await client.query(
+          "UPDATE message_requests SET status = 'accepted', updated_at = NOW() WHERE id = $1",
+          [requestId]
+        );
+      });
+      return sendJson(response, 200, { ok: true, friendId: messageRequest.sender_id });
+    }
+
     if (method === "GET" && url.pathname === "/api/servers") {
       const result = await query(
-        `SELECT s.id, s.name, s.description, s.icon_color, s.owner_id, m.joined_at,
+        `SELECT s.id, s.name, s.description, s.icon_color, s.logo_url, s.owner_id, m.joined_at,
                 COUNT(m2.user_id)::int AS member_count
            FROM memberships m
            JOIN servers s ON s.id = m.server_id
@@ -523,7 +631,12 @@ async function handleApi(request, response, helpers) {
     if (method === "POST" && url.pathname === "/api/servers") {
       const body = await readJson(request);
       if (text(body.name, 40).length < 2) return sendJson(response, 400, { error: "Sunucu adı gerekli" });
-      return sendJson(response, 201, { server: await transaction((client) => createServer(client, user, body)) });
+      try {
+        return sendJson(response, 201, { server: await transaction((client) => createServer(client, user, body)) });
+      } catch (error) {
+        if (error.statusCode) return sendJson(response, error.statusCode, { error: error.message });
+        throw error;
+      }
     }
 
     const serverRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)$/i);
@@ -533,23 +646,29 @@ async function handleApi(request, response, helpers) {
       const body = await readJson(request);
       const name = body.name === undefined ? null : text(body.name, 40);
       const iconColor = body.iconColor === undefined ? null : text(body.iconColor, 20);
+      const logoUrl = body.logoUrl === undefined ? null : profileImageValue(body.logoUrl);
       if (body.name !== undefined && name.length < 2) {
         return sendJson(response, 400, { error: "Sunucu adı en az 2 karakter olmalı" });
       }
       if (iconColor !== null && !/^#[0-9a-f]{6}$/i.test(iconColor)) {
         return sendJson(response, 400, { error: "Geçerli bir simge rengi seçmelisin" });
       }
+      if (logoUrl === null) {
+        return sendJson(response, 400, { error: "Sunucu logosu icin gecerli bir gorsel baglantisi kullanmalisin" });
+      }
       await query(
         `UPDATE servers SET
            name = COALESCE($2, name),
            description = COALESCE($3, description),
-           icon_color = COALESCE($4, icon_color)
+           icon_color = COALESCE($4, icon_color),
+           logo_url = COALESCE($5, logo_url)
          WHERE id = $1`,
         [
           serverId,
           name,
           body.description === undefined ? null : text(body.description, 180),
-          iconColor
+          iconColor,
+          logoUrl
         ]
       );
       return sendJson(response, 200, { ok: true });
@@ -559,6 +678,45 @@ async function handleApi(request, response, helpers) {
       const owned = await query("SELECT id FROM servers WHERE id = $1 AND owner_id = $2", [serverId, user.id]);
       if (!owned.rowCount) return sendJson(response, 403, { error: "Yalnızca sunucu sahibi sunucuyu silebilir" });
       await query("DELETE FROM servers WHERE id = $1", [serverId]);
+      return sendJson(response, 200, { ok: true });
+    }
+
+    const transferOwnerRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/transfer-owner$/i);
+    if (method === "POST" && transferOwnerRoute) {
+      const serverId = transferOwnerRoute[1];
+      const body = await readJson(request);
+      const newOwnerId = text(body.newOwnerId, 80);
+      const server = await query("SELECT owner_id FROM servers WHERE id = $1", [serverId]);
+      if (!server.rowCount) return sendJson(response, 404, { error: "Sunucu bulunamadi" });
+      if (server.rows[0].owner_id !== user.id) {
+        return sendJson(response, 403, { error: "Yalnizca sunucu sahibi sahipligi devredebilir" });
+      }
+      if (!newOwnerId || newOwnerId === user.id) {
+        return sendJson(response, 400, { error: "Yeni sahip farkli bir uye olmali" });
+      }
+      const target = await query(
+        "SELECT user_id FROM memberships WHERE server_id = $1 AND user_id = $2",
+        [serverId, newOwnerId]
+      );
+      if (!target.rowCount) return sendJson(response, 404, { error: "Yeni sahip bu sunucuda uye degil" });
+      await transaction(async (client) => {
+        await client.query("UPDATE servers SET owner_id = $2 WHERE id = $1", [serverId, newOwnerId]);
+        const ownerRole = await client.query(
+          "SELECT id FROM roles WHERE server_id = $1 AND name = 'Owner' LIMIT 1",
+          [serverId]
+        );
+        const ownerRoleId = ownerRole.rows[0]?.id;
+        if (ownerRoleId) {
+          await client.query(
+            "DELETE FROM member_roles WHERE server_id = $1 AND role_id = $2",
+            [serverId, ownerRoleId]
+          );
+          await client.query(
+            "INSERT INTO member_roles (server_id, user_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            [serverId, newOwnerId, ownerRoleId]
+          );
+        }
+      });
       return sendJson(response, 200, { ok: true });
     }
 
@@ -581,22 +739,22 @@ async function handleApi(request, response, helpers) {
       const granted = await permissions(serverId, user.id);
       if (!granted) return sendJson(response, 404, { error: "Sunucu bulunamadı" });
       const [server, categories, channels, members, memberRoles, roles] = await Promise.all([
-        query("SELECT id, name, description, icon_color, owner_id, created_at FROM servers WHERE id = $1", [serverId]),
+        query("SELECT id, name, description, icon_color, logo_url, owner_id, created_at FROM servers WHERE id = $1", [serverId]),
         query("SELECT id, name, position FROM channel_categories WHERE server_id = $1 ORDER BY position", [serverId]),
         query("SELECT id, category_id, name, type, position, is_private, allowed_role_ids, user_limit, audio_bitrate, quality_mode FROM channels WHERE server_id = $1 ORDER BY position", [serverId]),
         query(
-          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.is_site_owner, m.nickname, m.joined_at
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner, m.nickname, m.joined_at
              FROM memberships m JOIN users u ON u.id = m.user_id
             WHERE m.server_id = $1 ORDER BY m.joined_at`,
           [serverId]
         ),
         query(
-          `SELECT mr.user_id, r.id, r.name, r.color, r.position
+          `SELECT mr.user_id, r.id, r.name, r.color, r.role_icon, r.role_hoist, r.position
              FROM member_roles mr JOIN roles r ON r.id = mr.role_id
             WHERE mr.server_id = $1 ORDER BY r.position DESC`,
           [serverId]
         ),
-        query("SELECT id, name, color, position, permissions, is_system FROM roles WHERE server_id = $1 ORDER BY position DESC", [serverId])
+        query("SELECT id, name, color, role_icon, role_hoist, position, permissions, is_system FROM roles WHERE server_id = $1 ORDER BY position DESC", [serverId])
       ]);
       const rolesByMember = new Map();
       for (const role of memberRoles.rows) {
@@ -605,6 +763,8 @@ async function handleApi(request, response, helpers) {
           id: role.id,
           name: role.name,
           color: role.color,
+          role_icon: role.role_icon,
+          role_hoist: role.role_hoist,
           position: role.position
         });
       }
@@ -630,7 +790,7 @@ async function handleApi(request, response, helpers) {
         server: server.rows[0],
         categories: categories.rows,
         channels: visibleChannels,
-        members: granted.has("members.view") ? normalizedMembers : [],
+        members: normalizedMembers,
         roles: (granted.has("roles.manage") || granted.has("channels.manage") || granted.has("members.manage")) ? normalizedRoles : [],
         permissions: [...granted]
       });
@@ -646,14 +806,17 @@ async function handleApi(request, response, helpers) {
       const role = {
         id: crypto.randomUUID(),
         name: text(body.name, 30),
+        role_icon: "",
+        role_hoist: Boolean(body.roleHoist),
         permissions: validPermissions(body.permissions),
         position: Number.isFinite(actorPosition) ? Math.min(requestedPosition, actorPosition - 1) : requestedPosition
       };
       if (!role.name) return sendJson(response, 400, { error: "Rol adı gerekli" });
+      role.role_icon = roleIconValue(body.roleIcon, role.name);
       await query(
-        `INSERT INTO roles (id, server_id, name, color, position, permissions)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-        [role.id, serverId, role.name, text(body.color, 20) || "#8d7aff", role.position, JSON.stringify(role.permissions)]
+        `INSERT INTO roles (id, server_id, name, color, role_icon, role_hoist, position, permissions)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+        [role.id, serverId, role.name, text(body.color, 20) || "#8d7aff", role.role_icon, role.role_hoist, role.position, JSON.stringify(role.permissions)]
       );
       return sendJson(response, 201, { role });
     }
@@ -681,7 +844,9 @@ async function handleApi(request, response, helpers) {
            name = COALESCE($3, name),
            color = COALESCE($4, color),
            position = COALESCE($5, position),
-           permissions = COALESCE($6::jsonb, permissions)
+           permissions = COALESCE($6::jsonb, permissions),
+           role_icon = COALESCE($7, role_icon),
+           role_hoist = COALESCE($8, role_hoist)
          WHERE id = $1 AND server_id = $2`,
         [
           roleId,
@@ -691,7 +856,9 @@ async function handleApi(request, response, helpers) {
           Number.isFinite(Number(body.position))
             ? (Number.isFinite(actorPosition) ? Math.min(Number(body.position), actorPosition - 1) : Number(body.position))
             : null,
-          Array.isArray(body.permissions) ? JSON.stringify(validPermissions(body.permissions)) : null
+          Array.isArray(body.permissions) ? JSON.stringify(validPermissions(body.permissions)) : null,
+          body.roleIcon !== undefined ? roleIconValue(body.roleIcon, body.name || role.name) : null,
+          body.roleHoist !== undefined ? Boolean(body.roleHoist) : null
         ]
       );
       return sendJson(response, 200, { ok: true });
@@ -826,6 +993,28 @@ async function handleApi(request, response, helpers) {
     }
 
     const inviteRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/invites$/i);
+    if (method === "GET" && inviteRoute) {
+      const serverId = inviteRoute[1];
+      if (!(await requirePermission(response, sendJson, serverId, user.id, "invites.create"))) return;
+      const result = await query(
+        `SELECT i.id, i.code, i.expires_at, i.max_uses, i.uses, i.created_at,
+                u.display_name AS creator_name, u.handle AS creator_handle
+           FROM invites i
+           JOIN users u ON u.id = i.created_by
+          WHERE i.server_id = $1
+            AND (i.expires_at IS NULL OR i.expires_at > NOW())
+            AND (i.max_uses IS NULL OR i.uses < i.max_uses)
+          ORDER BY i.created_at DESC`,
+        [serverId]
+      );
+      return sendJson(response, 200, {
+        invites: result.rows.map((invite) => ({
+          ...invite,
+          url: `${getOrigin(request)}/invite/${invite.code}`
+        }))
+      });
+    }
+
     if (method === "POST" && inviteRoute) {
       const serverId = inviteRoute[1];
       if (!(await requirePermission(response, sendJson, serverId, user.id, "invites.create"))) return;
@@ -837,6 +1026,18 @@ async function handleApi(request, response, helpers) {
         [crypto.randomUUID(), serverId, code, user.id, expiresAt, body.maxUses ? Math.min(Number(body.maxUses), 1000) : null]
       );
       return sendJson(response, 201, { invite: { code, url: `${getOrigin(request)}/invite/${code}` } });
+    }
+
+    const inviteItemRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/invites\/([0-9a-f-]+)$/i);
+    if (method === "DELETE" && inviteItemRoute) {
+      const [serverId, inviteId] = [inviteItemRoute[1], inviteItemRoute[2]];
+      if (!(await requirePermission(response, sendJson, serverId, user.id, "invites.create"))) return;
+      const result = await query(
+        "DELETE FROM invites WHERE id = $1 AND server_id = $2",
+        [inviteId, serverId]
+      );
+      if (!result.rowCount) return sendJson(response, 404, { error: "Davet bulunamadi" });
+      return sendJson(response, 200, { ok: true });
     }
 
     const joinRoute = url.pathname.match(/^\/api\/invites\/([A-Za-z0-9_-]+)\/join$/);
@@ -897,6 +1098,12 @@ async function handleApi(request, response, helpers) {
 
     sendJson(response, 404, { error: "API yolu bulunamadı" });
   } catch (error) {
+    if (error.statusCode === 413) {
+      return sendJson(response, 413, { error: "Istek cok buyuk" });
+    }
+    if (error.statusCode === 400) {
+      return sendJson(response, 400, { error: "Gecersiz istek" });
+    }
     if (error.code === "23505" || /UNIQUE constraint failed/i.test(error.message)) {
       return sendJson(response, 409, { error: "Bu kayıt zaten mevcut" });
     }
