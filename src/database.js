@@ -25,6 +25,7 @@ function getLocalDatabase() {
       password_hash TEXT NOT NULL,
       bio TEXT NOT NULL DEFAULT '',
       avatar_url TEXT NOT NULL DEFAULT '',
+      avatar_frame TEXT NOT NULL DEFAULT 'none',
       is_site_owner INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -40,6 +41,7 @@ function getLocalDatabase() {
       name TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
       icon_color TEXT NOT NULL DEFAULT 'lime',
+      logo_url TEXT NOT NULL DEFAULT '',
       owner_id TEXT NOT NULL REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -48,6 +50,8 @@ function getLocalDatabase() {
       server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
       color TEXT NOT NULL DEFAULT '#c9f34b',
+      role_icon TEXT NOT NULL DEFAULT '',
+      role_hoist INTEGER NOT NULL DEFAULT 0,
       position INTEGER NOT NULL DEFAULT 0,
       permissions TEXT NOT NULL DEFAULT '[]',
       is_system INTEGER NOT NULL DEFAULT 0,
@@ -132,6 +136,15 @@ function getLocalDatabase() {
       content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 4000),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS message_requests (
+      id TEXT PRIMARY KEY,
+      sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recipient_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 4000),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE INDEX IF NOT EXISTS sessions_token_hash_idx ON sessions(token_hash);
     CREATE INDEX IF NOT EXISTS memberships_user_idx ON memberships(user_id);
     CREATE INDEX IF NOT EXISTS channels_server_idx ON channels(server_id, position);
@@ -141,6 +154,7 @@ function getLocalDatabase() {
     CREATE INDEX IF NOT EXISTS oauth_accounts_user_idx ON oauth_accounts(user_id);
     CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships(addressee_id, status);
     CREATE INDEX IF NOT EXISTS direct_messages_pair_idx ON direct_messages(sender_id, recipient_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS message_requests_recipient_idx ON message_requests(recipient_id, status, created_at DESC);
   `);
   const channelColumns = localDatabase.prepare("PRAGMA table_info(channels)").all();
   if (!channelColumns.some((column) => column.name === "category_id")) {
@@ -155,12 +169,26 @@ function getLocalDatabase() {
   if (!channelColumns.some((column) => column.name === "quality_mode")) {
     localDatabase.exec("ALTER TABLE channels ADD COLUMN quality_mode TEXT NOT NULL DEFAULT 'auto'");
   }
+  const serverColumns = localDatabase.prepare("PRAGMA table_info(servers)").all();
+  if (!serverColumns.some((column) => column.name === "logo_url")) {
+    localDatabase.exec("ALTER TABLE servers ADD COLUMN logo_url TEXT NOT NULL DEFAULT ''");
+  }
+  const roleColumns = localDatabase.prepare("PRAGMA table_info(roles)").all();
+  if (!roleColumns.some((column) => column.name === "role_icon")) {
+    localDatabase.exec("ALTER TABLE roles ADD COLUMN role_icon TEXT NOT NULL DEFAULT ''");
+  }
+  if (!roleColumns.some((column) => column.name === "role_hoist")) {
+    localDatabase.exec("ALTER TABLE roles ADD COLUMN role_hoist INTEGER NOT NULL DEFAULT 0");
+  }
   const userColumns = localDatabase.prepare("PRAGMA table_info(users)").all();
   if (!userColumns.some((column) => column.name === "bio")) {
     localDatabase.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
   }
   if (!userColumns.some((column) => column.name === "avatar_url")) {
     localDatabase.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''");
+  }
+  if (!userColumns.some((column) => column.name === "avatar_frame")) {
+    localDatabase.exec("ALTER TABLE users ADD COLUMN avatar_frame TEXT NOT NULL DEFAULT 'none'");
   }
   return localDatabase;
 }
@@ -233,6 +261,9 @@ async function initializeDatabase() {
   } else {
     const schema = fs.readFileSync(path.join(__dirname, "..", "schema.sql"), "utf8");
     await getPool().query(schema);
+    await getPool().query("ALTER TABLE servers ADD COLUMN IF NOT EXISTS logo_url TEXT NOT NULL DEFAULT ''");
+    await getPool().query("ALTER TABLE roles ADD COLUMN IF NOT EXISTS role_icon TEXT NOT NULL DEFAULT ''");
+    await getPool().query("ALTER TABLE roles ADD COLUMN IF NOT EXISTS role_hoist BOOLEAN NOT NULL DEFAULT FALSE");
   }
 
   const ownerEmail = process.env.OWNER_EMAIL?.trim().toLowerCase();
