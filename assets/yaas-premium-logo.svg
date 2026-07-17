@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">YAAS premium logo</title>
+  <desc id="desc">Black, gold and silver YAAS wordmark for the YAAS community platform.</desc>
+  <defs>
+    <linearGradient id="silver" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".42" stop-color="#d9d9d9"/>
+      <stop offset=".68" stop-color="#8f949b"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff0a8"/>
+      <stop offset=".36" stop-color="#e1b84d"/>
+      <stop offset=".72" stop-color="#a86f20"/>
+      <stop offset="1" stop-color="#ffe6a1"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="20" stdDeviation="18" flood-color="#000" flood-opacity=".72"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#d6aa52" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="520" fill="#050506"/>
+  <g opacity=".3">
+    <path d="M255 177c92-72 232-113 345-113s253 41 345 113" fill="none" stroke="url(#gold)" stroke-width="7" stroke-linecap="round"/>
+    <path d="M255 405c92 72 232 102 345 102s253-30 345-102" fill="none" stroke="url(#gold)" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <g filter="url(#shadow)">
+    <path d="M116 205h107l87 87 85-87h108L317 390h-83l56-56z" fill="url(#silver)"/>
+    <path d="M510 391h-99l164-282h72l164 282H711l-35-65H545zm73-137h56l-28-57z" fill="url(#silver)"/>
+    <path d="M642 109h72l164 282H778l-35-65H632l42-72h31z" fill="url(#gold)"/>
+    <path d="M846 205h236l-42 72H911l-19 32h151l-47 82H758z" fill="url(#gold)"/>
+  </g>
+  <path d="M600 169l16 52 52 16-52 16-16 52-16-52-52-16 52-16z" fill="url(#gold)" filter="url(#shadow)"/>
+  <text x="600" y="455" text-anchor="middle" fill="#d9b45f" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" letter-spacing="18">INSANLARINI BUL. ALANINI KUR.</text>
+</svg>
