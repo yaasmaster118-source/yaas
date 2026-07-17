@@ -246,6 +246,8 @@
           <label>Açıklama<textarea id="server-description-input" maxlength="180" placeholder="Bu sunucu ne için kuruluyor?"></textarea></label>
         </div>
         <label class="server-logo-field">Sunucu logosu baglantisi<input id="server-logo-url-input" maxlength="500" placeholder="https://... veya bos birak"></label>
+        <input id="server-logo-file-input" type="file" accept="image/*" hidden>
+        <button class="secondary" id="server-logo-picker" type="button">Galeriden logo sec</button>
         <p class="form-error"></p>
         <div class="builder-join-row"><span>Zaten davetin var mı?</span><button class="secondary" id="builder-open-join" type="button">Bir sunucuya katıl</button></div>
         <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Sunucuyu oluştur</button></footer>
@@ -347,6 +349,8 @@
                 <label>Sunucu adı<input id="settings-server-name-input" maxlength="40" required></label>
                 <label>Açıklama<textarea id="settings-server-description-input" maxlength="180"></textarea></label>
                 <label>Sunucu logosu baglantisi<input id="settings-server-logo-url-input" maxlength="500" placeholder="https://... veya bos birak"></label>
+                <input id="settings-server-logo-file-input" type="file" accept="image/*" hidden>
+                <button class="secondary" id="settings-server-logo-picker" type="button">Galeriden logo sec</button>
                 <label>Simge rengi<input id="settings-server-color-input" type="color" value="#c9f34b"></label>
                 <p class="form-error"></p>
                 <button class="primary" type="submit">Değişiklikleri kaydet</button>
@@ -403,6 +407,11 @@
               <div class="danger-zone hidden" id="server-danger-zone">
                 <div><strong>Sunucuyu sil</strong><small>Kanallar, mesajlar ve üyelikler kalıcı olarak silinir.</small></div>
                 <button class="danger-button" id="delete-server-button" type="button">Sunucuyu sil</button>
+              </div>
+              <div class="danger-zone hidden" id="server-transfer-zone">
+                <div><strong>Sunucu sahipligini devret</strong><small>Yeni sahip her seyi gorebilir, silebilir ve yonetebilir. Sen normal uye olursun.</small></div>
+                <select id="transfer-owner-select"><option value="">Yeni sahibi sec</option></select>
+                <button class="danger-button" id="transfer-owner-button" type="button">Sahipligi devret</button>
               </div>
               <div class="danger-zone hidden" id="leave-server-zone">
                 <div><strong>Sunucudan ayrıl</strong><small>Tekrar katılmak için yeni bir davet gerekir.</small></div>

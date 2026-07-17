@@ -681,6 +681,45 @@ async function handleApi(request, response, helpers) {
       return sendJson(response, 200, { ok: true });
     }
 
+    const transferOwnerRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/transfer-owner$/i);
+    if (method === "POST" && transferOwnerRoute) {
+      const serverId = transferOwnerRoute[1];
+      const body = await readJson(request);
+      const newOwnerId = text(body.newOwnerId, 80);
+      const server = await query("SELECT owner_id FROM servers WHERE id = $1", [serverId]);
+      if (!server.rowCount) return sendJson(response, 404, { error: "Sunucu bulunamadi" });
+      if (server.rows[0].owner_id !== user.id) {
+        return sendJson(response, 403, { error: "Yalnizca sunucu sahibi sahipligi devredebilir" });
+      }
+      if (!newOwnerId || newOwnerId === user.id) {
+        return sendJson(response, 400, { error: "Yeni sahip farkli bir uye olmali" });
+      }
+      const target = await query(
+        "SELECT user_id FROM memberships WHERE server_id = $1 AND user_id = $2",
+        [serverId, newOwnerId]
+      );
+      if (!target.rowCount) return sendJson(response, 404, { error: "Yeni sahip bu sunucuda uye degil" });
+      await transaction(async (client) => {
+        await client.query("UPDATE servers SET owner_id = $2 WHERE id = $1", [serverId, newOwnerId]);
+        const ownerRole = await client.query(
+          "SELECT id FROM roles WHERE server_id = $1 AND name = 'Owner' LIMIT 1",
+          [serverId]
+        );
+        const ownerRoleId = ownerRole.rows[0]?.id;
+        if (ownerRoleId) {
+          await client.query(
+            "DELETE FROM member_roles WHERE server_id = $1 AND role_id = $2",
+            [serverId, ownerRoleId]
+          );
+          await client.query(
+            "INSERT INTO member_roles (server_id, user_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            [serverId, newOwnerId, ownerRoleId]
+          );
+        }
+      });
+      return sendJson(response, 200, { ok: true });
+    }
+
     const leaveServerRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/members\/me$/i);
     if (method === "DELETE" && leaveServerRoute) {
       const serverId = leaveServerRoute[1];

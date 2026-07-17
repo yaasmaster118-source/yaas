@@ -21,9 +21,13 @@ test("server deletion is owner-only and friends can use direct messages", () => 
   assert.match(database, /CREATE TABLE IF NOT EXISTS friendships/);
   assert.match(database, /CREATE TABLE IF NOT EXISTS message_requests/);
   assert.match(api, /sunucu sahibi/);
+  assert.match(api, /transfer-owner/);
+  assert.match(api, /UPDATE servers SET owner_id/);
   assert.match(api, /message_requests/);
   assert.match(api, /\/api\/message-requests/);
   assert.match(app, /delete-server-button/);
+  assert.match(app, /transfer-owner-button/);
+  assert.match(app, /renderTransferOwnerOptions/);
   assert.match(app, /friend-request-form/);
   assert.match(app, /dm-message-form/);
   assert.match(app, /closeDmThread/);
@@ -41,6 +45,9 @@ test("server deletion is owner-only and friends can use direct messages", () => 
   assert.match(app, /channel-template-item/);
   assert.match(app, /role-template-card/);
   assert.match(html, /id="dm-back-button"/);
+  assert.match(html, /server-transfer-zone/);
+  assert.match(html, /server-logo-file-input/);
+  assert.match(html, /settings-server-logo-file-input/);
   assert.match(html, /mention-suggestions/);
   assert.match(html, /id="message-request-list"/);
   assert.match(html, /id="dm-notification-list"/);

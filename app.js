@@ -315,6 +315,7 @@ async function openServer(serverId, preferredChannelId = null) {
     $("#add-category-button").classList.toggle("hidden", !data.permissions.includes("channels.manage"));
     $("#invite-button").classList.toggle("hidden", !data.permissions.includes("invites.create"));
     $("#server-danger-zone").classList.toggle("hidden", data.server.owner_id !== state.user.id);
+    $("#server-transfer-zone").classList.toggle("hidden", data.server.owner_id !== state.user.id);
     $("#leave-server-zone").classList.toggle("hidden", data.server.owner_id === state.user.id);
     $("#settings-server-name").textContent = `${data.server.name} ayarları`;
     $("#settings-server-name-input").value = data.server.name;
@@ -338,6 +339,7 @@ async function openServer(serverId, preferredChannelId = null) {
     renderChannels();
     renderMembers();
     renderSettingsMembers();
+    renderTransferOwnerOptions();
     renderRoles();
     const preferredChannel = data.channels.find((channel) => channel.id === preferredChannelId);
     if (preferredChannel) await openChannel(preferredChannel);
@@ -529,6 +531,16 @@ function renderSettingsMembers() {
   $$("[data-remove-role]").forEach((button) => button.addEventListener("click", () => {
     removeMemberRole(button.dataset.memberId, button.dataset.removeRole);
   }));
+}
+
+function renderTransferOwnerOptions() {
+  const select = $("#transfer-owner-select");
+  if (!select || !state.activeServer) return;
+  const ownerId = state.activeServer.server.owner_id;
+  const candidates = (state.activeServer.members || []).filter((member) => member.id !== ownerId);
+  select.innerHTML = '<option value="">Yeni sahibi sec</option>' + candidates.map((member) =>
+    `<option value="${member.id}">${escapeHtml(member.nickname || member.display_name)} (@${escapeHtml(member.handle)})</option>`).join("");
+  $("#transfer-owner-button").disabled = candidates.length === 0;
 }
 
 async function assignMemberRole(memberId, roleId, options = {}) {
@@ -1749,6 +1761,34 @@ $("#profile-role-assign-button").addEventListener("click", async () => {
   await openUserProfile(userId);
 });
 
+$("#server-logo-picker").addEventListener("click", () => $("#server-logo-file-input").click());
+$("#server-logo-file-input").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    $("#server-logo-url-input").value = await resizeAvatarFile(file);
+    notify("Sunucu logosu hazir");
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    event.target.value = "";
+  }
+});
+
+$("#settings-server-logo-picker").addEventListener("click", () => $("#settings-server-logo-file-input").click());
+$("#settings-server-logo-file-input").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    $("#settings-server-logo-url-input").value = await resizeAvatarFile(file);
+    notify("Sunucu logosu hazir");
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    event.target.value = "";
+  }
+});
+
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -2180,6 +2220,26 @@ $("#delete-server-button").addEventListener("click", async () => {
     $("#welcome-view").classList.remove("hidden");
     await loadServers();
     notify("Sunucu silindi");
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+
+$("#transfer-owner-button").addEventListener("click", async () => {
+  if (!state.activeServer) return;
+  const newOwnerId = $("#transfer-owner-select").value;
+  if (!newOwnerId) return notify("Yeni sahibi sec", true);
+  const member = state.activeServer.members.find((item) => item.id === newOwnerId);
+  if (!member) return notify("Uye bulunamadi", true);
+  if (!confirm(`"${state.activeServer.server.name}" sunucusunun sahipligini ${member.display_name} kisisine devretmek istiyor musun?`)) return;
+  try {
+    await api(`/api/servers/${state.activeServer.server.id}/transfer-owner`, {
+      method: "POST",
+      body: JSON.stringify({ newOwnerId })
+    });
+    await openServer(state.activeServer.server.id);
+    closeModal($("#transfer-owner-button"));
+    notify("Sunucu sahipligi devredildi");
   } catch (error) {
     notify(error.message, true);
   }
