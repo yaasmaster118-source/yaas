@@ -28,7 +28,7 @@ function validEmail(email) {
 function profileImageValue(value) {
   const image = String(value || "").trim();
   if (!image) return "";
-  if (image.length > 350_000) return null;
+  if (image.length > 900_000) return null;
   if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i.test(image)) return image;
   try {
     const parsed = new URL(image);
@@ -646,7 +646,8 @@ async function handleApi(request, response, helpers) {
       const body = await readJson(request);
       const name = body.name === undefined ? null : text(body.name, 40);
       const iconColor = body.iconColor === undefined ? null : text(body.iconColor, 20);
-      const logoUrl = body.logoUrl === undefined ? null : profileImageValue(body.logoUrl);
+      const hasLogoUrl = Object.prototype.hasOwnProperty.call(body, "logoUrl");
+      const logoUrl = hasLogoUrl ? profileImageValue(body.logoUrl) : null;
       if (body.name !== undefined && name.length < 2) {
         return sendJson(response, 400, { error: "Sunucu adı en az 2 karakter olmalı" });
       }
@@ -661,13 +662,14 @@ async function handleApi(request, response, helpers) {
            name = COALESCE($2, name),
            description = COALESCE($3, description),
            icon_color = COALESCE($4, icon_color),
-           logo_url = COALESCE($5, logo_url)
+           logo_url = CASE WHEN $5 THEN $6 ELSE logo_url END
          WHERE id = $1`,
         [
           serverId,
           name,
           body.description === undefined ? null : text(body.description, 180),
           iconColor,
+          hasLogoUrl,
           logoUrl
         ]
       );
