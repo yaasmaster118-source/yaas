@@ -8,13 +8,14 @@
     <meta name="theme-color" content="#080808">
     <meta property="og:title" content="YAAS | Yeni Nesil Topluluk Platformu">
     <meta property="og:description" content="Kendi topluluğunu kur, rollerini ve kanallarını yönet.">
-    <meta property="og:image" content="/social-card.svg">
+    <meta property="og:image" content="/assets/yaas-main-logo.webp">
     <title>YAAS 1.1 | Topluluk Platformu</title>
-    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="icon" href="assets/yaas-main-icon.png" type="image/png">
+    <link rel="apple-touch-icon" href="assets/yaas-main-icon.png">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.20">
-    <link rel="stylesheet" href="clean.css?v=1.1.20">
-    <script src="app.js?v=1.1.20" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.23">
+    <link rel="stylesheet" href="clean.css?v=1.1.23">
+    <script src="app.js?v=1.1.23" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -76,7 +77,7 @@
       <aside class="server-panel" id="server-panel">
         <header>
           <div class="wordmark video-wordmark">
-            <img class="brand-loop-fallback" src="assets/yaas-brand-loop.webp" alt="YAAS">
+            <img class="brand-loop-fallback" src="assets/yaas-main-logo.webp" alt="YAAS">
             <video class="brand-loop-video" autoplay muted loop playsinline preload="metadata" aria-label="YAAS" oncanplay="this.classList.add('ready')" onerror="this.classList.remove('ready')">
               <source src="assets/yaas-brand-loop.mp4" type="video/mp4">
               <source src="assets/yaas-brand-loop.mov" type="video/quicktime">
@@ -107,7 +108,7 @@
         <header class="mobile-header">
           <button class="icon-button" data-open-panel="server-panel" type="button">☰</button>
           <div class="wordmark video-wordmark">
-            <img class="brand-loop-fallback" src="assets/yaas-brand-loop.webp" alt="YAAS">
+            <img class="brand-loop-fallback" src="assets/yaas-main-logo.webp" alt="YAAS">
             <video class="brand-loop-video" autoplay muted loop playsinline preload="metadata" aria-label="YAAS" oncanplay="this.classList.add('ready')" onerror="this.classList.remove('ready')">
               <source src="assets/yaas-brand-loop.mp4" type="video/mp4">
               <source src="assets/yaas-brand-loop.mov" type="video/quicktime">
@@ -117,7 +118,7 @@
         </header>
 
         <section class="welcome-view" id="welcome-view">
-          <img class="welcome-logo" src="assets/yaas-brand-loop.webp" alt="YAAS">
+          <img class="welcome-logo" src="assets/yaas-main-logo.webp" alt="YAAS">
           <span class="eyebrow">BAŞLAMAYA HAZIR</span>
           <h2>Alanını kendin oluştur.</h2>
           <p>YAAS boş başlar. Yalnızca oluşturduğun veya katıldığın gerçek sunucular burada görünür.</p>
@@ -245,7 +246,7 @@
           <label>Sunucu adı<input id="server-name-input" minlength="2" maxlength="40" placeholder="Yeni topluluğum" required></label>
           <label>Açıklama<textarea id="server-description-input" maxlength="180" placeholder="Bu sunucu ne için kuruluyor?"></textarea></label>
         </div>
-        <label class="server-logo-field">Sunucu logosu baglantisi<input id="server-logo-url-input" maxlength="500" placeholder="https://... veya bos birak"></label>
+        <label class="server-logo-field">Sunucu logosu baglantisi<input id="server-logo-url-input" maxlength="350000" placeholder="https://... veya bos birak"></label>
         <input id="server-logo-file-input" type="file" accept="image/*" hidden>
         <button class="secondary" id="server-logo-picker" type="button">Galeriden logo sec</button>
         <p class="form-error"></p>
@@ -348,7 +349,7 @@
               <form id="server-settings-form">
                 <label>Sunucu adı<input id="settings-server-name-input" maxlength="40" required></label>
                 <label>Açıklama<textarea id="settings-server-description-input" maxlength="180"></textarea></label>
-                <label>Sunucu logosu baglantisi<input id="settings-server-logo-url-input" maxlength="500" placeholder="https://... veya bos birak"></label>
+                <label>Sunucu logosu baglantisi<input id="settings-server-logo-url-input" maxlength="350000" placeholder="https://... veya bos birak"></label>
                 <input id="settings-server-logo-file-input" type="file" accept="image/*" hidden>
                 <button class="secondary" id="settings-server-logo-picker" type="button">Galeriden logo sec</button>
                 <label>Simge rengi<input id="settings-server-color-input" type="color" value="#c9f34b"></label>

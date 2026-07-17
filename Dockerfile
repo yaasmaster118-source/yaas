@@ -5,6 +5,7 @@ COPY package.json server.js ./
 RUN npm install --omit=dev
 COPY src ./src
 COPY scripts ./scripts
+COPY assets ./assets
 COPY schema.sql ./
 COPY index.html styles.css app.js manifest.webmanifest icon.svg social-card.svg googled68ecb0ee296f9ef.html ./
 
