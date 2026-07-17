@@ -6,6 +6,13 @@ if (location.protocol === "file:") {
 
 const $ = (selector, parent = document) => parent.querySelector(selector);
 const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
+const UI_VERSION = "1.1.20";
+
+if (localStorage.getItem("yaas:ui-version") !== UI_VERSION) {
+  localStorage.setItem("yaas:ui-version", UI_VERSION);
+  localStorage.setItem("yaas:show-all-channels-setting", "true");
+  localStorage.removeItem("yaas:server-dm-setting");
+}
 
 const PERMISSIONS = {
   "server.view": "Sunucuyu gör",
@@ -29,7 +36,10 @@ const state = {
   activeServer: null,
   activeChannel: null,
   friends: { friends: [], incoming: [], outgoing: [] },
+  messageRequests: [],
+  notifications: { friendRequests: 0, total: 0 },
   activeDm: null,
+  activeDmTab: "friends",
   voice: {
     roomId: null,
     roomName: null,
@@ -62,6 +72,7 @@ const state = {
 const RTC_CONFIGURATION = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
+const AVATAR_FRAME_CLASSES = ["avatar-frame-gold", "avatar-frame-emerald", "avatar-frame-royal", "avatar-frame-neon"];
 
 async function loadVoiceConfiguration() {
   const data = await voiceApi("config");
@@ -119,6 +130,10 @@ function escapeHtml(value) {
   })[character]);
 }
 
+function formatMessageContent(content) {
+  return escapeHtml(content).replace(/(^|\s)@([a-z0-9._-]{2,32})/gi, '$1<span class="mention">@$2</span>');
+}
+
 function initials(name) {
   return String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
 }
@@ -126,7 +141,8 @@ function initials(name) {
 function avatarContent(person, sizeClass = "") {
   const name = person?.display_name || person?.displayName || person?.name || "?";
   const avatarUrl = person?.avatar_url || person?.avatarUrl || "";
-  const className = `avatar ${sizeClass}`.trim();
+  const frame = person?.avatar_frame && person.avatar_frame !== "none" ? ` avatar-frame-${person.avatar_frame}` : "";
+  const className = `avatar ${sizeClass}${frame}`.trim();
   return avatarUrl
     ? `<span class="${className} avatar-photo"><img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(name)}"></span>`
     : `<span class="${className}">${escapeHtml(initials(name))}</span>`;
@@ -135,10 +151,86 @@ function avatarContent(person, sizeClass = "") {
 function setAvatar(element, person) {
   const name = person?.display_name || person?.displayName || person?.name || "?";
   const avatarUrl = person?.avatar_url || person?.avatarUrl || "";
+  const frame = person?.avatar_frame && person.avatar_frame !== "none" ? `avatar-frame-${person.avatar_frame}` : "";
+  element.classList.remove(...AVATAR_FRAME_CLASSES);
+  if (frame) element.classList.add(frame);
   element.classList.toggle("avatar-photo", Boolean(avatarUrl));
   element.innerHTML = avatarUrl
     ? `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(name)}">`
     : escapeHtml(initials(name));
+}
+
+function resizeAvatarFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith("image/")) {
+      reject(new Error("Lutfen bir fotograf sec"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Fotograf okunamadi"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Fotograf hazirlanamadi"));
+      image.onload = () => {
+        const size = 420;
+        const scale = Math.min(1, size / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function resizeServerLogoFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith("image/")) {
+      reject(new Error("Lutfen bir fotograf sec"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Fotograf okunamadi"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Fotograf hazirlanamadi"));
+      image.onload = () => {
+        const size = 192;
+        const scale = Math.min(1, size / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function saveActiveServerLogo(logoUrl) {
+  if (!state.activeServer?.server?.id) return;
+  const serverId = state.activeServer.server.id;
+  await api(`/api/servers/${serverId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: $("#settings-server-name-input").value || state.activeServer.server.name,
+      description: $("#settings-server-description-input").value ?? state.activeServer.server.description,
+      logoUrl,
+      iconColor: $("#settings-server-color-input").value || state.activeServer.server.icon_color
+    })
+  });
+  await loadServers(serverId);
+  openModal("manage-server-modal");
+  switchSettingsTab("overview");
 }
 
 function setVoiceControl(buttonId, icon, label, active = false) {
@@ -149,6 +241,17 @@ function setVoiceControl(buttonId, icon, label, active = false) {
 
 function safeColor(value, fallback = "#c9f34b") {
   return /^#[0-9a-f]{6}$/i.test(String(value || "")) ? value : fallback;
+}
+
+function roleIcon(role = {}) {
+  const custom = String(role.role_icon || role.roleIcon || "").trim();
+  if (custom) return custom;
+  const name = String(role.name || "").toLowerCase();
+  if (name.includes("owner") || name.includes("lider")) return "👑";
+  if (name.includes("admin")) return "🛡";
+  if (name.includes("mod")) return "🔨";
+  if (name.includes("staff")) return "⭐";
+  return "◆";
 }
 
 function openModal(id) {
@@ -173,6 +276,9 @@ function switchSettingsTab(tab) {
   $$("[data-settings-panel]").forEach((panel) => {
     panel.classList.toggle("active", panel.dataset.settingsPanel === tab);
   });
+  if (tab === "invites" && state.activeServer?.permissions?.includes("invites.create")) {
+    renderServerInvites().catch((error) => notify(error.message, true));
+  }
 }
 
 function showApp(user) {
@@ -183,6 +289,22 @@ function showApp(user) {
   $("#account-handle").textContent = `@${user.handle}`;
   setAvatar($("#account-avatar"), user);
   $("#account-owner-badge").classList.toggle("hidden", !user.is_site_owner);
+}
+
+function updateNotificationBadges(count) {
+  const total = Number(count || 0);
+  ["#friends-notification-badge", "#mobile-notification-badge"].forEach((selector) => {
+    const badge = $(selector);
+    if (!badge) return;
+    badge.textContent = total > 99 ? "99+" : String(total);
+    badge.classList.toggle("hidden", total <= 0);
+  });
+}
+
+async function loadNotificationSummary() {
+  const data = await api("/api/notifications/summary");
+  state.notifications = data.notifications || { friendRequests: 0, total: 0 };
+  updateNotificationBadges(state.notifications.total);
 }
 
 function showAuth() {
@@ -214,7 +336,7 @@ function renderServers() {
   const list = $("#server-list");
   list.innerHTML = state.servers.map((server) => `
     <button class="server-item ${state.activeServer?.server?.id === server.id ? "active" : ""}" data-server-id="${server.id}" type="button">
-      <span class="server-icon" style="background:${safeColor(server.icon_color)}">${escapeHtml(initials(server.name))}</span>
+      ${serverIconMarkup(server)}
       <span><strong>${escapeHtml(server.name)}</strong><small>${server.member_count} üye</small></span>
     </button>`).join("");
   $("#server-list-empty").classList.toggle("hidden", state.servers.length > 0);
@@ -230,6 +352,7 @@ async function openServer(serverId, preferredChannelId = null) {
     $("#server-view").classList.remove("hidden");
     $("#active-server-name").textContent = data.server.name;
     $("#active-server-description").textContent = data.server.description || `${data.members.length} üye`;
+    setServerIcon($("#active-server-logo"), data.server);
     const canOpenSettings = ["server.manage", "roles.manage", "members.view", "invites.create"]
       .some((permission) => data.permissions.includes(permission));
     $(".manage-server-button").classList.toggle("hidden", !canOpenSettings);
@@ -237,10 +360,12 @@ async function openServer(serverId, preferredChannelId = null) {
     $("#add-category-button").classList.toggle("hidden", !data.permissions.includes("channels.manage"));
     $("#invite-button").classList.toggle("hidden", !data.permissions.includes("invites.create"));
     $("#server-danger-zone").classList.toggle("hidden", data.server.owner_id !== state.user.id);
+    $("#server-transfer-zone").classList.toggle("hidden", data.server.owner_id !== state.user.id);
     $("#leave-server-zone").classList.toggle("hidden", data.server.owner_id === state.user.id);
     $("#settings-server-name").textContent = `${data.server.name} ayarları`;
     $("#settings-server-name-input").value = data.server.name;
     $("#settings-server-description-input").value = data.server.description || "";
+    $("#settings-server-logo-url-input").value = data.server.logo_url || "";
     $("#settings-server-color-input").value = /^#[0-9a-f]{6}$/i.test(data.server.icon_color || "")
       ? data.server.icon_color
       : "#c9f34b";
@@ -259,6 +384,7 @@ async function openServer(serverId, preferredChannelId = null) {
     renderChannels();
     renderMembers();
     renderSettingsMembers();
+    renderTransferOwnerOptions();
     renderRoles();
     const preferredChannel = data.channels.find((channel) => channel.id === preferredChannelId);
     if (preferredChannel) await openChannel(preferredChannel);
@@ -296,17 +422,31 @@ function renderChannels() {
 
 function renderMembers() {
   const members = state.activeServer.members || [];
-  const showContactActions = localStorage.getItem("yaas:server-dm-setting") !== "false";
+  const showContactActions = true;
   $("#member-empty").classList.toggle("hidden", members.length > 0);
-  $("#member-list").innerHTML = members.map((member) => `
+  const memberCard = (member) => `
     <article class="member-item" data-profile-id="${member.id}" role="button" tabindex="0">
       ${avatarContent(member)}
       <div><span class="member-name-row"><strong>${escapeHtml(member.nickname || member.display_name)}</strong>
       ${member.is_site_owner ? '<i class="site-owner-badge">YAAS SAHİBİ</i>' : ""}</span><small>@${escapeHtml(member.handle)}</small>
-      <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}">${escapeHtml(role.name)}</i>`).join("")}</span>
+      <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}"><span>${escapeHtml(roleIcon(role))}</span>${escapeHtml(role.name)}</i>`).join("")}</span>
       ${showContactActions && member.id !== state.user.id ? `<span class="member-actions"><button class="secondary add-friend-button" data-handle="${escapeHtml(member.handle)}" type="button">Arkadaş ekle</button></span>` : ""}
       </div>
-    </article>`).join("");
+    </article>`;
+  const shown = new Set();
+  const hoistedSections = (state.activeServer.roles || []).filter((role) => role.role_hoist).map((role) => {
+    const roleMembers = members.filter((member) => member.roles.some((item) => item.id === role.id));
+    roleMembers.forEach((member) => shown.add(member.id));
+    return roleMembers.length ? `<section class="member-role-section">
+      <strong style="color:${escapeHtml(role.color)}"><span>${escapeHtml(roleIcon(role))}</span>${escapeHtml(role.name)} · ${roleMembers.length}</strong>
+      ${roleMembers.map(memberCard).join("")}
+    </section>` : "";
+  }).join("");
+  const normalMembers = members.filter((member) => !shown.has(member.id));
+  $("#member-list").innerHTML = hoistedSections + (normalMembers.length ? `<section class="member-role-section">
+    <strong>Uyeler · ${normalMembers.length}</strong>
+    ${normalMembers.map(memberCard).join("")}
+  </section>` : "");
   $$("[data-profile-id]", $("#member-list")).forEach((item) => {
     item.addEventListener("click", (event) => {
       if (event.target.closest("button")) return;
@@ -321,6 +461,22 @@ function renderMembers() {
   }));
 }
 
+function serverIconMarkup(server) {
+  const logo = String(server.logo_url || "").trim();
+  if (logo) {
+    return `<span class="server-icon server-logo" style="background:${safeColor(server.icon_color)}"><img src="${escapeHtml(logo)}" alt="${escapeHtml(server.name)}"></span>`;
+  }
+  return `<span class="server-icon" style="background:${safeColor(server.icon_color)}">${escapeHtml(initials(server.name))}</span>`;
+}
+
+function setServerIcon(element, server) {
+  element.className = `server-icon active-server-logo${server.logo_url ? " server-logo" : ""}`;
+  element.style.background = safeColor(server.icon_color);
+  element.innerHTML = server.logo_url
+    ? `<img src="${escapeHtml(server.logo_url)}" alt="${escapeHtml(server.name)}">`
+    : escapeHtml(initials(server.name));
+}
+
 function manageableRoles() {
   return (state.activeServer?.roles || []).filter((role) => role.name !== "Owner");
 }
@@ -333,13 +489,51 @@ function roleAccessList(container, selectedRoleIds = []) {
       <label class="role-access-row">
         <input type="checkbox" value="${role.id}" ${selected.has(role.id) ? "checked" : ""}>
         <span class="role-dot" style="background:${escapeHtml(role.color)}"></span>
-        ${escapeHtml(role.name)}
+        <span class="role-access-icon">${escapeHtml(roleIcon(role))}</span>${escapeHtml(role.name)}
       </label>`).join("")}`
     : '<small class="empty-list">Özel kanal için önce rol oluşturmalısın.</small>';
 }
 
 function selectedRoleAccess(container) {
   return $$("input:checked", container).map((input) => input.value);
+}
+
+function currentMentionQuery(input) {
+  const cursor = input.selectionStart ?? input.value.length;
+  const before = input.value.slice(0, cursor);
+  const match = before.match(/(^|\s)@([a-z0-9._-]*)$/i);
+  return match ? { start: cursor - match[2].length - 1, end: cursor, query: match[2].toLowerCase() } : null;
+}
+
+function updateMentionSuggestions() {
+  const box = $("#mention-suggestions");
+  const input = $("#message-input");
+  if (!box || !input || !state.activeServer) return;
+  const mention = currentMentionQuery(input);
+  if (!mention) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  const matches = (state.activeServer.members || [])
+    .filter((member) => {
+      const name = `${member.display_name || ""} ${member.nickname || ""} ${member.handle || ""}`.toLowerCase();
+      return !mention.query || name.includes(mention.query);
+    })
+    .slice(0, 6);
+  box.classList.toggle("hidden", matches.length === 0);
+  box.innerHTML = matches.map((member) => `
+    <button data-mention-handle="${escapeHtml(member.handle)}" type="button">
+      ${avatarContent(member, "small")}<span><strong>${escapeHtml(member.nickname || member.display_name)}</strong><small>@${escapeHtml(member.handle)}</small></span>
+    </button>`).join("");
+  $$("[data-mention-handle]", box).forEach((button) => button.addEventListener("click", () => {
+    const latest = currentMentionQuery(input);
+    if (!latest) return;
+    input.value = `${input.value.slice(0, latest.start)}@${button.dataset.mentionHandle} ${input.value.slice(latest.end)}`;
+    input.focus();
+    input.selectionStart = input.selectionEnd = latest.start + button.dataset.mentionHandle.length + 2;
+    updateMentionSuggestions();
+  }));
 }
 
 function syncCreateRoleAccessVisibility() {
@@ -384,30 +578,44 @@ function renderSettingsMembers() {
   }));
 }
 
-async function assignMemberRole(memberId, roleId) {
+function renderTransferOwnerOptions() {
+  const select = $("#transfer-owner-select");
+  if (!select || !state.activeServer) return;
+  const ownerId = state.activeServer.server.owner_id;
+  const candidates = (state.activeServer.members || []).filter((member) => member.id !== ownerId);
+  select.innerHTML = '<option value="">Yeni sahibi sec</option>' + candidates.map((member) =>
+    `<option value="${member.id}">${escapeHtml(member.nickname || member.display_name)} (@${escapeHtml(member.handle)})</option>`).join("");
+  $("#transfer-owner-button").disabled = candidates.length === 0;
+}
+
+async function assignMemberRole(memberId, roleId, options = {}) {
   try {
     await api(`/api/servers/${state.activeServer.server.id}/members/${memberId}/roles/${roleId}`, {
       method: "PUT",
       body: "{}"
     });
     await openServer(state.activeServer.server.id);
-    openModal("manage-server-modal");
-    switchSettingsTab("members");
+    if (!options.keepProfileOpen) {
+      openModal("manage-server-modal");
+      switchSettingsTab("members");
+    }
     notify("Rol verildi");
   } catch (error) {
     notify(error.message, true);
   }
 }
 
-async function removeMemberRole(memberId, roleId) {
+async function removeMemberRole(memberId, roleId, options = {}) {
   try {
     await api(`/api/servers/${state.activeServer.server.id}/members/${memberId}/roles/${roleId}`, {
       method: "DELETE",
       body: "{}"
     });
     await openServer(state.activeServer.server.id);
-    openModal("manage-server-modal");
-    switchSettingsTab("members");
+    if (!options.keepProfileOpen) {
+      openModal("manage-server-modal");
+      switchSettingsTab("members");
+    }
     notify("Rol kaldırıldı");
   } catch (error) {
     notify(error.message, true);
@@ -415,15 +623,146 @@ async function removeMemberRole(memberId, roleId) {
 }
 
 function friendRow(person, actions = "") {
-  return `<div class="friend-row">
+  return `<div class="friend-row" data-friend-id="${person.id}">
     ${avatarContent(person)}
     <div><strong>${escapeHtml(person.display_name)}</strong><small>@${escapeHtml(person.handle)}</small></div>
     <span class="friend-actions"><button class="secondary view-profile-button" data-user-id="${person.id}" type="button">Profil</button>${actions}</span>
   </div>`;
 }
 
+function messageRequestRow(request) {
+  return `<div class="friend-row message-request-row" data-message-request-id="${request.id}" data-sender-id="${request.sender_id}">
+    ${avatarContent({
+      display_name: request.sender_name,
+      avatar_url: request.avatar_url,
+      avatar_frame: request.avatar_frame
+    })}
+    <div>
+      <strong>${escapeHtml(request.sender_name)}</strong>
+      <small>@${escapeHtml(request.sender_handle)}</small>
+      <p>${escapeHtml(request.content)}</p>
+    </div>
+    <span class="friend-actions">
+      <button class="primary accept-message-request-button" data-request-id="${request.id}" type="button">Kabul</button>
+      <button class="secondary reject-message-request-button" data-request-id="${request.id}" type="button">Sil</button>
+    </span>
+  </div>`;
+}
+
+function renderDmNotifications() {
+  const notifications = [];
+  if (state.friends.incoming.length) notifications.push(`${state.friends.incoming.length} arkadaşlık isteği var`);
+  if (state.messageRequests.length) notifications.push(`${state.messageRequests.length} mesaj isteği var`);
+  $("#dm-notification-list").innerHTML = notifications.length
+    ? notifications.map((item) => `<div class="notification-item">${escapeHtml(item)}</div>`).join("")
+    : '<small class="empty-list">Yeni bildirim yok</small>';
+}
+
+function notificationRows() {
+  return [
+    ...state.messageRequests.map((request) => ({
+      title: `${request.sender_name} mesaj istegi gonderdi`,
+      detail: request.content
+    }))
+  ];
+}
+
+function showDmDetail(title, detail) {
+  closeDmThread();
+  $("#dm-empty").innerHTML = `<span>!</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small>`;
+}
+
+function renderDmTabContent() {
+  const content = $("#dm-tab-content");
+  if (!content) return;
+  $$("[data-dm-tab]").forEach((button) => button.classList.toggle("active", button.dataset.dmTab === state.activeDmTab));
+  $("#friend-request-form").classList.toggle("hidden", state.activeDmTab !== "friends");
+  if (state.activeDmTab === "friends") {
+    const friendRows = state.friends.friends.length
+      ? state.friends.friends.map((person) => friendRow(person, `<button class="primary open-dm-button" data-user-id="${person.id}" type="button">Mesaj</button>`)).join("")
+      : '<small class="empty-list">Henuz arkadasin yok</small>';
+    content.innerHTML = `<section class="dm-tab-section"><strong>Arkadaslar</strong>${friendRows}</section>`;
+  } else if (state.activeDmTab === "requests") {
+    content.innerHTML = state.messageRequests.length
+      ? `<section class="dm-tab-section"><strong>Mesaj istekleri</strong>${state.messageRequests.map(messageRequestRow).join("")}</section>`
+      : '<section class="dm-tab-section"><strong>Mesaj istekleri</strong><small class="empty-list">Mesaj istegi yok</small></section>';
+  } else {
+    const rows = notificationRows();
+    const incomingRows = state.friends.incoming.map((person) => friendRow(person,
+      `<button class="primary accept-friend-button" data-user-id="${person.id}" type="button">Kabul</button>
+       <button class="secondary reject-friend-button" data-user-id="${person.id}" type="button">Sil</button>`)).join("");
+    const outgoingRows = state.friends.outgoing.map((person) => friendRow(person, "<small>Bekliyor</small>")).join("");
+    content.innerHTML = rows.length || incomingRows || outgoingRows
+      ? `<section class="dm-tab-section"><strong>Bildirimler</strong>${incomingRows}${outgoingRows}${rows.map((item, index) => `
+        <button class="notification-item dm-notification-row" data-notification-index="${index}" type="button">
+          <strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small>
+        </button>`).join("")}</section>`
+      : '<section class="dm-tab-section"><strong>Bildirimler</strong><small class="empty-list">Yeni bildirim yok</small></section>';
+  }
+  bindDmSidebarActions();
+}
+
+function bindDmSidebarActions() {
+  $$(".accept-friend-button").forEach((button) => button.addEventListener("click", () => answerFriendRequest(button.dataset.userId, "accept")));
+  $$(".reject-friend-button").forEach((button) => button.addEventListener("click", () => answerFriendRequest(button.dataset.userId, "reject")));
+  $$(".open-dm-button").forEach((button) => button.addEventListener("click", () => openDm(state.friends.friends.find((item) => item.id === button.dataset.userId))));
+  $$(".view-profile-button").forEach((button) => button.addEventListener("click", () => openUserProfile(button.dataset.userId)));
+  $$(".accept-message-request-button").forEach((button) => button.addEventListener("click", () => answerMessageRequest(button.dataset.requestId, "accept")));
+  $$(".reject-message-request-button").forEach((button) => button.addEventListener("click", () => answerMessageRequest(button.dataset.requestId, "reject")));
+  $$(".dm-notification-row").forEach((button) => button.addEventListener("click", () => {
+    const item = notificationRows()[Number(button.dataset.notificationIndex)];
+    if (item) showDmDetail(item.title, item.detail);
+  }));
+}
+
+async function loadMessageRequests() {
+  const data = await api("/api/message-requests");
+  state.messageRequests = data.requests || [];
+  $("#message-request-list").innerHTML = state.messageRequests.length
+    ? state.messageRequests.map(messageRequestRow).join("")
+    : '<small class="empty-list">Mesaj isteği yok</small>';
+  $$(".accept-message-request-button").forEach((button) => button.addEventListener("click", () =>
+    answerMessageRequest(button.dataset.requestId, "accept")));
+  $$(".reject-message-request-button").forEach((button) => button.addEventListener("click", () =>
+    answerMessageRequest(button.dataset.requestId, "reject")));
+  renderDmNotifications();
+  renderDmTabContent();
+}
+
+async function answerMessageRequest(requestId, action) {
+  const data = await api(`/api/message-requests/${requestId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action })
+  });
+  await loadFriends();
+  await loadMessageRequests();
+  notify(action === "accept" ? "Mesaj isteği kabul edildi" : "Mesaj isteği silindi");
+  if (action === "accept" && data.friendId) {
+    const friend = state.friends.friends.find((item) => item.id === data.friendId);
+    if (friend) await openDm(friend);
+  }
+}
+
+async function openMessengerPage(preselectedFriend = null) {
+  await loadFriends();
+  await loadMessageRequests();
+  if (preselectedFriend) state.activeDmTab = "friends";
+  renderDmTabContent();
+  openModal("friends-modal");
+  $("#server-panel").classList.remove("open");
+  $("#server-view").classList.remove("channels-open");
+  $("#member-panel").classList.remove("open");
+  if (preselectedFriend) await openDm(preselectedFriend);
+}
+
 async function loadFriends() {
   state.friends = await api("/api/friends");
+  state.notifications = {
+    ...state.notifications,
+    friendRequests: state.friends.incoming.length,
+    total: state.friends.incoming.length
+  };
+  updateNotificationBadges(state.notifications.total);
   $("#incoming-friend-list").innerHTML = state.friends.incoming.length
     ? state.friends.incoming.map((person) => friendRow(person,
       `<button class="primary accept-friend-button" data-user-id="${person.id}" type="button">Kabul</button>
@@ -447,6 +786,8 @@ async function loadFriends() {
   $$(".view-profile-button").forEach((button) => button.addEventListener("click", () => {
     openUserProfile(button.dataset.userId);
   }));
+  renderDmNotifications();
+  renderDmTabContent();
 }
 
 async function sendFriendRequest(handle) {
@@ -472,19 +813,67 @@ async function openDm(friend) {
   state.activeDm = friend;
   $("#dm-empty").classList.add("hidden");
   $("#dm-view").classList.remove("hidden");
+  $("#friends-modal").classList.add("dm-open");
+  $$(".friend-row").forEach((row) => row.classList.toggle("active", row.dataset.friendId === friend.id));
   setAvatar($("#dm-avatar"), friend);
   $("#dm-name").textContent = friend.display_name;
   $("#dm-handle").textContent = `@${friend.handle}`;
   await loadDmMessages();
+  $("#dm-message-input").focus();
+}
+
+function closeDmThread() {
+  state.activeDm = null;
+  $("#dm-view").classList.add("hidden");
+  $("#dm-empty").classList.remove("hidden");
+  $("#friends-modal").classList.remove("dm-open");
+  $$(".friend-row").forEach((row) => row.classList.remove("active"));
 }
 
 function fillProfileSettings() {
   $("#profile-display-name-input").value = state.user.display_name || state.user.displayName || "";
   $("#profile-avatar-url-input").value = state.user.avatar_url || "";
+  $("#profile-frame-input").value = state.user.avatar_frame || "none";
   $("#profile-bio-input").value = state.user.bio || "";
   $("#profile-settings-preview-name").textContent = state.user.display_name || state.user.displayName || "Kullanici";
   $("#profile-settings-preview-handle").textContent = `@${state.user.handle}`;
   setAvatar($("#profile-settings-preview"), state.user);
+}
+
+function updateProfilePreview() {
+  setAvatar($("#profile-settings-preview"), {
+    display_name: $("#profile-display-name-input").value || state.user.display_name || state.user.displayName,
+    avatar_url: $("#profile-avatar-url-input").value,
+    avatar_frame: $("#profile-frame-input").value
+  });
+  $("#profile-settings-preview-name").textContent = $("#profile-display-name-input").value || state.user.display_name || state.user.displayName || "Kullanici";
+}
+
+function renderProfileRoleTools(profile) {
+  const tools = $("#profile-role-tools");
+  const server = state.activeServer;
+  const member = server?.members?.find((item) => item.id === profile.id);
+  const canManage = Boolean(server?.permissions?.includes("members.manage") && member);
+  tools.classList.toggle("hidden", !canManage);
+  tools.dataset.userId = profile.id;
+  if (!canManage) return;
+  const currentRoles = member.roles || [];
+  const roles = manageableRoles();
+  $("#profile-role-list").innerHTML = currentRoles.length
+    ? currentRoles.map((role) => `
+      <span class="profile-role-pill" style="color:${escapeHtml(role.color)}">
+        <b>${escapeHtml(roleIcon(role))}</b>${escapeHtml(role.name)}
+        ${role.name !== "Owner" ? `<button data-profile-remove-role="${role.id}" type="button">×</button>` : ""}
+      </span>`).join("")
+    : '<small class="empty-list">Bu uyede henuz rol yok.</small>';
+  $("#profile-role-select").innerHTML = '<option value="">Rol sec</option>' + roles
+    .filter((role) => !currentRoles.some((item) => item.id === role.id))
+    .map((role) => `<option value="${role.id}">${escapeHtml(roleIcon(role))} ${escapeHtml(role.name)}</option>`)
+    .join("");
+  $$("[data-profile-remove-role]", tools).forEach((button) => button.addEventListener("click", async () => {
+    await removeMemberRole(profile.id, button.dataset.profileRemoveRole, { keepProfileOpen: true });
+    await openUserProfile(profile.id);
+  }));
 }
 
 async function openUserProfile(userId) {
@@ -503,6 +892,7 @@ async function openUserProfile(userId) {
     $("#profile-card-friend-button").dataset.handle = profile.handle;
     $("#profile-card-message-button").classList.toggle("hidden", profile.id === state.user.id || profile.friendship !== "accepted");
     $("#profile-card-message-button").dataset.userId = profile.id;
+    renderProfileRoleTools(profile);
     openModal("user-profile-modal");
   } catch (error) {
     notify(error.message, true);
@@ -533,6 +923,74 @@ function renderRoles() {
   }));
 }
 
+function channelGlyph(channel) {
+  if (channel.is_private) return "lock";
+  if (channel.type === "voice") return "voice";
+  const name = (channel.name || "").toLowerCase();
+  if (name.includes("ticket") || name.includes("support")) return "ticket";
+  if (name.includes("rule") || name.includes("kural")) return "rules";
+  if (name.includes("role") || name.includes("rol")) return "roles";
+  if (name.includes("news") || name.includes("duyuru")) return "news";
+  if (name.includes("media") || name.includes("foto")) return "media";
+  return "#";
+}
+
+function channelFlavor(channel) {
+  if (channel.is_private) return "Ozel kanal";
+  if (channel.type === "voice") return `${channel.user_limit ? `${channel.user_limit} kisi` : "Limitsiz"} ses`;
+  const name = (channel.name || "").toLowerCase();
+  if (name.includes("ticket") || name.includes("support")) return "Destek ve ticket";
+  if (name.includes("role") || name.includes("rol")) return "Rol secimi";
+  if (name.includes("news") || name.includes("duyuru")) return "Duyurular";
+  if (name.includes("media") || name.includes("foto")) return "Medya paylasimi";
+  return "Topluluk sohbeti";
+}
+
+function renderChannels() {
+  const categories = state.activeServer.categories || [];
+  const showEmptyCategories = localStorage.getItem("yaas:show-all-channels-setting") !== "false";
+  const grouped = categories.map((category) => ({
+    ...category,
+    channels: state.activeServer.channels.filter((channel) => channel.category_id === category.id)
+  })).filter((category) => showEmptyCategories || category.channels.length);
+  const uncategorized = state.activeServer.channels.filter((channel) => !channel.category_id);
+  const channelButtons = (channels) => channels.map((channel) => `
+      <button class="channel-item channel-template-item" data-channel-id="${channel.id}" type="button">
+        <span class="channel-glyph">${escapeHtml(channelGlyph(channel))}</span>
+        <span class="channel-copy"><strong>${escapeHtml(channel.name)}</strong><small>${escapeHtml(channelFlavor(channel))}</small></span>
+        ${channel.is_private ? '<small class="private-channel-lock" title="Ozel kanal">lock</small>' : ""}
+      </button>`).join("");
+  $("#channel-list").innerHTML = grouped.map((category) => `
+    <section class="channel-category channel-template-category">
+      <div class="channel-category-header template-category-header"><span>diamond</span><strong>${escapeHtml(category.name)}</strong><small>${category.channels.length}</small></div>
+      ${channelButtons(category.channels)}
+    </section>`).join("")
+    + (uncategorized.length ? `<section class="channel-category channel-template-category"><div class="channel-category-header template-category-header"><span>star</span><strong>Main</strong><small>${uncategorized.length}</small></div>${channelButtons(uncategorized)}</section>` : "");
+  $$(".channel-item").forEach((button) => button.addEventListener("click", () => {
+    const channel = state.activeServer.channels.find((item) => item.id === button.dataset.channelId);
+    openChannel(channel);
+  }));
+}
+
+function renderRoles() {
+  const roles = state.activeServer?.roles || [];
+  $("#role-list").innerHTML = roles.map((role) => {
+    const permissionCount = Array.isArray(role.permissions) ? role.permissions.length : 0;
+    const badge = role.name === "Owner" ? "lider" : role.role_hoist ? "ayri grup" : permissionCount ? `${permissionCount} izin` : "etiket";
+    return `
+    <button class="role-item role-template-card" data-role-id="${role.id}" type="button" style="--role-color:${escapeHtml(role.color)}">
+      <span class="role-dot" style="background:${escapeHtml(role.color)}"></span>
+      <span class="role-icon-badge">${escapeHtml(roleIcon(role))}</span>
+      <span class="role-template-copy"><strong>${escapeHtml(role.name)}</strong><small>${escapeHtml(badge)}</small></span>
+      <em>${escapeHtml(badge)}</em>
+    </button>`;
+  }).join("");
+  $$(".role-item").forEach((button) => button.addEventListener("click", () => {
+    const role = roles.find((item) => item.id === button.dataset.roleId);
+    editRole(role);
+  }));
+}
+
 function showNoChannel() {
   $("#empty-channel").classList.remove("hidden");
   $("#message-view").classList.add("hidden");
@@ -553,6 +1011,7 @@ async function openChannel(channel) {
   $("#voice-channel-view").classList.toggle("hidden", channel.type !== "voice");
   $("#server-view").classList.remove("channels-open");
   if (channel.type === "voice") {
+    $("#mention-suggestions")?.classList.add("hidden");
     $("#voice-channel-name").textContent = channel.name;
     $(".voice-room-header p").textContent = channel.quality_mode === "data"
       ? "Veri tasarruflu, kararlı ses ve görüntü modu."
@@ -563,6 +1022,7 @@ async function openChannel(channel) {
     return;
   }
   await loadMessages();
+  updateMentionSuggestions();
 }
 
 function openChannelSettings() {
@@ -1055,6 +1515,8 @@ async function setOutgoingVideo(track, stream, mode) {
   });
   $("#local-video").srcObject = stream;
   $("#local-video-tile").classList.remove("hidden");
+  $("#local-video-tile").classList.toggle("camera-mode", mode === "camera");
+  $("#local-video-tile").classList.toggle("screen-mode", mode === "screen");
   syncVoiceStage();
   setVoiceControl("camera-voice-button", "▣", mode === "camera" ? "Kapat" : "Kamera", mode === "camera");
   setVoiceControl("screen-voice-button", "▤", mode === "screen" ? "Durdur" : "Ekran", mode === "screen");
@@ -1076,14 +1538,36 @@ async function stopOutgoingVideo() {
   stream?.getTracks().forEach((track) => track.stop());
   $("#local-video").srcObject = null;
   $("#local-video-tile").classList.add("hidden");
+  $("#local-video-tile").classList.remove("camera-mode", "screen-mode");
   setVoiceControl("camera-voice-button", "▣", "Kamera");
   setVoiceControl("screen-voice-button", "▤", "Ekran");
   syncVoiceStage();
 }
 
+function mediaFeatureAvailable(feature) {
+  if (!window.isSecureContext) {
+    notify("Kamera ve ekran paylasimi icin site guvenli baglantida acilmali", true);
+    return false;
+  }
+  if (!navigator.mediaDevices) {
+    notify("Bu tarayici medya izinlerini desteklemiyor", true);
+    return false;
+  }
+  if (feature === "screen" && !navigator.mediaDevices.getDisplayMedia) {
+    notify("Bu tarayici ekran paylasimini desteklemiyor", true);
+    return false;
+  }
+  if (feature === "camera" && !navigator.mediaDevices.getUserMedia) {
+    notify("Bu tarayici kamerayi desteklemiyor", true);
+    return false;
+  }
+  return true;
+}
+
 async function toggleCamera() {
   if (!state.voice.roomId) return;
   if (state.voice.videoMode === "camera") return stopOutgoingVideo();
+  if (!mediaFeatureAvailable("camera")) return;
   try {
     const quality = effectiveVoiceQuality();
     const dataMode = quality === "data";
@@ -1097,7 +1581,9 @@ async function toggleCamera() {
       },
       audio: false
     });
-    await setOutgoingVideo(stream.getVideoTracks()[0], stream, "camera");
+    const [track] = stream.getVideoTracks();
+    if (!track) throw new Error("Kamera goruntusu baslatilamadi");
+    await setOutgoingVideo(track, stream, "camera");
   } catch (error) {
     notify(error.name === "NotAllowedError" ? "Kamera izni verilmedi" : "Kamera açılamadı", true);
   }
@@ -1106,6 +1592,7 @@ async function toggleCamera() {
 async function toggleScreenShare() {
   if (!state.voice.roomId) return;
   if (state.voice.videoMode === "screen") return stopOutgoingVideo();
+  if (!mediaFeatureAvailable("screen")) return;
   if (!navigator.mediaDevices?.getDisplayMedia) {
     return notify("Bu tarayıcı ekran paylaşımını desteklemiyor", true);
   }
@@ -1182,7 +1669,7 @@ function messageTemplate(message) {
   const date = new Date(message.created_at || message.createdAt);
   return `<article class="message"><span class="avatar">${escapeHtml(initials(message.author_name || message.authorName))}</span>
     <div class="message-body"><div class="message-meta"><strong>${escapeHtml(message.author_name || message.authorName)}</strong><small>${date.toLocaleString("tr-TR")}</small></div>
-    <p>${escapeHtml(message.content)}</p></div></article>`;
+    <p>${formatMessageContent(message.content)}</p></div></article>`;
 }
 
 function buildPermissionGrid(selected = []) {
@@ -1194,6 +1681,8 @@ function editRole(role) {
   $("#role-id-input").value = role.id;
   $("#role-name-input").value = role.name;
   $("#role-color-input").value = role.color;
+  $("#role-icon-input").value = role.role_icon || roleIcon(role);
+  $("#role-hoist-input").checked = Boolean(role.role_hoist);
   buildPermissionGrid(role.permissions || []);
 }
 
@@ -1233,6 +1722,7 @@ async function start() {
     return showAuth();
   }
   showApp(data.user);
+  await loadNotificationSummary().catch(() => {});
   await loadVoiceConfiguration().catch(() => {});
   if (!(await joinPendingInvite())) await loadServers();
 }
@@ -1277,6 +1767,22 @@ $("#account-settings-button").addEventListener("click", (event) => {
   fillProfileSettings();
   openModal("profile-settings-modal");
 });
+$("#profile-avatar-picker").addEventListener("click", () => $("#profile-avatar-file-input").click());
+$("#profile-avatar-file-input").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    $("#profile-avatar-url-input").value = await resizeAvatarFile(file);
+    updateProfilePreview();
+  } catch (error) {
+    $(".form-error", $("#profile-settings-form")).textContent = error.message;
+  } finally {
+    event.target.value = "";
+  }
+});
+$("#profile-frame-input").addEventListener("change", updateProfilePreview);
+$("#profile-display-name-input").addEventListener("input", updateProfilePreview);
+$("#profile-avatar-url-input").addEventListener("input", updateProfilePreview);
 $("#profile-card-friend-button").addEventListener("click", async () => {
   try {
     await sendFriendRequest($("#profile-card-friend-button").dataset.handle);
@@ -1289,8 +1795,45 @@ $("#profile-card-message-button").addEventListener("click", async () => {
   await loadFriends();
   const friend = state.friends.friends.find((item) => item.id === $("#profile-card-message-button").dataset.userId);
   closeModal($("#profile-card-message-button"));
-  openModal("friends-modal");
-  openDm(friend);
+  await openMessengerPage(friend);
+});
+
+$("#profile-role-assign-button").addEventListener("click", async () => {
+  const userId = $("#profile-role-tools").dataset.userId;
+  const roleId = $("#profile-role-select").value;
+  if (!userId || !roleId) return notify("Once bir rol sec", true);
+  await assignMemberRole(userId, roleId, { keepProfileOpen: true });
+  await openUserProfile(userId);
+});
+
+$("#server-logo-picker").addEventListener("click", () => $("#server-logo-file-input").click());
+$("#server-logo-file-input").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    $("#server-logo-url-input").value = await resizeServerLogoFile(file);
+    notify("Sunucu logosu hazir");
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    event.target.value = "";
+  }
+});
+
+$("#settings-server-logo-picker").addEventListener("click", () => $("#settings-server-logo-file-input").click());
+$("#settings-server-logo-file-input").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const logoUrl = await resizeServerLogoFile(file);
+    $("#settings-server-logo-url-input").value = logoUrl;
+    await saveActiveServerLogo(logoUrl);
+    notify("Sunucu logosu kaydedildi");
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    event.target.value = "";
+  }
 });
 
 $("#login-form").addEventListener("submit", async (event) => {
@@ -1304,6 +1847,7 @@ $("#login-form").addEventListener("submit", async (event) => {
     });
     form.reset();
     showApp(data.user);
+    await loadNotificationSummary().catch(() => {});
     if (!(await joinPendingInvite())) await loadServers();
   } catch (error) {
     $("#login-error").textContent = error.message;
@@ -1338,6 +1882,7 @@ $("#register-form").addEventListener("submit", async (event) => {
     });
     form.reset();
     showApp(data.user);
+    await loadNotificationSummary().catch(() => {});
     if (!(await joinPendingInvite())) await loadServers();
   } catch (error) {
     $("#register-error").textContent = error.message;
@@ -1355,6 +1900,7 @@ $("#profile-settings-form").addEventListener("submit", async (event) => {
       body: JSON.stringify({
         displayName: $("#profile-display-name-input").value,
         avatarUrl: $("#profile-avatar-url-input").value,
+        avatarFrame: $("#profile-frame-input").value,
         bio: $("#profile-bio-input").value
       })
     });
@@ -1377,15 +1923,24 @@ $("#logout-button").addEventListener("click", async () => {
   state.servers = [];
   state.activeServer = null;
   state.friends = { friends: [], incoming: [], outgoing: [] };
+  state.messageRequests = [];
+  state.notifications = { friendRequests: 0, total: 0 };
   state.activeDm = null;
+  updateNotificationBadges(0);
   showAuth();
 });
 
 $("#friends-button").addEventListener("click", async () => {
   try {
-    await loadFriends();
-    openModal("friends-modal");
-    $("#server-panel").classList.remove("open");
+    await openMessengerPage();
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+
+$("#mobile-friends-button").addEventListener("click", async () => {
+  try {
+    await openMessengerPage();
   } catch (error) {
     notify(error.message, true);
   }
@@ -1420,6 +1975,28 @@ $("#dm-message-form").addEventListener("submit", async (event) => {
   }
 });
 
+$("#dm-back-button").addEventListener("click", () => {
+  closeModal($("#dm-back-button"));
+});
+
+$("#dm-thread-back").addEventListener("click", closeDmThread);
+
+$$("[data-dm-tab]").forEach((button) => button.addEventListener("click", () => {
+  state.activeDmTab = button.dataset.dmTab;
+  closeDmThread();
+  $("#dm-empty").innerHTML = '<span>✉</span><strong>Bir öğe seç.</strong><small>Soldaki listeden arkadaş, mesaj isteği veya bildirim seçince burada açılır.</small>';
+  renderDmTabContent();
+}));
+
+$$("[data-dm-emoji]").forEach((button) => button.addEventListener("click", () => {
+  const input = $("#dm-message-input");
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  input.value = `${input.value.slice(0, start)}${button.dataset.dmEmoji}${input.value.slice(end)}`;
+  input.focus();
+  input.setSelectionRange(start + button.dataset.dmEmoji.length, start + button.dataset.dmEmoji.length);
+}));
+
 $("#create-server-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -1431,6 +2008,7 @@ $("#create-server-form").addEventListener("submit", async (event) => {
       body: JSON.stringify({
         name: $("#server-name-input").value,
         description: $("#server-description-input").value,
+        logoUrl: $("#server-logo-url-input").value,
         template: $("#server-template-input").value
       })
     });
@@ -1497,10 +2075,17 @@ $("#message-form").addEventListener("submit", async (event) => {
   try {
     await api(`/api/channels/${state.activeChannel.id}/messages`, { method: "POST", body: JSON.stringify({ content }) });
     $("#message-input").value = "";
+    $("#mention-suggestions").classList.add("hidden");
     await loadMessages();
   } catch (error) {
     notify(error.message, true);
   }
+});
+
+$("#message-input").addEventListener("input", updateMentionSuggestions);
+$("#message-input").addEventListener("keyup", updateMentionSuggestions);
+$("#message-input").addEventListener("blur", () => {
+  setTimeout(() => $("#mention-suggestions").classList.add("hidden"), 120);
 });
 
 $("#channel-settings-form").addEventListener("submit", async (event) => {
@@ -1550,13 +2135,57 @@ $("#delete-channel-button").addEventListener("click", async () => {
   }
 });
 
+function formatInviteDate(value) {
+  if (!value) return "Suresiz";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Suresiz";
+  return date.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
+}
+
+async function renderServerInvites() {
+  const list = $("#settings-invite-list");
+  if (!list || !state.activeServer?.server?.id) return;
+  list.innerHTML = '<small class="empty-list">Davetler yukleniyor...</small>';
+  const data = await api(`/api/servers/${state.activeServer.server.id}/invites`);
+  list.innerHTML = data.invites.length ? data.invites.map((invite) => `
+    <article class="invite-list-row">
+      <div>
+        <strong>${escapeHtml(invite.code)}</strong>
+        <small>${escapeHtml(invite.creator_name || "YAAS")} tarafindan olusturuldu</small>
+        <small>${invite.uses || 0}${invite.max_uses ? `/${invite.max_uses}` : ""} kullanim · ${escapeHtml(formatInviteDate(invite.expires_at))}</small>
+      </div>
+      <span>
+        <button class="secondary copy-managed-invite" data-invite-url="${escapeHtml(invite.url)}" type="button">Kopyala</button>
+        <button class="danger-button delete-managed-invite" data-invite-id="${invite.id}" type="button">Sil</button>
+      </span>
+    </article>`).join("") : '<small class="empty-list">Aktif davet yok</small>';
+  $$(".copy-managed-invite", list).forEach((button) => button.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(button.dataset.inviteUrl);
+    notify("Davet kopyalandi");
+  }));
+  $$(".delete-managed-invite", list).forEach((button) => button.addEventListener("click", async () => {
+    await api(`/api/servers/${state.activeServer.server.id}/invites/${button.dataset.inviteId}`, {
+      method: "DELETE",
+      body: "{}"
+    });
+    await renderServerInvites();
+    notify("Davet silindi");
+  }));
+}
+
 async function createActiveServerInvite() {
   try {
+    const expiresInHours = $("#invite-expiry-input")?.value;
+    const maxUses = Number($("#invite-max-uses-input")?.value || 0);
     const data = await api(`/api/servers/${state.activeServer.server.id}/invites`, {
       method: "POST",
-      body: JSON.stringify({ expiresInHours: 168 })
+      body: JSON.stringify({
+        expiresInHours: expiresInHours ? Number(expiresInHours) : null,
+        maxUses: maxUses > 0 ? maxUses : null
+      })
     });
     $("#invite-link-output").value = data.invite.url;
+    await renderServerInvites().catch(() => {});
     openModal("invite-modal");
   } catch (error) {
     notify(error.message, true);
@@ -1612,10 +2241,11 @@ $("#server-settings-form").addEventListener("submit", async (event) => {
       body: JSON.stringify({
         name: $("#settings-server-name-input").value,
         description: $("#settings-server-description-input").value,
+        logoUrl: $("#settings-server-logo-url-input").value,
         iconColor: $("#settings-server-color-input").value
       })
     });
-    await openServer(serverId);
+    await loadServers(serverId);
     openModal("manage-server-modal");
     switchSettingsTab("overview");
     notify("Sunucu bilgileri güncellendi");
@@ -1642,6 +2272,26 @@ $("#delete-server-button").addEventListener("click", async () => {
   }
 });
 
+$("#transfer-owner-button").addEventListener("click", async () => {
+  if (!state.activeServer) return;
+  const newOwnerId = $("#transfer-owner-select").value;
+  if (!newOwnerId) return notify("Yeni sahibi sec", true);
+  const member = state.activeServer.members.find((item) => item.id === newOwnerId);
+  if (!member) return notify("Uye bulunamadi", true);
+  if (!confirm(`"${state.activeServer.server.name}" sunucusunun sahipligini ${member.display_name} kisisine devretmek istiyor musun?`)) return;
+  try {
+    await api(`/api/servers/${state.activeServer.server.id}/transfer-owner`, {
+      method: "POST",
+      body: JSON.stringify({ newOwnerId })
+    });
+    await openServer(state.activeServer.server.id);
+    closeModal($("#transfer-owner-button"));
+    notify("Sunucu sahipligi devredildi");
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+
 $("#leave-server-button").addEventListener("click", async () => {
   if (!state.activeServer) return;
   const serverName = state.activeServer.server.name;
@@ -1660,7 +2310,7 @@ $("#leave-server-button").addEventListener("click", async () => {
   }
 });
 
-const preferenceInputs = ["show-all-channels-setting", "server-dm-setting"];
+const preferenceInputs = ["show-all-channels-setting"];
 for (const inputId of preferenceInputs) {
   const input = $(`#${inputId}`);
   const saved = localStorage.getItem(`yaas:${inputId}`);
@@ -1691,6 +2341,8 @@ $("#role-form").addEventListener("submit", async (event) => {
   const payload = {
     name: $("#role-name-input").value,
     color: $("#role-color-input").value,
+    roleIcon: $("#role-icon-input").value,
+    roleHoist: $("#role-hoist-input").checked,
     permissions: $$("input[name=permission]:checked").map((input) => input.value)
   };
   try {
