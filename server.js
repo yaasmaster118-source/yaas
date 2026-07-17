@@ -8,6 +8,15 @@ const { initializeDatabase, query } = require("./src/database");
 const port = Number(process.env.PORT) || 4173;
 const root = __dirname;
 const voiceRooms = new Map();
+const MAX_JSON_BYTES = 450_000;
+const MAX_FORM_BYTES = 80_000;
+const RATE_LIMITS = {
+  global: { limit: 600, windowMs: 60_000 },
+  auth: { limit: 25, windowMs: 60_000 },
+  write: { limit: 180, windowMs: 60_000 },
+  voice: { limit: 900, windowMs: 60_000 }
+};
+const rateBuckets = new Map();
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -25,6 +34,10 @@ const contentTypes = {
 };
 
 const server = http.createServer((request, response) => {
+  request.setTimeout(15_000);
+  applySecurityHeaders(response);
+  if (!applyRateLimit(request, response)) return;
+
   if (request.url.startsWith("/api/") && !request.url.startsWith("/api/voice/")) {
     const isAppleCallback = request.url.startsWith("/api/auth/oauth/apple/callback");
     if (!isAppleCallback && !isSameOrigin(request)) {
@@ -76,7 +89,13 @@ const server = http.createServer((request, response) => {
   const requestPath = pathname === "/" || /^\/invite\/[A-Za-z0-9_-]+$/.test(pathname)
     ? "/index.html"
     : pathname;
-  const filePath = path.resolve(root, `.${decodeURIComponent(requestPath)}`);
+  const decodedPath = safeDecodePath(requestPath);
+  if (!decodedPath) {
+    response.writeHead(400);
+    response.end("Bad request");
+    return;
+  }
+  const filePath = path.resolve(root, `.${decodedPath}`);
   const relativePath = path.relative(root, filePath);
 
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
@@ -94,9 +113,6 @@ const server = http.createServer((request, response) => {
 
     response.writeHead(200, {
       "Content-Type": contentTypes[path.extname(filePath)] || "application/octet-stream",
-      "X-Content-Type-Options": "nosniff",
-      "X-Frame-Options": "SAMEORIGIN",
-      "Referrer-Policy": "strict-origin-when-cross-origin",
       "Cache-Control": [".html", ".css", ".js", ".webmanifest"].includes(path.extname(filePath))
         ? "no-cache"
         : "public, max-age=3600"
@@ -104,6 +120,65 @@ const server = http.createServer((request, response) => {
     response.end(request.method === "HEAD" ? undefined : content);
   });
 });
+
+server.headersTimeout = 20_000;
+server.requestTimeout = 25_000;
+server.keepAliveTimeout = 5_000;
+server.maxHeadersCount = 80;
+
+function clientIp(request) {
+  return String(request.headers["x-forwarded-for"] || request.socket.remoteAddress || "unknown")
+    .split(",")[0]
+    .trim();
+}
+
+function ratePolicy(request) {
+  const pathname = request.url.split("?")[0];
+  if (pathname.startsWith("/api/auth/")) return "auth";
+  if (pathname.startsWith("/api/voice/")) return "voice";
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) return "write";
+  return "global";
+}
+
+function applyRateLimit(request, response) {
+  const policyName = ratePolicy(request);
+  const policy = RATE_LIMITS[policyName];
+  const now = Date.now();
+  const key = `${clientIp(request)}:${policyName}`;
+  const bucket = rateBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    rateBuckets.set(key, { count: 1, resetAt: now + policy.windowMs });
+    return true;
+  }
+  bucket.count += 1;
+  if (bucket.count <= policy.limit) return true;
+  response.writeHead(429, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Retry-After": String(Math.ceil((bucket.resetAt - now) / 1000))
+  });
+  response.end(JSON.stringify({ error: "Cok fazla istek. Biraz bekleyip tekrar dene." }));
+  return false;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of rateBuckets) {
+    if (bucket.resetAt <= now) rateBuckets.delete(key);
+  }
+}, 60_000).unref();
+
+function applySecurityHeaders(response) {
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("X-Frame-Options", "SAMEORIGIN");
+  response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.setHeader("Permissions-Policy", "geolocation=(), payment=(), usb=(), fullscreen=(self), camera=(self), microphone=(self), display-capture=(self)");
+  response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  response.setHeader("Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' blob: data:; connect-src 'self' https://accounts.google.com https://appleid.apple.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self' https://appleid.apple.com"
+  );
+}
 
 function getOrigin(request) {
   const protocol = request.headers["x-forwarded-proto"] || "http";
@@ -118,38 +193,67 @@ function isSameOrigin(request) {
 }
 
 function readJson(request) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    request.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 1_000_000) request.destroy();
-    });
-    request.on("end", () => {
-      try {
-        resolve(body ? JSON.parse(body) : {});
-      } catch (error) {
-        reject(error);
-      }
-    });
-    request.on("error", reject);
+  return readBody(request, MAX_JSON_BYTES).then((body) => {
+    try {
+      return body ? JSON.parse(body) : {};
+    } catch (error) {
+      error.statusCode = 400;
+      throw error;
+    }
   });
 }
 
+function safeDecodePath(requestPath) {
+  try {
+    return decodeURIComponent(requestPath);
+  } catch {
+    return "";
+  }
+}
+
 function readForm(request) {
+  return readBody(request, MAX_FORM_BYTES).then((body) => {
+    try {
+      return Object.fromEntries(new URLSearchParams(body));
+    } catch (error) {
+      error.statusCode = 400;
+      throw error;
+    }
+  });
+}
+
+function readBody(request, maxBytes) {
   return new Promise((resolve, reject) => {
-    let body = "";
+    const chunks = [];
+    let size = 0;
+    let settled = false;
     request.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 100_000) request.destroy();
+      if (settled) return;
+      size += chunk.length;
+      if (size > maxBytes) {
+        settled = true;
+        const error = new Error("Request body too large");
+        error.statusCode = 413;
+        request.resume();
+        reject(error);
+        return;
+      }
+      chunks.push(chunk);
     });
     request.on("end", () => {
+      if (settled) return;
+      settled = true;
       try {
-        resolve(Object.fromEntries(new URLSearchParams(body)));
+        resolve(Buffer.concat(chunks).toString("utf8"));
       } catch (error) {
         reject(error);
       }
     });
-    request.on("error", reject);
+    request.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
   });
 }
 
@@ -157,7 +261,8 @@ function sendJson(response, status, data) {
   response.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
-    "X-Content-Type-Options": "nosniff"
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin"
   });
   response.end(JSON.stringify(data));
 }
@@ -387,14 +492,16 @@ async function handleVoiceApi(request, response) {
     }
 
     sendJson(response, 404, { error: "Bulunamadı" });
-  } catch {
-    sendJson(response, 400, { error: "Geçersiz istek" });
+  } catch (error) {
+    sendJson(response, error.statusCode === 413 ? 413 : 400, {
+      error: error.statusCode === 413 ? "Istek cok buyuk" : "Gecersiz istek"
+    });
   }
 }
 
 initializeDatabase()
   .then(() => {
-    server.listen(port, "0.0.0.0", () => {
+    server.listen(port, () => {
       console.log(`YAAS is running at http://localhost:${port}`);
     });
   })
