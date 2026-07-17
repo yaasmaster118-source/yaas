@@ -1,0 +1,697 @@
+/* YAAS clean layout pass: keeps features, makes the app easier to read. */
+.app {
+  grid-template-columns: 272px minmax(640px, 1fr) 270px !important;
+  background: #050506;
+}
+
+.server-panel,
+.channel-panel,
+.content-panel,
+.member-panel {
+  background: #0b0c0e !important;
+}
+
+.server-panel,
+.channel-panel,
+.member-panel {
+  border-color: #241f18 !important;
+}
+
+.server-panel > header,
+.channel-panel > header,
+.content-panel > header,
+.member-panel > header {
+  height: 64px !important;
+  background: #0a0a0b !important;
+  border-color: #241f18 !important;
+}
+
+.server-actions {
+  grid-template-columns: 1fr !important;
+  gap: 9px !important;
+  padding: 16px !important;
+}
+
+.server-actions button {
+  min-height: 42px !important;
+  justify-content: center;
+  border: 1px solid #31291c;
+  border-radius: 12px !important;
+  font-size: 11px !important;
+}
+
+.server-actions .friends-button {
+  order: 3;
+}
+
+.section-label {
+  margin: 6px 0 8px !important;
+  color: #d6aa52 !important;
+  letter-spacing: 2px !important;
+}
+
+.server-list {
+  display: grid;
+  gap: 7px;
+  padding: 0 12px 12px !important;
+}
+
+.server-item {
+  min-height: 58px;
+  border: 1px solid transparent;
+  border-radius: 14px !important;
+}
+
+.server-item:hover,
+.server-item.active {
+  border-color: #3b3020 !important;
+  background: linear-gradient(135deg, #19150f, #101113) !important;
+}
+
+.server-icon,
+.avatar {
+  border-radius: 14px !important;
+}
+
+.server-logo {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid #5a4727;
+  background: #070708 !important;
+}
+
+.server-logo img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.active-server-title {
+  min-width: 0;
+  display: flex !important;
+  align-items: center;
+  flex-direction: row !important;
+  gap: 10px;
+}
+
+.active-server-title > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.active-server-logo {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+}
+
+.server-logo-field {
+  display: grid;
+  gap: 7px;
+  margin: 0 16px 12px;
+  color: #a5abb4;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.server-logo-field input {
+  height: 42px;
+  border: 1px solid #343a44;
+  outline: 0;
+  padding: 0 11px;
+  border-radius: 8px;
+  color: var(--text);
+  background: #0f1216;
+}
+
+.account-bar {
+  margin: 10px 12px 12px !important;
+  border: 1px solid #282118 !important;
+  border-radius: 16px !important;
+  background: #101011 !important;
+}
+
+.workspace {
+  background: radial-gradient(circle at 50% 0, #15110a 0, transparent 30%), #070708 !important;
+}
+
+.server-view {
+  grid-template-columns: 260px minmax(0, 1fr) !important;
+}
+
+.channel-list {
+  padding: 14px 11px !important;
+}
+
+.channel-template-category {
+  margin-bottom: 12px !important;
+  padding: 5px !important;
+  border-radius: 14px !important;
+  background: #0f1012 !important;
+}
+
+.template-category-header {
+  margin-bottom: 5px !important;
+  padding: 6px 7px !important;
+}
+
+.channel-template-item {
+  height: 42px !important;
+  margin: 3px 0 !important;
+  border-radius: 11px !important;
+}
+
+.channel-template-item .channel-glyph {
+  width: 31px !important;
+  height: 28px !important;
+  border-radius: 9px !important;
+  font-size: 8px !important;
+}
+
+.channel-copy strong {
+  font-size: 11px !important;
+}
+
+.channel-copy small {
+  font-size: 8px !important;
+}
+
+.add-channel-button {
+  margin: 0 12px 8px !important;
+  min-height: 38px;
+  border-radius: 11px !important;
+}
+
+.content-panel {
+  min-width: 0;
+  background: linear-gradient(180deg, #08090a, #060607) !important;
+}
+
+.content-panel > header {
+  padding: 0 18px !important;
+}
+
+.content-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.content-actions button {
+  min-height: 38px;
+  border-radius: 11px !important;
+}
+
+.message-list {
+  padding: 22px !important;
+}
+
+.message {
+  max-width: 900px;
+  margin: 0 auto 8px;
+  border: 1px solid transparent;
+  border-radius: 14px !important;
+}
+
+.message:hover {
+  border-color: #282118 !important;
+  background: #101113 !important;
+}
+
+.message-form {
+  max-width: 940px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 14px 22px 18px !important;
+}
+
+.message-form input {
+  height: 48px !important;
+  border-radius: 14px !important;
+  background: #0d0e10 !important;
+}
+
+.mention {
+  display: inline-flex;
+  padding: 1px 6px;
+  border: 1px solid #6b542d;
+  border-radius: 999px;
+  color: #ffe7a4;
+  background: #21180b;
+  font-weight: 900;
+}
+
+.mention-suggestions {
+  display: flex;
+  gap: 8px;
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 10px 22px 0;
+  overflow-x: auto;
+}
+
+.mention-suggestions button {
+  min-width: 170px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid #30291e;
+  border-radius: 13px;
+  color: #fff1c8;
+  background: #111113;
+  text-align: left;
+}
+
+.mention-suggestions button:hover {
+  border-color: #8c6b32;
+  background: #1b1710;
+}
+
+.member-list {
+  display: grid;
+  gap: 8px;
+  padding: 14px !important;
+}
+
+.member-role-section {
+  display: grid;
+  gap: 8px;
+}
+
+.member-role-section > strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 4px 3px;
+  color: #d7b56a;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+
+.member-item {
+  min-height: 58px;
+  border: 1px solid transparent;
+  border-radius: 14px !important;
+  background: #0f1012;
+}
+
+.member-item:hover {
+  border-color: #342a1d !important;
+  background: #15120d !important;
+}
+
+.welcome-view {
+  padding: 48px 26px !important;
+}
+
+.welcome-logo {
+  width: min(220px, 60vw) !important;
+  height: 96px !important;
+  margin-bottom: 18px !important;
+}
+
+.welcome-view h2 {
+  font-size: clamp(30px, 4vw, 46px) !important;
+  letter-spacing: -1.2px;
+}
+
+.welcome-view p {
+  max-width: 560px !important;
+  margin-bottom: 24px !important;
+}
+
+.welcome-view > div:last-child {
+  gap: 10px !important;
+}
+
+.welcome-view > div:last-child button {
+  min-height: 42px;
+  border-radius: 12px !important;
+}
+
+.voice-stage {
+  padding: 24px !important;
+}
+
+.voice-dock {
+  padding: 14px 18px !important;
+}
+
+.voice-controls {
+  gap: 10px !important;
+}
+
+.messenger-page .friends-layout {
+  grid-template-columns: 360px minmax(0, 1fr) !important;
+}
+
+.messenger-quick-tabs {
+  padding: 10px 12px !important;
+}
+
+.messenger-quick-tabs button {
+  min-height: 40px !important;
+  border-radius: 11px !important;
+}
+
+.messenger-page .friend-section {
+  display: none !important;
+}
+
+.dm-tab-content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 18px;
+}
+
+.dm-tab-section {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.dm-tab-section > strong {
+  color: #d7b56a;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.dm-notification-row {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+
+.dm-notification-row strong {
+  color: #fff1c8;
+}
+
+.dm-notification-row small {
+  color: #b7aa94;
+  line-height: 1.4;
+}
+
+.friend-section {
+  padding: 11px 13px !important;
+}
+
+.friend-row {
+  min-height: 54px !important;
+  border-radius: 13px !important;
+}
+
+.dm-message-list {
+  padding: 20px !important;
+}
+
+.role-template-card {
+  min-height: 48px !important;
+  border-radius: 13px !important;
+}
+
+.role-hoist-switch {
+  padding: 12px !important;
+  border: 1px solid #30291e !important;
+  border-radius: 14px !important;
+  background: #121315 !important;
+}
+
+.role-icon-badge,
+.role-access-icon {
+  display: inline-grid;
+  min-width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--role-color, #d7b56a), transparent 55%);
+  border-radius: 9px;
+  background: #17130d;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.role-chip span,
+.settings-member-roles i span {
+  margin-right: 5px;
+}
+
+.profile-role-tools {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #30291e;
+  border-radius: 16px;
+  background: #0c0d0f;
+}
+
+.profile-role-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-role-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid #30291e;
+  border-radius: 999px;
+  background: #15110a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.profile-role-pill button {
+  border: 0;
+  color: #ffb0a8;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.settings-panel[data-settings-panel="roles"] .role-layout {
+  grid-template-columns: 280px minmax(0, 1fr) !important;
+  gap: 0 !important;
+  border: 1px solid #30291e !important;
+  border-radius: 18px !important;
+  background: #30291e !important;
+}
+
+.settings-panel[data-settings-panel="roles"] .role-layout > div,
+.settings-panel[data-settings-panel="roles"] .role-layout > form {
+  background: #0d0e10 !important;
+}
+
+.settings-panel[data-settings-panel="roles"] .role-layout > div {
+  padding: 14px !important;
+}
+
+.settings-panel[data-settings-panel="roles"] .role-layout > form {
+  display: grid;
+  gap: 14px;
+  padding: 18px !important;
+}
+
+.permission-grid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)) !important;
+  gap: 9px !important;
+}
+
+.permission-grid label {
+  min-height: 48px;
+  border: 1px solid #2b251d !important;
+  border-radius: 12px !important;
+  background: #121315 !important;
+}
+
+.permission-grid label:hover {
+  border-color: #8c6b32 !important;
+  background: #18140f !important;
+}
+
+.voice-channel-view {
+  background: #060607 !important;
+}
+
+.voice-room-header {
+  height: 68px !important;
+  padding: 0 20px !important;
+  background: #090a0c !important;
+}
+
+.voice-room-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #5a4727;
+  border-radius: 12px;
+  background: #14110c;
+  font-size: 18px !important;
+}
+
+.voice-stage {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+  gap: 14px !important;
+  padding: 20px !important;
+}
+
+.voice-stage .voice-person,
+.voice-stage .voice-video-tile {
+  min-height: 210px !important;
+  border-radius: 18px !important;
+  background: radial-gradient(circle at 50% 30%, #2a2418, #111214 68%) !important;
+}
+
+.voice-stage .voice-person:not(.muted),
+.voice-video-tile#local-video-tile {
+  border-color: #39b56b !important;
+  box-shadow: 0 0 0 1px #39b56b55, 0 18px 40px #0008 !important;
+}
+
+.voice-video-tile#local-video-tile video {
+  transform: none !important;
+}
+
+.voice-dock {
+  min-height: 86px;
+  justify-content: space-between !important;
+  padding: 14px 18px !important;
+  background: #090a0c !important;
+}
+
+.voice-control,
+.join-voice-action {
+  border-radius: 14px !important;
+}
+
+.voice-control {
+  width: 72px !important;
+  height: 54px !important;
+}
+
+.voice-personal-settings {
+  width: 340px !important;
+  border-radius: 14px !important;
+}
+
+.modal {
+  border-radius: 18px !important;
+}
+
+.primary {
+  background: linear-gradient(135deg, #f0d185, #c69234) !important;
+}
+
+.primary:hover {
+  filter: brightness(1.08);
+}
+
+.secondary {
+  border: 1px solid #30291e;
+  background: #171719 !important;
+}
+
+.secondary:hover {
+  border-color: #8c6b32;
+  color: #ffe7a4;
+}
+
+.setting-switch:has(#server-dm-setting) {
+  display: none !important;
+}
+
+@media (max-width: 1120px) {
+  .app {
+    grid-template-columns: 255px minmax(0, 1fr) !important;
+  }
+
+  .server-view {
+    grid-template-columns: 245px minmax(0, 1fr) !important;
+  }
+
+  .member-panel {
+    width: 280px !important;
+  }
+
+  .voice-connection-bar {
+    left: 270px !important;
+    right: 18px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .app {
+    display: block !important;
+  }
+
+  .server-actions {
+    padding: 13px !important;
+  }
+
+  .workspace {
+    height: calc(100vh - 60px) !important;
+  }
+
+  .server-view {
+    grid-template-columns: 1fr !important;
+  }
+
+  .content-panel > header {
+    padding: 0 10px !important;
+  }
+
+  .content-actions button {
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: 9px;
+  }
+
+  .message-list {
+    padding: 12px !important;
+  }
+
+  .message-form {
+    padding: 10px !important;
+  }
+
+  .welcome-view {
+    padding: 26px 18px !important;
+  }
+
+  .welcome-logo {
+    width: min(190px, 72vw) !important;
+  }
+
+  .messenger-page .friends-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .messenger-quick-tabs {
+    grid-template-columns: 1fr !important;
+  }
+
+  .voice-connection-bar {
+    left: 8px !important;
+    right: 8px !important;
+  }
+
+  .settings-panel[data-settings-panel="roles"] .role-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .voice-dock {
+    display: grid !important;
+    gap: 10px;
+  }
+
+  .voice-personal-settings {
+    width: 100% !important;
+  }
+}
