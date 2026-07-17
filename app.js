@@ -200,7 +200,7 @@ function resizeServerLogoFile(file) {
       const image = new Image();
       image.onerror = () => reject(new Error("Fotograf hazirlanamadi"));
       image.onload = () => {
-        const size = 192;
+        const size = 144;
         const scale = Math.min(1, size / Math.max(image.width, image.height));
         const width = Math.max(1, Math.round(image.width * scale));
         const height = Math.max(1, Math.round(image.height * scale));
@@ -208,7 +208,7 @@ function resizeServerLogoFile(file) {
         canvas.width = width;
         canvas.height = height;
         canvas.getContext("2d").drawImage(image, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.72));
+        resolve(canvas.toDataURL("image/jpeg", 0.68));
       };
       image.src = reader.result;
     };
@@ -228,6 +228,11 @@ async function saveActiveServerLogo(logoUrl) {
       iconColor: $("#settings-server-color-input").value || state.activeServer.server.icon_color
     })
   });
+  if (state.activeServer?.server) state.activeServer.server.logo_url = logoUrl || "";
+  const server = state.servers.find((item) => item.id === serverId);
+  if (server) server.logo_url = logoUrl || "";
+  renderServers();
+  if (state.activeServer?.server) setServerIcon($("#active-server-logo"), state.activeServer.server);
   await loadServers(serverId);
   openModal("manage-server-modal");
   switchSettingsTab("overview");
