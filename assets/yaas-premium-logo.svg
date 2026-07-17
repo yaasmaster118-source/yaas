@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="80 60 1040 420" role="img" aria-labelledby="title desc">
   <title id="title">YAAS premium logo</title>
   <desc id="desc">Black, gold and silver YAAS wordmark for the YAAS community platform.</desc>
   <defs>
@@ -19,7 +19,7 @@
       <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#d6aa52" flood-opacity=".28"/>
     </filter>
   </defs>
-  <rect width="1200" height="520" fill="#050506"/>
+  <rect x="80" y="60" width="1040" height="420" rx="18" fill="#050506"/>
   <g opacity=".3">
     <path d="M255 177c92-72 232-113 345-113s253 41 345 113" fill="none" stroke="url(#gold)" stroke-width="7" stroke-linecap="round"/>
     <path d="M255 405c92 72 232 102 345 102s253-30 345-102" fill="none" stroke="url(#gold)" stroke-width="7" stroke-linecap="round"/>
