@@ -12,8 +12,9 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
-    <link rel="stylesheet" href="styles.css?v=1.1.16">
-    <script src="app.js?v=1.1.16" defer></script>
+    <link rel="stylesheet" href="styles.css?v=1.1.20">
+    <link rel="stylesheet" href="clean.css?v=1.1.20">
+    <script src="app.js?v=1.1.20" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -86,7 +87,7 @@
         <div class="server-actions">
           <button class="primary" data-open-modal="create-server-modal" type="button">＋ Sunucu oluştur</button>
           <button class="secondary" data-open-modal="join-server-modal" type="button">Davetle katıl</button>
-          <button class="secondary friends-button" id="friends-button" type="button">Arkadaşlar ve DM</button>
+          <button class="secondary friends-button" id="friends-button" type="button">Arkadaşlar ve DM <span class="notification-badge hidden" id="friends-notification-badge">0</span></button>
         </div>
         <p class="section-label">SUNUCULARIN</p>
         <nav class="server-list" id="server-list"></nav>
@@ -129,7 +130,7 @@
         <section class="server-view hidden" id="server-view">
           <aside class="channel-panel">
             <header>
-              <div><strong id="active-server-name">Sunucu</strong><small id="active-server-description"></small></div>
+              <div class="active-server-title"><span class="server-icon active-server-logo" id="active-server-logo">S</span><div><strong id="active-server-name">Sunucu</strong><small id="active-server-description"></small></div></div>
               <button class="icon-button manage-server-button hidden" data-open-modal="manage-server-modal" type="button">⚙</button>
             </header>
             <div class="channel-list" id="channel-list"></div>
@@ -150,6 +151,7 @@
             </div>
             <div class="message-view hidden" id="message-view">
               <div class="message-list" id="message-list"></div>
+              <div class="mention-suggestions hidden" id="mention-suggestions"></div>
               <form class="message-form" id="message-form">
                 <input id="message-input" maxlength="4000" placeholder="Mesaj gönder..." autocomplete="off">
                 <button class="primary" type="submit">➤</button>
@@ -217,6 +219,7 @@
       <nav class="mobile-nav">
         <button data-open-panel="server-panel" type="button"><span>◇</span>Sunucular</button>
         <button data-mobile-view="channels" type="button"><span>#</span>Kanallar</button>
+        <button id="mobile-friends-button" type="button"><span>✉</span>DM <b class="notification-badge hidden" id="mobile-notification-badge">0</b></button>
         <button data-open-panel="member-panel" type="button"><span>♙</span>Üyeler</button>
       </nav>
     </div>
@@ -242,6 +245,9 @@
           <label>Sunucu adı<input id="server-name-input" minlength="2" maxlength="40" placeholder="Yeni topluluğum" required></label>
           <label>Açıklama<textarea id="server-description-input" maxlength="180" placeholder="Bu sunucu ne için kuruluyor?"></textarea></label>
         </div>
+        <label class="server-logo-field">Sunucu logosu baglantisi<input id="server-logo-url-input" maxlength="350000" placeholder="https://... veya bos birak"></label>
+        <input id="server-logo-file-input" type="file" accept="image/*" hidden>
+        <button class="secondary" id="server-logo-picker" type="button">Galeriden logo sec</button>
         <p class="form-error"></p>
         <div class="builder-join-row"><span>Zaten davetin var mı?</span><button class="secondary" id="builder-open-join" type="button">Bir sunucuya katıl</button></div>
         <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Sunucuyu oluştur</button></footer>
@@ -342,6 +348,9 @@
               <form id="server-settings-form">
                 <label>Sunucu adı<input id="settings-server-name-input" maxlength="40" required></label>
                 <label>Açıklama<textarea id="settings-server-description-input" maxlength="180"></textarea></label>
+                <label>Sunucu logosu baglantisi<input id="settings-server-logo-url-input" maxlength="350000" placeholder="https://... veya bos birak"></label>
+                <input id="settings-server-logo-file-input" type="file" accept="image/*" hidden>
+                <button class="secondary" id="settings-server-logo-picker" type="button">Galeriden logo sec</button>
                 <label>Simge rengi<input id="settings-server-color-input" type="color" value="#c9f34b"></label>
                 <p class="form-error"></p>
                 <button class="primary" type="submit">Değişiklikleri kaydet</button>
@@ -356,6 +365,8 @@
                   <input id="role-id-input" type="hidden">
                   <label>Rol adı<input id="role-name-input" maxlength="30" required></label>
                   <label>Renk<input id="role-color-input" type="color" value="#8d7aff"></label>
+                  <label>Rol ikonu<input id="role-icon-input" maxlength="8" placeholder="👑, 🛡, ⭐"></label>
+                  <label class="setting-switch role-hoist-switch"><span><strong>Uyeleri ayri goster</strong><small>Bu role sahip kisiler uye listesinde ayri baslik altinda dursun.</small></span><input id="role-hoist-input" type="checkbox"></label>
                   <div class="permission-grid" id="permission-grid"></div>
                   <p class="form-error"></p>
                   <button class="primary" type="submit">Rolü kaydet</button>
@@ -370,7 +381,23 @@
             <section class="settings-panel" data-settings-panel="invites">
               <h3>Üyeleri davet et</h3>
               <p>Arkadaşlarının sunucuya katılması için güvenli bir davet bağlantısı oluştur.</p>
+              <div class="invite-settings-grid">
+                <label>Davet süresi
+                  <select id="invite-expiry-input">
+                    <option value="168">7 gün</option>
+                    <option value="24">24 saat</option>
+                    <option value="1">1 saat</option>
+                    <option value="">Süresiz</option>
+                  </select>
+                </label>
+                <label>Kullanım limiti
+                  <input id="invite-max-uses-input" min="0" max="1000" placeholder="Sınırsız" type="number">
+                </label>
+              </div>
               <button class="primary" id="settings-create-invite" type="button">Davet bağlantısı oluştur</button>
+              <div class="invite-list" id="settings-invite-list">
+                <small class="empty-list">Davetler yüklenmedi</small>
+              </div>
             </section>
             <section class="settings-panel" data-settings-panel="preferences">
               <h3>Gizlilik ve görünüm</h3>
@@ -380,6 +407,11 @@
               <div class="danger-zone hidden" id="server-danger-zone">
                 <div><strong>Sunucuyu sil</strong><small>Kanallar, mesajlar ve üyelikler kalıcı olarak silinir.</small></div>
                 <button class="danger-button" id="delete-server-button" type="button">Sunucuyu sil</button>
+              </div>
+              <div class="danger-zone hidden" id="server-transfer-zone">
+                <div><strong>Sunucu sahipligini devret</strong><small>Yeni sahip her seyi gorebilir, silebilir ve yonetebilir. Sen normal uye olursun.</small></div>
+                <select id="transfer-owner-select"><option value="">Yeni sahibi sec</option></select>
+                <button class="danger-button" id="transfer-owner-button" type="button">Sahipligi devret</button>
               </div>
               <div class="danger-zone hidden" id="leave-server-zone">
                 <div><strong>Sunucudan ayrıl</strong><small>Tekrar katılmak için yeni bir davet gerekir.</small></div>
@@ -402,34 +434,74 @@
       </section>
     </div>
 
-    <div class="modal-layer" id="friends-modal" hidden>
-      <section class="modal friends-modal">
-        <header><div><strong>Arkadaşlar ve DM</strong><small>İstek gönder, kabul et ve özel mesajlaş.</small></div><button class="icon-button modal-close" type="button">×</button></header>
+    <div class="modal-layer messenger-layer" id="friends-modal" hidden>
+      <section class="modal friends-modal messenger-page">
+        <header>
+          <button class="secondary dm-back-button" id="dm-back-button" type="button">← Geri dön</button>
+          <div><strong>Mesajlar</strong><small>Messenger gibi tam ekran özel mesaj merkezi.</small></div>
+          <button class="icon-button modal-close" type="button">×</button>
+        </header>
         <div class="friends-layout">
           <aside class="friends-sidebar">
+            <div class="friends-sidebar-title">
+              <strong>DM Kutusu</strong>
+              <small>Arkadaşların, istekler ve bildirimler burada.</small>
+            </div>
+            <div class="messenger-quick-tabs" aria-label="Mesaj merkezi menusu">
+              <button class="active" data-dm-tab="friends" type="button"><span>DM</span>Arkadaslar</button>
+              <button data-dm-tab="requests" type="button"><span>Mail</span>Mesaj istekleri <i>Yeni</i></button>
+              <button data-dm-tab="notifications" type="button"><span>Bell</span>Bildirimler</button>
+            </div>
             <form id="friend-request-form">
               <label>Kullanıcı adı<input id="friend-handle-input" placeholder="@kullanici" required></label>
               <button class="primary wide" type="submit">Arkadaşlık isteği gönder</button>
               <p class="form-error"></p>
             </form>
+            <div class="dm-tab-content" id="dm-tab-content"></div>
             <div class="friend-section">
-              <strong>GELEN İSTEKLER</strong>
-              <div id="incoming-friend-list"></div>
-            </div>
-            <div class="friend-section">
-              <strong>ARKADAŞLAR</strong>
+              <strong>KONUŞMALAR VE ARKADAŞLAR</strong>
               <div id="friend-list"></div>
             </div>
             <div class="friend-section">
-              <strong>GÖNDERİLENLER</strong>
+              <strong>ARKADAŞLIK İSTEKLERİ</strong>
+              <div id="incoming-friend-list"></div>
+            </div>
+            <div class="friend-section">
+              <strong>MESAJ İSTEKLERİ</strong>
+              <div id="message-request-list"></div>
+            </div>
+            <div class="friend-section compact">
+              <strong>GÖNDERİLEN ARKADAŞ İSTEKLERİ</strong>
               <div id="outgoing-friend-list"></div>
+            </div>
+            <div class="friend-section compact">
+              <strong>BİLDİRİM KUTUSU</strong>
+              <div class="notification-list" id="dm-notification-list">
+                <small class="empty-list">Yeni bildirim yok</small>
+              </div>
             </div>
           </aside>
           <section class="dm-panel">
-            <div class="dm-empty" id="dm-empty">Mesajlaşmak için bir arkadaş seç.</div>
+            <div class="dm-empty" id="dm-empty">
+              <span>✉</span>
+              <strong>Mesajlaşmak için bir arkadaş seç.</strong>
+              <small>Sol taraftan birini seçince konuşma burada açılır.</small>
+            </div>
             <div class="dm-view hidden" id="dm-view">
-              <header><span class="avatar" id="dm-avatar">?</span><div><strong id="dm-name">Arkadaş</strong><small id="dm-handle">@kullanici</small></div></header>
+              <header>
+                <button class="icon-button dm-thread-back" id="dm-thread-back" type="button">‹</button>
+                <span class="avatar" id="dm-avatar">?</span>
+                <div><strong id="dm-name">Arkadaş</strong><small id="dm-handle">@kullanici</small></div>
+              </header>
               <div class="dm-message-list" id="dm-message-list"></div>
+              <div class="dm-emoji-bar" aria-label="Hızlı emoji seç">
+                <button type="button" data-dm-emoji="😀">😀</button>
+                <button type="button" data-dm-emoji="😂">😂</button>
+                <button type="button" data-dm-emoji="❤️">❤️</button>
+                <button type="button" data-dm-emoji="🔥">🔥</button>
+                <button type="button" data-dm-emoji="👍">👍</button>
+                <button type="button" data-dm-emoji="👀">👀</button>
+              </div>
               <form class="message-form" id="dm-message-form">
                 <input id="dm-message-input" maxlength="4000" placeholder="Özel mesaj gönder..." autocomplete="off">
                 <button class="primary" type="submit">Gönder</button>
@@ -444,11 +516,22 @@
       <form class="modal profile-settings-modal" id="profile-settings-form">
         <header><div><strong>Profil ve ayarlar</strong><small>Ismini, notunu ve profil fotografini duzenle.</small></div><button class="icon-button modal-close" type="button">×</button></header>
         <div class="profile-editor-preview">
-          <span class="avatar large" id="profile-settings-preview">?</span>
+          <button class="profile-avatar-picker" id="profile-avatar-picker" type="button" title="Galeriden fotograf sec">
+            <span class="avatar large" id="profile-settings-preview">?</span>
+            <small>Foto sec</small>
+          </button>
           <div><strong id="profile-settings-preview-name">Kullanici</strong><small id="profile-settings-preview-handle">@yaas</small></div>
         </div>
+        <input id="profile-avatar-file-input" type="file" accept="image/*" hidden>
         <label>Gorunen isim<input id="profile-display-name-input" minlength="2" maxlength="40" required></label>
-        <label>Profil fotografi baglantisi<input id="profile-avatar-url-input" type="url" maxlength="500" placeholder="https://..."></label>
+        <label>Profil fotografi baglantisi<input id="profile-avatar-url-input" maxlength="350000" placeholder="Galeriden sec veya https://... yapistir"></label>
+        <label>Profil cercevesi<select id="profile-frame-input">
+          <option value="none">Cerceve yok</option>
+          <option value="gold">Altin</option>
+          <option value="emerald">Zumrut</option>
+          <option value="royal">Mor premium</option>
+          <option value="neon">Neon</option>
+        </select></label>
         <label>Profil notu<textarea id="profile-bio-input" maxlength="240" placeholder="Kendin hakkinda kisa bir not yaz."></textarea></label>
         <p class="form-error"></p>
         <footer><button class="secondary modal-close" type="button">Vazgec</button><button class="primary" type="submit">Profili kaydet</button></footer>
@@ -465,6 +548,14 @@
         <div class="profile-card-meta">
           <span id="profile-card-owner-badge" class="site-owner-badge hidden">YAAS SAHIBI</span>
           <small id="profile-card-shared">Ortak sunucu bilgisi yok.</small>
+        </div>
+        <div class="profile-role-tools hidden" id="profile-role-tools">
+          <strong>Sunucu rolleri</strong>
+          <div class="profile-role-list" id="profile-role-list"></div>
+          <label>Rol ver
+            <select id="profile-role-select"><option value="">Rol seç</option></select>
+          </label>
+          <button class="secondary" id="profile-role-assign-button" type="button">Rol ver</button>
         </div>
         <footer>
           <button class="secondary" id="profile-card-friend-button" type="button">Arkadas ekle</button>
