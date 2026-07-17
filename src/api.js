@@ -197,9 +197,9 @@ async function createServer(client, user, body) {
     const roleId = crypto.randomUUID();
     roles[template.name] = roleId;
     await client.query(
-      `INSERT INTO roles (id, server_id, name, color, role_icon, position, permissions, is_system)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, TRUE)`,
-      [roleId, serverId, template.name, template.color, roleIconValue("", template.name), template.position, JSON.stringify(template.permissions)]
+      `INSERT INTO roles (id, server_id, name, color, role_icon, role_hoist, position, permissions, is_system)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, TRUE)`,
+      [roleId, serverId, template.name, template.color, roleIconValue("", template.name), template.name === "Owner", template.position, JSON.stringify(template.permissions)]
     );
   }
   await client.query(
@@ -710,12 +710,12 @@ async function handleApi(request, response, helpers) {
           [serverId]
         ),
         query(
-          `SELECT mr.user_id, r.id, r.name, r.color, r.role_icon, r.position
+          `SELECT mr.user_id, r.id, r.name, r.color, r.role_icon, r.role_hoist, r.position
              FROM member_roles mr JOIN roles r ON r.id = mr.role_id
             WHERE mr.server_id = $1 ORDER BY r.position DESC`,
           [serverId]
         ),
-        query("SELECT id, name, color, role_icon, position, permissions, is_system FROM roles WHERE server_id = $1 ORDER BY position DESC", [serverId])
+        query("SELECT id, name, color, role_icon, role_hoist, position, permissions, is_system FROM roles WHERE server_id = $1 ORDER BY position DESC", [serverId])
       ]);
       const rolesByMember = new Map();
       for (const role of memberRoles.rows) {
@@ -725,6 +725,7 @@ async function handleApi(request, response, helpers) {
           name: role.name,
           color: role.color,
           role_icon: role.role_icon,
+          role_hoist: role.role_hoist,
           position: role.position
         });
       }
@@ -767,15 +768,16 @@ async function handleApi(request, response, helpers) {
         id: crypto.randomUUID(),
         name: text(body.name, 30),
         role_icon: "",
+        role_hoist: Boolean(body.roleHoist),
         permissions: validPermissions(body.permissions),
         position: Number.isFinite(actorPosition) ? Math.min(requestedPosition, actorPosition - 1) : requestedPosition
       };
       if (!role.name) return sendJson(response, 400, { error: "Rol adı gerekli" });
       role.role_icon = roleIconValue(body.roleIcon, role.name);
       await query(
-        `INSERT INTO roles (id, server_id, name, color, role_icon, position, permissions)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-        [role.id, serverId, role.name, text(body.color, 20) || "#8d7aff", role.role_icon, role.position, JSON.stringify(role.permissions)]
+        `INSERT INTO roles (id, server_id, name, color, role_icon, role_hoist, position, permissions)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+        [role.id, serverId, role.name, text(body.color, 20) || "#8d7aff", role.role_icon, role.role_hoist, role.position, JSON.stringify(role.permissions)]
       );
       return sendJson(response, 201, { role });
     }
@@ -804,7 +806,8 @@ async function handleApi(request, response, helpers) {
            color = COALESCE($4, color),
            position = COALESCE($5, position),
            permissions = COALESCE($6::jsonb, permissions),
-           role_icon = COALESCE($7, role_icon)
+           role_icon = COALESCE($7, role_icon),
+           role_hoist = COALESCE($8, role_hoist)
          WHERE id = $1 AND server_id = $2`,
         [
           roleId,
@@ -815,7 +818,8 @@ async function handleApi(request, response, helpers) {
             ? (Number.isFinite(actorPosition) ? Math.min(Number(body.position), actorPosition - 1) : Number(body.position))
             : null,
           Array.isArray(body.permissions) ? JSON.stringify(validPermissions(body.permissions)) : null,
-          body.roleIcon !== undefined ? roleIconValue(body.roleIcon, body.name || role.name) : null
+          body.roleIcon !== undefined ? roleIconValue(body.roleIcon, body.name || role.name) : null,
+          body.roleHoist !== undefined ? Boolean(body.roleHoist) : null
         ]
       );
       return sendJson(response, 200, { ok: true });

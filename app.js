@@ -130,6 +130,10 @@ function escapeHtml(value) {
   })[character]);
 }
 
+function formatMessageContent(content) {
+  return escapeHtml(content).replace(/(^|\s)@([a-z0-9._-]{2,32})/gi, '$1<span class="mention">@$2</span>');
+}
+
 function initials(name) {
   return String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
 }
@@ -373,7 +377,7 @@ function renderMembers() {
   const members = state.activeServer.members || [];
   const showContactActions = true;
   $("#member-empty").classList.toggle("hidden", members.length > 0);
-  $("#member-list").innerHTML = members.map((member) => `
+  const memberCard = (member) => `
     <article class="member-item" data-profile-id="${member.id}" role="button" tabindex="0">
       ${avatarContent(member)}
       <div><span class="member-name-row"><strong>${escapeHtml(member.nickname || member.display_name)}</strong>
@@ -381,7 +385,21 @@ function renderMembers() {
       <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}"><span>${escapeHtml(roleIcon(role))}</span>${escapeHtml(role.name)}</i>`).join("")}</span>
       ${showContactActions && member.id !== state.user.id ? `<span class="member-actions"><button class="secondary add-friend-button" data-handle="${escapeHtml(member.handle)}" type="button">Arkadaş ekle</button></span>` : ""}
       </div>
-    </article>`).join("");
+    </article>`;
+  const shown = new Set();
+  const hoistedSections = (state.activeServer.roles || []).filter((role) => role.role_hoist).map((role) => {
+    const roleMembers = members.filter((member) => member.roles.some((item) => item.id === role.id));
+    roleMembers.forEach((member) => shown.add(member.id));
+    return roleMembers.length ? `<section class="member-role-section">
+      <strong style="color:${escapeHtml(role.color)}"><span>${escapeHtml(roleIcon(role))}</span>${escapeHtml(role.name)} · ${roleMembers.length}</strong>
+      ${roleMembers.map(memberCard).join("")}
+    </section>` : "";
+  }).join("");
+  const normalMembers = members.filter((member) => !shown.has(member.id));
+  $("#member-list").innerHTML = hoistedSections + (normalMembers.length ? `<section class="member-role-section">
+    <strong>Uyeler · ${normalMembers.length}</strong>
+    ${normalMembers.map(memberCard).join("")}
+  </section>` : "");
   $$("[data-profile-id]", $("#member-list")).forEach((item) => {
     item.addEventListener("click", (event) => {
       if (event.target.closest("button")) return;
@@ -431,6 +449,44 @@ function roleAccessList(container, selectedRoleIds = []) {
 
 function selectedRoleAccess(container) {
   return $$("input:checked", container).map((input) => input.value);
+}
+
+function currentMentionQuery(input) {
+  const cursor = input.selectionStart ?? input.value.length;
+  const before = input.value.slice(0, cursor);
+  const match = before.match(/(^|\s)@([a-z0-9._-]*)$/i);
+  return match ? { start: cursor - match[2].length - 1, end: cursor, query: match[2].toLowerCase() } : null;
+}
+
+function updateMentionSuggestions() {
+  const box = $("#mention-suggestions");
+  const input = $("#message-input");
+  if (!box || !input || !state.activeServer) return;
+  const mention = currentMentionQuery(input);
+  if (!mention) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  const matches = (state.activeServer.members || [])
+    .filter((member) => {
+      const name = `${member.display_name || ""} ${member.nickname || ""} ${member.handle || ""}`.toLowerCase();
+      return !mention.query || name.includes(mention.query);
+    })
+    .slice(0, 6);
+  box.classList.toggle("hidden", matches.length === 0);
+  box.innerHTML = matches.map((member) => `
+    <button data-mention-handle="${escapeHtml(member.handle)}" type="button">
+      ${avatarContent(member, "small")}<span><strong>${escapeHtml(member.nickname || member.display_name)}</strong><small>@${escapeHtml(member.handle)}</small></span>
+    </button>`).join("");
+  $$("[data-mention-handle]", box).forEach((button) => button.addEventListener("click", () => {
+    const latest = currentMentionQuery(input);
+    if (!latest) return;
+    input.value = `${input.value.slice(0, latest.start)}@${button.dataset.mentionHandle} ${input.value.slice(latest.end)}`;
+    input.focus();
+    input.selectionStart = input.selectionEnd = latest.start + button.dataset.mentionHandle.length + 2;
+    updateMentionSuggestions();
+  }));
 }
 
 function syncCreateRoleAccessVisibility() {
@@ -740,7 +796,7 @@ function renderProfileRoleTools(profile) {
   const tools = $("#profile-role-tools");
   const server = state.activeServer;
   const member = server?.members?.find((item) => item.id === profile.id);
-  const canManage = Boolean(server?.permissions?.includes("members.manage") && member && profile.id !== state.user.id);
+  const canManage = Boolean(server?.permissions?.includes("members.manage") && member);
   tools.classList.toggle("hidden", !canManage);
   tools.dataset.userId = profile.id;
   if (!canManage) return;
@@ -863,7 +919,7 @@ function renderRoles() {
   const roles = state.activeServer?.roles || [];
   $("#role-list").innerHTML = roles.map((role) => {
     const permissionCount = Array.isArray(role.permissions) ? role.permissions.length : 0;
-    const badge = role.name === "Owner" ? "lider" : permissionCount ? `${permissionCount} izin` : "etiket";
+    const badge = role.name === "Owner" ? "lider" : role.role_hoist ? "ayri grup" : permissionCount ? `${permissionCount} izin` : "etiket";
     return `
     <button class="role-item role-template-card" data-role-id="${role.id}" type="button" style="--role-color:${escapeHtml(role.color)}">
       <span class="role-dot" style="background:${escapeHtml(role.color)}"></span>
@@ -898,6 +954,7 @@ async function openChannel(channel) {
   $("#voice-channel-view").classList.toggle("hidden", channel.type !== "voice");
   $("#server-view").classList.remove("channels-open");
   if (channel.type === "voice") {
+    $("#mention-suggestions")?.classList.add("hidden");
     $("#voice-channel-name").textContent = channel.name;
     $(".voice-room-header p").textContent = channel.quality_mode === "data"
       ? "Veri tasarruflu, kararlı ses ve görüntü modu."
@@ -908,6 +965,7 @@ async function openChannel(channel) {
     return;
   }
   await loadMessages();
+  updateMentionSuggestions();
 }
 
 function openChannelSettings() {
@@ -1400,6 +1458,8 @@ async function setOutgoingVideo(track, stream, mode) {
   });
   $("#local-video").srcObject = stream;
   $("#local-video-tile").classList.remove("hidden");
+  $("#local-video-tile").classList.toggle("camera-mode", mode === "camera");
+  $("#local-video-tile").classList.toggle("screen-mode", mode === "screen");
   syncVoiceStage();
   setVoiceControl("camera-voice-button", "▣", mode === "camera" ? "Kapat" : "Kamera", mode === "camera");
   setVoiceControl("screen-voice-button", "▤", mode === "screen" ? "Durdur" : "Ekran", mode === "screen");
@@ -1421,6 +1481,7 @@ async function stopOutgoingVideo() {
   stream?.getTracks().forEach((track) => track.stop());
   $("#local-video").srcObject = null;
   $("#local-video-tile").classList.add("hidden");
+  $("#local-video-tile").classList.remove("camera-mode", "screen-mode");
   setVoiceControl("camera-voice-button", "▣", "Kamera");
   setVoiceControl("screen-voice-button", "▤", "Ekran");
   syncVoiceStage();
@@ -1474,6 +1535,7 @@ async function toggleCamera() {
 async function toggleScreenShare() {
   if (!state.voice.roomId) return;
   if (state.voice.videoMode === "screen") return stopOutgoingVideo();
+  if (!mediaFeatureAvailable("screen")) return;
   if (!navigator.mediaDevices?.getDisplayMedia) {
     return notify("Bu tarayıcı ekran paylaşımını desteklemiyor", true);
   }
@@ -1490,23 +1552,6 @@ async function toggleScreenShare() {
     await setOutgoingVideo(stream.getVideoTracks()[0], stream, "screen");
   } catch (error) {
     if (error.name !== "NotAllowedError") notify("Ekran paylaşımı başlatılamadı", true);
-  }
-}
-
-async function toggleScreenShare() {
-  if (!state.voice.roomId) return;
-  if (state.voice.videoMode === "screen") return stopOutgoingVideo();
-  if (!mediaFeatureAvailable("screen")) return;
-  try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: false
-    });
-    const [track] = stream.getVideoTracks();
-    if (!track) throw new Error("Ekran goruntusu baslatilamadi");
-    await setOutgoingVideo(track, stream, "screen");
-  } catch (error) {
-    if (error.name !== "NotAllowedError") notify(error.message || "Ekran paylasimi baslatilamadi", true);
   }
 }
 
@@ -1567,7 +1612,7 @@ function messageTemplate(message) {
   const date = new Date(message.created_at || message.createdAt);
   return `<article class="message"><span class="avatar">${escapeHtml(initials(message.author_name || message.authorName))}</span>
     <div class="message-body"><div class="message-meta"><strong>${escapeHtml(message.author_name || message.authorName)}</strong><small>${date.toLocaleString("tr-TR")}</small></div>
-    <p>${escapeHtml(message.content)}</p></div></article>`;
+    <p>${formatMessageContent(message.content)}</p></div></article>`;
 }
 
 function buildPermissionGrid(selected = []) {
@@ -1580,6 +1625,7 @@ function editRole(role) {
   $("#role-name-input").value = role.name;
   $("#role-color-input").value = role.color;
   $("#role-icon-input").value = role.role_icon || roleIcon(role);
+  $("#role-hoist-input").checked = Boolean(role.role_hoist);
   buildPermissionGrid(role.permissions || []);
 }
 
@@ -1942,10 +1988,17 @@ $("#message-form").addEventListener("submit", async (event) => {
   try {
     await api(`/api/channels/${state.activeChannel.id}/messages`, { method: "POST", body: JSON.stringify({ content }) });
     $("#message-input").value = "";
+    $("#mention-suggestions").classList.add("hidden");
     await loadMessages();
   } catch (error) {
     notify(error.message, true);
   }
+});
+
+$("#message-input").addEventListener("input", updateMentionSuggestions);
+$("#message-input").addEventListener("keyup", updateMentionSuggestions);
+$("#message-input").addEventListener("blur", () => {
+  setTimeout(() => $("#mention-suggestions").classList.add("hidden"), 120);
 });
 
 $("#channel-settings-form").addEventListener("submit", async (event) => {
@@ -2182,6 +2235,7 @@ $("#role-form").addEventListener("submit", async (event) => {
     name: $("#role-name-input").value,
     color: $("#role-color-input").value,
     roleIcon: $("#role-icon-input").value,
+    roleHoist: $("#role-hoist-input").checked,
     permissions: $$("input[name=permission]:checked").map((input) => input.value)
   };
   try {

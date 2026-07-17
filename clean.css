@@ -234,10 +234,63 @@
   background: #0d0e10 !important;
 }
 
+.mention {
+  display: inline-flex;
+  padding: 1px 6px;
+  border: 1px solid #6b542d;
+  border-radius: 999px;
+  color: #ffe7a4;
+  background: #21180b;
+  font-weight: 900;
+}
+
+.mention-suggestions {
+  display: flex;
+  gap: 8px;
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 10px 22px 0;
+  overflow-x: auto;
+}
+
+.mention-suggestions button {
+  min-width: 170px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid #30291e;
+  border-radius: 13px;
+  color: #fff1c8;
+  background: #111113;
+  text-align: left;
+}
+
+.mention-suggestions button:hover {
+  border-color: #8c6b32;
+  background: #1b1710;
+}
+
 .member-list {
   display: grid;
   gap: 8px;
   padding: 14px !important;
+}
+
+.member-role-section {
+  display: grid;
+  gap: 8px;
+}
+
+.member-role-section > strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 4px 3px;
+  color: #d7b56a;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
 }
 
 .member-item {
@@ -361,6 +414,13 @@
 .role-template-card {
   min-height: 48px !important;
   border-radius: 13px !important;
+}
+
+.role-hoist-switch {
+  padding: 12px !important;
+  border: 1px solid #30291e !important;
+  border-radius: 14px !important;
+  background: #121315 !important;
 }
 
 .role-icon-badge,
@@ -493,6 +553,10 @@
 .voice-video-tile#local-video-tile {
   border-color: #39b56b !important;
   box-shadow: 0 0 0 1px #39b56b55, 0 18px 40px #0008 !important;
+}
+
+.voice-video-tile#local-video-tile video {
+  transform: none !important;
 }
 
 .voice-dock {

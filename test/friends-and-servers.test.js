@@ -29,6 +29,8 @@ test("server deletion is owner-only and friends can use direct messages", () => 
   assert.match(app, /closeDmThread/);
   assert.match(app, /openMessengerPage/);
   assert.match(app, /loadMessageRequests/);
+  assert.match(app, /formatMessageContent/);
+  assert.match(app, /updateMentionSuggestions/);
   assert.match(app, /activeDmTab/);
   assert.match(app, /renderDmTabContent/);
   assert.match(app, /notificationRows/);
@@ -39,6 +41,7 @@ test("server deletion is owner-only and friends can use direct messages", () => 
   assert.match(app, /channel-template-item/);
   assert.match(app, /role-template-card/);
   assert.match(html, /id="dm-back-button"/);
+  assert.match(html, /mention-suggestions/);
   assert.match(html, /id="message-request-list"/);
   assert.match(html, /id="dm-notification-list"/);
   assert.match(html, /messenger-quick-tabs/);
@@ -61,6 +64,7 @@ test("server deletion is owner-only and friends can use direct messages", () => 
   assert.match(cleanCss, /\.messenger-page \.friends-layout/);
   assert.match(cleanCss, /\.messenger-page \.friend-section/);
   assert.match(cleanCss, /\.dm-tab-content/);
+  assert.match(cleanCss, /\.mention-suggestions/);
   assert.match(cleanCss, /#server-dm-setting/);
   assert.match(css, /\.friends-modal\.dm-open/);
 });

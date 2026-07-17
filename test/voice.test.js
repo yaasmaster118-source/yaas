@@ -21,6 +21,7 @@ test("voice client includes WebRTC and microphone controls", () => {
 
 test("voice client supports camera and screen sharing", () => {
   const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+  const cleanCss = fs.readFileSync(path.join(__dirname, "..", "clean.css"), "utf8");
   assert.match(app, /getDisplayMedia/);
   assert.match(app, /facingMode: "user"/);
   assert.match(app, /replaceTrack/);
@@ -29,6 +30,9 @@ test("voice client supports camera and screen sharing", () => {
   assert.doesNotMatch(app, /onnegotiationneeded/);
   assert.match(app, /toggleCamera/);
   assert.match(app, /toggleScreenShare/);
+  assert.equal((app.match(/async function toggleScreenShare/g) || []).length, 1);
+  assert.match(app, /camera-mode/);
+  assert.match(cleanCss, /transform: none !important/);
 });
 
 test("voice permissions and TURN configuration are enforced by the server", () => {

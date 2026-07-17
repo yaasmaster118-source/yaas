@@ -151,6 +151,7 @@
             </div>
             <div class="message-view hidden" id="message-view">
               <div class="message-list" id="message-list"></div>
+              <div class="mention-suggestions hidden" id="mention-suggestions"></div>
               <form class="message-form" id="message-form">
                 <input id="message-input" maxlength="4000" placeholder="Mesaj gönder..." autocomplete="off">
                 <button class="primary" type="submit">➤</button>
@@ -361,6 +362,7 @@
                   <label>Rol adı<input id="role-name-input" maxlength="30" required></label>
                   <label>Renk<input id="role-color-input" type="color" value="#8d7aff"></label>
                   <label>Rol ikonu<input id="role-icon-input" maxlength="8" placeholder="👑, 🛡, ⭐"></label>
+                  <label class="setting-switch role-hoist-switch"><span><strong>Uyeleri ayri goster</strong><small>Bu role sahip kisiler uye listesinde ayri baslik altinda dursun.</small></span><input id="role-hoist-input" type="checkbox"></label>
                   <div class="permission-grid" id="permission-grid"></div>
                   <p class="form-error"></p>
                   <button class="primary" type="submit">Rolü kaydet</button>
