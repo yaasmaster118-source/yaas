@@ -188,6 +188,52 @@ function resizeAvatarFile(file) {
   });
 }
 
+function resizeServerLogoFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith("image/")) {
+      reject(new Error("Lutfen bir fotograf sec"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Fotograf okunamadi"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Fotograf hazirlanamadi"));
+      image.onload = () => {
+        const size = 144;
+        const scale = Math.min(1, size / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.68));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function saveActiveServerLogo(logoUrl) {
+  if (!state.activeServer?.server?.id) return;
+  const serverId = state.activeServer.server.id;
+  const data = await api(`/api/servers/${serverId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: $("#settings-server-name-input").value || state.activeServer.server.name,
+      description: $("#settings-server-description-input").value ?? state.activeServer.server.description,
+      logoUrl,
+      iconColor: $("#settings-server-color-input").value || state.activeServer.server.icon_color
+    })
+  });
+  mergeServerSummary(data.server || { id: serverId, logo_url: logoUrl || "" });
+  await loadServers(serverId);
+  openModal("manage-server-modal");
+  switchSettingsTab("overview");
+}
+
 function setVoiceControl(buttonId, icon, label, active = false) {
   const button = $(`#${buttonId}`);
   button.innerHTML = `<span>${icon}</span><small>${label}</small>`;
@@ -296,6 +342,24 @@ function renderServers() {
     </button>`).join("");
   $("#server-list-empty").classList.toggle("hidden", state.servers.length > 0);
   $$(".server-item", list).forEach((button) => button.addEventListener("click", () => openServer(button.dataset.serverId)));
+}
+
+function mergeServerSummary(server) {
+  if (!server?.id) return;
+  const index = state.servers.findIndex((item) => item.id === server.id);
+  if (index >= 0) {
+    state.servers[index] = { ...state.servers[index], ...server };
+  } else {
+    state.servers.unshift(server);
+  }
+  if (state.activeServer?.server?.id === server.id) {
+    state.activeServer.server = { ...state.activeServer.server, ...server };
+    setServerIcon($("#active-server-logo"), state.activeServer.server);
+    $("#active-server-name").textContent = state.activeServer.server.name;
+    $("#active-server-description").textContent = state.activeServer.server.description || `${state.activeServer.members?.length || server.member_count || 0} üye`;
+    $("#settings-server-logo-url-input").value = state.activeServer.server.logo_url || "";
+  }
+  renderServers();
 }
 
 async function openServer(serverId, preferredChannelId = null) {
@@ -1766,7 +1830,7 @@ $("#server-logo-file-input").addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
   try {
-    $("#server-logo-url-input").value = await resizeAvatarFile(file);
+    $("#server-logo-url-input").value = await resizeServerLogoFile(file);
     notify("Sunucu logosu hazir");
   } catch (error) {
     notify(error.message, true);
@@ -1780,8 +1844,10 @@ $("#settings-server-logo-file-input").addEventListener("change", async (event) =
   const file = event.target.files?.[0];
   if (!file) return;
   try {
-    $("#settings-server-logo-url-input").value = await resizeAvatarFile(file);
-    notify("Sunucu logosu hazir");
+    const logoUrl = await resizeServerLogoFile(file);
+    $("#settings-server-logo-url-input").value = logoUrl;
+    await saveActiveServerLogo(logoUrl);
+    notify("Sunucu logosu kaydedildi");
   } catch (error) {
     notify(error.message, true);
   } finally {
@@ -2189,7 +2255,7 @@ $("#server-settings-form").addEventListener("submit", async (event) => {
   formError.textContent = "";
   const serverId = state.activeServer.server.id;
   try {
-    await api(`/api/servers/${serverId}`, {
+    const data = await api(`/api/servers/${serverId}`, {
       method: "PATCH",
       body: JSON.stringify({
         name: $("#settings-server-name-input").value,
@@ -2198,7 +2264,8 @@ $("#server-settings-form").addEventListener("submit", async (event) => {
         iconColor: $("#settings-server-color-input").value
       })
     });
-    await openServer(serverId);
+    mergeServerSummary(data.server);
+    await loadServers(serverId);
     openModal("manage-server-modal");
     switchSettingsTab("overview");
     notify("Sunucu bilgileri güncellendi");
