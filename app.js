@@ -219,7 +219,7 @@ function resizeServerLogoFile(file) {
 async function saveActiveServerLogo(logoUrl) {
   if (!state.activeServer?.server?.id) return;
   const serverId = state.activeServer.server.id;
-  await api(`/api/servers/${serverId}`, {
+  const data = await api(`/api/servers/${serverId}`, {
     method: "PATCH",
     body: JSON.stringify({
       name: $("#settings-server-name-input").value || state.activeServer.server.name,
@@ -228,11 +228,7 @@ async function saveActiveServerLogo(logoUrl) {
       iconColor: $("#settings-server-color-input").value || state.activeServer.server.icon_color
     })
   });
-  if (state.activeServer?.server) state.activeServer.server.logo_url = logoUrl || "";
-  const server = state.servers.find((item) => item.id === serverId);
-  if (server) server.logo_url = logoUrl || "";
-  renderServers();
-  if (state.activeServer?.server) setServerIcon($("#active-server-logo"), state.activeServer.server);
+  mergeServerSummary(data.server || { id: serverId, logo_url: logoUrl || "" });
   await loadServers(serverId);
   openModal("manage-server-modal");
   switchSettingsTab("overview");
@@ -346,6 +342,24 @@ function renderServers() {
     </button>`).join("");
   $("#server-list-empty").classList.toggle("hidden", state.servers.length > 0);
   $$(".server-item", list).forEach((button) => button.addEventListener("click", () => openServer(button.dataset.serverId)));
+}
+
+function mergeServerSummary(server) {
+  if (!server?.id) return;
+  const index = state.servers.findIndex((item) => item.id === server.id);
+  if (index >= 0) {
+    state.servers[index] = { ...state.servers[index], ...server };
+  } else {
+    state.servers.unshift(server);
+  }
+  if (state.activeServer?.server?.id === server.id) {
+    state.activeServer.server = { ...state.activeServer.server, ...server };
+    setServerIcon($("#active-server-logo"), state.activeServer.server);
+    $("#active-server-name").textContent = state.activeServer.server.name;
+    $("#active-server-description").textContent = state.activeServer.server.description || `${state.activeServer.members?.length || server.member_count || 0} üye`;
+    $("#settings-server-logo-url-input").value = state.activeServer.server.logo_url || "";
+  }
+  renderServers();
 }
 
 async function openServer(serverId, preferredChannelId = null) {
@@ -2241,7 +2255,7 @@ $("#server-settings-form").addEventListener("submit", async (event) => {
   formError.textContent = "";
   const serverId = state.activeServer.server.id;
   try {
-    await api(`/api/servers/${serverId}`, {
+    const data = await api(`/api/servers/${serverId}`, {
       method: "PATCH",
       body: JSON.stringify({
         name: $("#settings-server-name-input").value,
@@ -2250,6 +2264,7 @@ $("#server-settings-form").addEventListener("submit", async (event) => {
         iconColor: $("#settings-server-color-input").value
       })
     });
+    mergeServerSummary(data.server);
     await loadServers(serverId);
     openModal("manage-server-modal");
     switchSettingsTab("overview");

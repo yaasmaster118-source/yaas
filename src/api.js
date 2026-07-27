@@ -38,6 +38,19 @@ function profileImageValue(value) {
   }
 }
 
+async function serverSummary(serverId) {
+  const result = await query(
+    `SELECT s.id, s.name, s.description, s.icon_color, s.logo_url, s.owner_id, s.created_at,
+            COUNT(m.user_id)::int AS member_count
+       FROM servers s
+       LEFT JOIN memberships m ON m.server_id = s.id
+      WHERE s.id = $1
+      GROUP BY s.id`,
+    [serverId]
+  );
+  return result.rows[0] || null;
+}
+
 function avatarFrame(value) {
   return ["none", "gold", "emerald", "royal", "neon"].includes(value) ? value : "none";
 }
@@ -221,7 +234,7 @@ async function createServer(client, user, body) {
       );
     }
   }
-  return { id: serverId, name: text(body.name, 40) };
+  return await serverSummary(serverId);
 }
 
 async function handleApi(request, response, helpers) {
@@ -673,7 +686,7 @@ async function handleApi(request, response, helpers) {
           logoUrl
         ]
       );
-      return sendJson(response, 200, { ok: true });
+      return sendJson(response, 200, { ok: true, server: await serverSummary(serverId) });
     }
     if (method === "DELETE" && serverRoute) {
       const serverId = serverRoute[1];
