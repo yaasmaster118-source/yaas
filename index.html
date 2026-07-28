@@ -8,10 +8,9 @@
     <meta name="theme-color" content="#080808">
     <meta property="og:title" content="YAAS | Yeni Nesil Topluluk Platformu">
     <meta property="og:description" content="Kendi topluluğunu kur, rollerini ve kanallarını yönet.">
-    <meta property="og:image" content="/assets/yaas-main-logo.webp">
+    <meta property="og:image" content="/assets/yaas-main-logo.svg">
     <title>YAAS 1.1 | Topluluk Platformu</title>
-    <link rel="icon" href="assets/yaas-main-icon.png" type="image/png">
-    <link rel="apple-touch-icon" href="assets/yaas-main-icon.png">
+    <link rel="icon" href="assets/yaas-main-logo.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="stylesheet" href="styles.css?v=1.1.23">
     <link rel="stylesheet" href="clean.css?v=1.1.23">
@@ -77,7 +76,7 @@
       <aside class="server-panel" id="server-panel">
         <header>
           <div class="wordmark video-wordmark">
-            <img class="brand-loop-fallback" src="assets/yaas-main-logo.webp" alt="YAAS">
+            <img class="brand-loop-fallback" src="assets/yaas-main-logo.svg" alt="YAAS">
             <video class="brand-loop-video" autoplay muted loop playsinline preload="metadata" aria-label="YAAS" oncanplay="this.classList.add('ready')" onerror="this.classList.remove('ready')">
               <source src="assets/yaas-brand-loop.mp4" type="video/mp4">
               <source src="assets/yaas-brand-loop.mov" type="video/quicktime">
@@ -85,6 +84,14 @@
           </div>
           <button class="icon-button mobile-close" data-close-panel="server-panel" type="button">×</button>
         </header>
+        <nav class="main-side-nav" aria-label="YAAS ana menü">
+          <button class="active" id="nav-home-button" type="button" onclick="document.getElementById('server-view')?.classList.add('hidden');document.getElementById('welcome-view')?.classList.remove('hidden');document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-home-button'))"><span>⌂</span>Ana Sayfa</button>
+          <button id="nav-friends-button" type="button" onclick="window.state&&(state.activeDmTab='friends');window.openMessengerPage&&openMessengerPage();document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-friends-button'))"><span>♙</span>Arkadaşlar</button>
+          <button id="nav-dms-button" type="button" onclick="window.state&&(state.activeDmTab='requests');window.openMessengerPage&&openMessengerPage();document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-dms-button'))"><span>✉</span>DM'ler <b class="notification-badge hidden" id="nav-notification-badge">0</b></button>
+          <button id="nav-streams-button" type="button" onclick="document.getElementById('server-view')?.classList.add('hidden');document.getElementById('welcome-view')?.classList.remove('hidden');setTimeout(()=>document.querySelector('.stream-grid')?.scrollIntoView({behavior:'smooth',block:'center'}),50);document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-streams-button'))"><span>◉</span>Yayınlar</button>
+          <button id="nav-events-button" type="button" onclick="document.getElementById('server-view')?.classList.add('hidden');document.getElementById('welcome-view')?.classList.remove('hidden');setTimeout(()=>document.querySelector('.event-list')?.scrollIntoView({behavior:'smooth',block:'center'}),50);document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-events-button'))"><span>▣</span>Etkinlikler</button>
+          <button id="nav-settings-button" type="button" onclick="window.fillProfileSettings&&fillProfileSettings();window.openModal&&openModal('profile-settings-modal');document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-settings-button'))"><span>⚙</span>Ayarlar</button>
+        </nav>
         <div class="server-actions">
           <button class="primary" data-open-modal="create-server-modal" type="button">＋ Sunucu oluştur</button>
           <button class="secondary" data-open-modal="join-server-modal" type="button">Davetle katıl</button>
@@ -108,7 +115,7 @@
         <header class="mobile-header">
           <button class="icon-button" data-open-panel="server-panel" type="button">☰</button>
           <div class="wordmark video-wordmark">
-            <img class="brand-loop-fallback" src="assets/yaas-main-logo.webp" alt="YAAS">
+            <img class="brand-loop-fallback" src="assets/yaas-main-logo.svg" alt="YAAS">
             <video class="brand-loop-video" autoplay muted loop playsinline preload="metadata" aria-label="YAAS" oncanplay="this.classList.add('ready')" onerror="this.classList.remove('ready')">
               <source src="assets/yaas-brand-loop.mp4" type="video/mp4">
               <source src="assets/yaas-brand-loop.mov" type="video/quicktime">
@@ -117,15 +124,91 @@
           <button class="icon-button" data-open-panel="member-panel" type="button">♙</button>
         </header>
 
-        <section class="welcome-view" id="welcome-view">
-          <img class="welcome-logo" src="assets/yaas-main-logo.webp" alt="YAAS">
-          <span class="eyebrow">BAŞLAMAYA HAZIR</span>
-          <h2>Alanını kendin oluştur.</h2>
-          <p>YAAS boş başlar. Yalnızca oluşturduğun veya katıldığın gerçek sunucular burada görünür.</p>
-          <div>
-            <button class="primary" data-open-modal="create-server-modal" type="button">İlk sunucunu oluştur</button>
-            <button class="secondary" data-open-modal="join-server-modal" type="button">Davet kodu kullan</button>
+        <section class="welcome-view yaas-home" id="welcome-view">
+          <div class="home-main">
+            <header class="home-topbar">
+              <label class="home-search">
+                <span>⌕</span>
+                <input placeholder="Ara..." autocomplete="off">
+              </label>
+              <div class="home-top-actions" aria-label="Bildirimler">
+                <button class="icon-button" type="button" title="Bildirimler">♧</button>
+                <button class="icon-button" id="home-open-friends" type="button" title="Mesajlar">✉</button>
+              </div>
+            </header>
+
+            <div class="home-greeting">
+              <div>
+                <h2>Hoş geldin, <span id="home-display-name">KSTROY</span> <b>👋</b></h2>
+                <p>Bugün ne yapmak istersin?</p>
+              </div>
+              <button class="secondary" id="home-profile-shortcut" type="button">Durumunu güncelle ✎</button>
+            </div>
+
+            <article class="home-hero">
+              <div class="hero-glow"></div>
+              <img class="welcome-logo" src="assets/yaas-main-logo.svg" alt="YAAS">
+              <strong>You Are A Star</strong>
+              <p>Topluluğunu kur, arkadaşlarınla bağlantıda kal, yayın yap ve daha fazlasını keşfet.</p>
+              <div class="home-hero-actions">
+                <button class="primary" data-open-modal="create-server-modal" type="button">Sunucu oluştur</button>
+                <button class="secondary" data-open-modal="join-server-modal" type="button">Davet kodu kullan</button>
+              </div>
+            </article>
+
+            <section class="home-section">
+              <h3>Hızlı Erişim</h3>
+              <div class="quick-grid">
+                <button class="quick-card" data-open-modal="join-server-modal" type="button"><span>♚</span><strong>Arkadaşlarını Davet Et</strong><small>Arkadaşlarını YAAS'a getir.</small></button>
+                <button class="quick-card" data-open-modal="create-server-modal" type="button"><span>◉</span><strong>Yayın Başlat</strong><small>Topluluğuna yayın yap.</small></button>
+                <button class="quick-card" data-open-modal="create-server-modal" type="button"><span>▣</span><strong>Etkinlik Oluştur</strong><small>Etkinlik planla ve duyur.</small></button>
+                <button class="quick-card" data-open-modal="join-server-modal" type="button"><span>⌖</span><strong>Sunucu Keşfet</strong><small>Yeni topluluklara katıl.</small></button>
+              </div>
+            </section>
+
+            <section class="home-section">
+              <h3>Popüler Yayınlar</h3>
+              <div class="stream-grid" aria-label="Öne çıkan yayın kartları">
+                <article class="stream-card stream-one"><b>● YAYINDA</b><div><strong>KSTROY</strong><small>PUBG Mobile</small></div><em>◔ 1.2K</em></article>
+                <article class="stream-card stream-two"><b>● YAYINDA</b><div><strong>Mortwain</strong><small>Valorant</small></div><em>◔ 856</em></article>
+                <article class="stream-card stream-three"><b>● YAYINDA</b><div><strong>ErenX</strong><small>Minecraft</small></div><em>◔ 643</em></article>
+                <article class="stream-card stream-four"><b>● YAYINDA</b><div><strong>Zeyrox</strong><small>Just Chatting</small></div><em>◔ 412</em></article>
+              </div>
+            </section>
+
+            <section class="home-section home-feature-area">
+              <h3>YAAS'ta Neler Olabilir?</h3>
+              <div class="feature-grid">
+                <article><span>SOHBET & TOPLULUK</span><strong>Kanallar, roller ve özel alanlar.</strong></article>
+                <article><span>YAYIN & CANLI YAYIN</span><strong>Ses, kamera ve ekran paylaşımı alanı.</strong></article>
+                <article><span>ETKİNLİKLER</span><strong>Turnuvalar, duyurular ve katılım.</strong></article>
+                <article><span>PROFİL & SEVİYE</span><strong>Rozetler, notlar ve özel profil.</strong></article>
+              </div>
+            </section>
           </div>
+
+          <aside class="home-side">
+            <section class="home-side-card">
+              <header><strong>Çevrimiçi Üyeler</strong><span>231</span></header>
+              <div class="online-list">
+                <button type="button"><i>👑</i><strong>KSTROY</strong><small>You Are A Star</small></button>
+                <button type="button"><i>✦</i><strong>YAAS Bot</strong><small>yaas.gg</small></button>
+                <button type="button"><i>◎</i><strong>Selinay</strong><small>Oyun oynuyor</small></button>
+                <button type="button"><i>◈</i><strong>Mortwain</strong><small>Yayın yapıyor</small></button>
+                <button type="button"><i>◇</i><strong>ErenX</strong><small>Valorant</small></button>
+                <button type="button"><i>●</i><strong>Berke</strong><small>Çevrimiçi</small></button>
+              </div>
+            </section>
+
+            <section class="home-side-card">
+              <header><strong>Yaklaşan Etkinlikler</strong><span>Tümü</span></header>
+              <div class="event-list">
+                <article><b>🏆</b><div><strong>YAAS Turnuvası</strong><small>15 Haziran · 20:00</small></div></article>
+                <article><b>⚔</b><div><strong>PUBG Mobile Scrim</strong><small>16 Haziran · 18:00</small></div></article>
+                <article><b>◆</b><div><strong>Valorant 5v5 Cup</strong><small>18 Haziran · 21:00</small></div></article>
+              </div>
+            </section>
+          </aside>
         </section>
 
         <section class="server-view hidden" id="server-view">

@@ -26,6 +26,10 @@ test("channels support categories and roles enforce hierarchy", () => {
   assert.match(app, /channel-category-input/);
   assert.match(app, /category-form/);
   assert.match(app, /serverIconMarkup/);
+  assert.match(app, /await loadServers\(serverId\)/);
+  assert.match(app, /resizeServerLogoFile/);
+  assert.match(app, /saveActiveServerLogo/);
+  assert.match(app, /Sunucu logosu kaydedildi/);
   assert.match(app, /function roleIcon/);
   assert.match(app, /role_hoist/);
   assert.match(app, /profile-role-tools/);
@@ -37,6 +41,7 @@ test("channels support categories and roles enforce hierarchy", () => {
   assert.match(html, /data-server-template="gaming"/);
   assert.match(html, /data-settings-panel="overview"/);
   assert.match(html, /settings-server-logo-url-input/);
+  assert.match(html, /settings-server-logo-url-input" maxlength="350000"/);
   assert.match(html, /role-icon-input/);
   assert.match(html, /role-hoist-input/);
   assert.match(html, /profile-role-select/);

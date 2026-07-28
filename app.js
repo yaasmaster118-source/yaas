@@ -287,6 +287,7 @@ function showApp(user) {
   $("#auth-screen").classList.add("hidden");
   $("#app").classList.remove("hidden");
   $("#account-name").textContent = user.display_name || user.displayName;
+  $("#home-display-name").textContent = user.display_name || user.displayName || "KSTROY";
   $("#account-handle").textContent = `@${user.handle}`;
   setAvatar($("#account-avatar"), user);
   $("#account-owner-badge").classList.toggle("hidden", !user.is_site_owner);
@@ -294,12 +295,30 @@ function showApp(user) {
 
 function updateNotificationBadges(count) {
   const total = Number(count || 0);
-  ["#friends-notification-badge", "#mobile-notification-badge"].forEach((selector) => {
+  ["#friends-notification-badge", "#mobile-notification-badge", "#nav-notification-badge"].forEach((selector) => {
     const badge = $(selector);
     if (!badge) return;
     badge.textContent = total > 99 ? "99+" : String(total);
     badge.classList.toggle("hidden", total <= 0);
   });
+}
+
+function setSideNavActive(activeId) {
+  $$(".main-side-nav button").forEach((button) => {
+    button.classList.toggle("active", button.id === activeId);
+  });
+}
+
+function showHomeView() {
+  state.activeServer = null;
+  state.activeChannel = null;
+  $("#server-view").classList.add("hidden");
+  $("#welcome-view").classList.remove("hidden");
+  $("#server-panel").classList.remove("open");
+  $("#server-view").classList.remove("channels-open");
+  $("#member-panel").classList.remove("open");
+  setSideNavActive("nav-home-button");
+  renderServers();
 }
 
 async function loadNotificationSummary() {
@@ -1783,6 +1802,47 @@ $$("[data-provider]").forEach((button) => button.addEventListener("click", () =>
 }));
 $("#account-settings-button").addEventListener("click", (event) => {
   if (event.target.closest("#logout-button")) return;
+  fillProfileSettings();
+  openModal("profile-settings-modal");
+});
+$("#home-profile-shortcut")?.addEventListener("click", () => {
+  fillProfileSettings();
+  openModal("profile-settings-modal");
+});
+$("#home-open-friends")?.addEventListener("click", async () => {
+  await openMessengerPage();
+});
+$("#nav-home-button")?.addEventListener("click", showHomeView);
+$("#nav-friends-button")?.addEventListener("click", async () => {
+  try {
+    state.activeDmTab = "friends";
+    setSideNavActive("nav-friends-button");
+    await openMessengerPage();
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+$("#nav-dms-button")?.addEventListener("click", async () => {
+  try {
+    state.activeDmTab = "requests";
+    setSideNavActive("nav-dms-button");
+    await openMessengerPage();
+  } catch (error) {
+    notify(error.message, true);
+  }
+});
+$("#nav-streams-button")?.addEventListener("click", () => {
+  showHomeView();
+  setSideNavActive("nav-streams-button");
+  document.querySelector(".stream-grid")?.scrollIntoView({ behavior: "smooth", block: "center" });
+});
+$("#nav-events-button")?.addEventListener("click", () => {
+  showHomeView();
+  setSideNavActive("nav-events-button");
+  document.querySelector(".event-list")?.scrollIntoView({ behavior: "smooth", block: "center" });
+});
+$("#nav-settings-button")?.addEventListener("click", () => {
+  setSideNavActive("nav-settings-button");
   fillProfileSettings();
   openModal("profile-settings-modal");
 });
