@@ -8,6 +8,7 @@ const { initializeDatabase, query } = require("./src/database");
 const port = Number(process.env.PORT) || 4173;
 const root = __dirname;
 const voiceRooms = new Map();
+const streamRooms = new Map();
 const MAX_JSON_BYTES = 450_000;
 const MAX_FORM_BYTES = 80_000;
 const RATE_LIMITS = {
@@ -38,7 +39,7 @@ const server = http.createServer((request, response) => {
   applySecurityHeaders(response);
   if (!applyRateLimit(request, response)) return;
 
-  if (request.url.startsWith("/api/") && !request.url.startsWith("/api/voice/")) {
+  if (request.url.startsWith("/api/") && !request.url.startsWith("/api/voice/") && !request.url.startsWith("/api/stream-rtc/")) {
     const isAppleCallback = request.url.startsWith("/api/auth/oauth/apple/callback");
     if (!isAppleCallback && !isSameOrigin(request)) {
       sendJson(response, 403, { error: "Geçersiz istek kaynağı" });
@@ -66,6 +67,15 @@ const server = http.createServer((request, response) => {
       return;
     }
     handleVoiceApi(request, response);
+    return;
+  }
+
+  if (request.url.startsWith("/api/stream-rtc/")) {
+    if (!isSameOrigin(request)) {
+      sendJson(response, 403, { error: "Geçersiz istek kaynağı" });
+      return;
+    }
+    handleStreamRtcApi(request, response);
     return;
   }
 
@@ -135,7 +145,7 @@ function clientIp(request) {
 function ratePolicy(request) {
   const pathname = request.url.split("?")[0];
   if (pathname.startsWith("/api/auth/")) return "auth";
-  if (pathname.startsWith("/api/voice/")) return "voice";
+  if (pathname.startsWith("/api/voice/") || pathname.startsWith("/api/stream-rtc/")) return "voice";
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) return "write";
   return "global";
 }
@@ -277,6 +287,21 @@ function cleanVoiceRooms() {
   }
 }
 
+async function cleanStreamRooms() {
+  const cutoff = Date.now() - 180_000;
+  for (const [streamId, room] of streamRooms) {
+    for (const [clientId, client] of room) {
+      if (client.lastSeen < cutoff) {
+        if (client.role === "broadcaster") {
+          await query("UPDATE stream_sessions SET status = 'ended', viewer_count = 0, ended_at = NOW() WHERE id = $1 AND user_id = $2", [streamId, client.userId]);
+        }
+        room.delete(clientId);
+      }
+    }
+    if (room.size === 0) streamRooms.delete(streamId);
+  }
+}
+
 function arrayValue(value) {
   if (Array.isArray(value)) return value;
   try {
@@ -343,6 +368,36 @@ async function canModerateVoiceTarget(serverId, actorUserId, targetUserId) {
   );
   const byUser = new Map(positions.rows.map((row) => [row.user_id, Number(row.position) || 0]));
   return (byUser.get(actorUserId) || 0) > (byUser.get(targetUserId) || 0);
+}
+
+async function streamAccess(streamId, userId) {
+  const streamResult = await query(
+    `SELECT ss.id, ss.user_id, ss.server_id, ss.title, ss.visibility, ss.status
+       FROM stream_sessions ss
+      WHERE ss.id = $1 AND ss.status = 'live'`,
+    [streamId]
+  );
+  const stream = streamResult.rows[0];
+  if (!stream) return null;
+  let canView = stream.visibility === "global" || stream.user_id === userId;
+  if (!canView && stream.visibility === "friends") {
+    const friendship = await query(
+      `SELECT 1 FROM friendships
+        WHERE status = 'accepted'
+          AND ((requester_id = $1 AND addressee_id = $2)
+            OR (requester_id = $2 AND addressee_id = $1))`,
+      [userId, stream.user_id]
+    );
+    canView = Boolean(friendship.rowCount);
+  }
+  if (!canView && stream.visibility === "server" && stream.server_id) {
+    const membership = await query(
+      "SELECT 1 FROM memberships WHERE server_id = $1 AND user_id = $2",
+      [stream.server_id, userId]
+    );
+    canView = Boolean(membership.rowCount);
+  }
+  return canView ? { ...stream, canBroadcast: stream.user_id === userId } : null;
 }
 
 async function handleVoiceApi(request, response) {
@@ -499,8 +554,193 @@ async function handleVoiceApi(request, response) {
   }
 }
 
+function streamPeersFor(room, role) {
+  return [...room.values()]
+    .filter((client) => role === "broadcaster" ? client.role === "viewer" : client.role === "broadcaster")
+    .map(({ id, name, role: peerRole, sourceReady, sourceMode }) => ({
+      id,
+      name,
+      role: peerRole,
+      sourceReady: Boolean(sourceReady),
+      sourceMode: sourceMode || null
+    }));
+}
+
+function streamParticipants(room) {
+  return [...room.values()].map(({ id, name, role, sourceReady, sourceMode }) => ({
+    id,
+    name,
+    role,
+    sourceReady: Boolean(sourceReady),
+    sourceMode: sourceMode || null
+  }));
+}
+
+async function handleStreamRtcApi(request, response) {
+  const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+
+  try {
+    await cleanStreamRooms();
+    if (request.method === "GET" && url.pathname === "/api/stream-rtc/config") {
+      const user = await getAuthenticatedUser(request);
+      if (!user) return sendJson(response, 401, { error: "Oturum gerekli" });
+      const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+      if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+        iceServers.push({
+          urls: process.env.TURN_URL.split(",").map((item) => item.trim()).filter(Boolean),
+          username: process.env.TURN_USERNAME,
+          credential: process.env.TURN_CREDENTIAL
+        });
+      }
+      return sendJson(response, 200, { iceServers });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/stream-rtc/join") {
+      const { streamId, clientId, name, role } = await readJson(request);
+      if (!streamId || !clientId) return sendJson(response, 400, { error: "Eksik yayın bilgisi" });
+      const user = await getAuthenticatedUser(request);
+      if (!user) return sendJson(response, 401, { error: "Oturum gerekli" });
+      const access = await streamAccess(streamId, user.id);
+      if (!access) return sendJson(response, 403, { error: "Bu yayını izleme iznin yok" });
+      const requestedRole = role === "broadcaster" ? "broadcaster" : "viewer";
+      if (requestedRole === "broadcaster" && !access.canBroadcast) {
+        return sendJson(response, 403, { error: "Bu yayını sadece yayın sahibi başlatabilir" });
+      }
+      if (!streamRooms.has(streamId)) streamRooms.set(streamId, new Map());
+      const room = streamRooms.get(streamId);
+      for (const [existingClientId, existingClient] of room) {
+        if ((existingClient.userId === user.id && existingClient.role === requestedRole) || (requestedRole === "broadcaster" && existingClient.role === "broadcaster")) {
+          room.delete(existingClientId);
+        }
+      }
+      const peers = streamPeersFor(room, requestedRole);
+      room.set(clientId, {
+        id: clientId,
+        userId: user.id,
+        name: String(name || user.display_name || "YAAS üyesi").slice(0, 40),
+        role: requestedRole,
+        sourceReady: false,
+        sourceMode: null,
+        lastSeen: Date.now(),
+        queue: []
+      });
+      return sendJson(response, 200, {
+        peers,
+        role: requestedRole,
+        canBroadcast: access.canBroadcast,
+        participants: streamParticipants(room)
+      });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/stream-rtc/chat") {
+      const { streamId, text } = await readJson(request);
+      const user = await getAuthenticatedUser(request);
+      if (!user) return sendJson(response, 401, { error: "Oturum gerekli" });
+      const access = await streamAccess(streamId, user.id);
+      if (!access) return sendJson(response, 403, { error: "Bu yayına erişimin yok" });
+      const room = streamRooms.get(streamId);
+      if (!room) return sendJson(response, 409, { error: "Yayın sohbeti henüz hazır değil" });
+      const message = typeof text === "string" ? text.trim() : "";
+      if (!message || message.length > 500) return sendJson(response, 400, { error: "Mesaj 1–500 karakter olmalı" });
+      room.chatLimits ||= new Map();
+      if (Date.now() - (room.chatLimits.get(user.id) || 0) < 1500) return sendJson(response, 429, { error: "Yeni mesaj için biraz bekle" });
+      room.chatLimits.set(user.id, Date.now());
+      room.messages ||= [];
+      room.messages.push({ id: require("crypto").randomUUID(), name: user.display_name || "YAAS üyesi", text: message, at: Date.now() });
+      if (room.messages.length > 100) room.messages.shift();
+      return sendJson(response, 201, { ok: true });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/stream-rtc/signal") {
+      const { streamId, from, to, signal } = await readJson(request);
+      const user = await getAuthenticatedUser(request);
+      const sender = streamRooms.get(streamId)?.get(from);
+      if (!user || !sender || sender.userId !== user.id) {
+        return sendJson(response, 403, { error: "Yayına bağlı değilsin" });
+      }
+      const target = streamRooms.get(streamId)?.get(to);
+      if (target) target.queue.push({ from, signal });
+      sender.lastSeen = Date.now();
+      return sendJson(response, 200, { ok: true });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/stream-rtc/state") {
+      const { streamId, clientId, sourceReady, sourceMode } = await readJson(request);
+      const user = await getAuthenticatedUser(request);
+      const client = streamRooms.get(streamId)?.get(clientId);
+      if (!user || !client || client.userId !== user.id || client.role !== "broadcaster") {
+        return sendJson(response, 403, { error: "Yayın durumu değiştirilemedi" });
+      }
+      client.sourceReady = Boolean(sourceReady);
+      client.sourceMode = client.sourceReady && ["camera", "screen"].includes(sourceMode) ? sourceMode : null;
+      client.lastSeen = Date.now();
+      for (const viewer of streamRooms.get(streamId).values()) {
+        if (viewer.id !== client.id) {
+          viewer.queue.push({ from: "system", signal: { type: "stream-source", ready: client.sourceReady, mode: client.sourceMode } });
+        }
+      }
+      return sendJson(response, 200, { ok: true });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/stream-rtc/leave") {
+      const { streamId, clientId } = await readJson(request);
+      const user = await getAuthenticatedUser(request);
+      const room = streamRooms.get(streamId);
+      const client = room?.get(clientId);
+      if (user && client?.userId === user.id) {
+        if (client.role === "broadcaster") {
+          await query("UPDATE stream_sessions SET status = 'ended', viewer_count = 0, ended_at = NOW() WHERE id = $1 AND user_id = $2", [streamId, user.id]);
+        }
+        room.delete(clientId);
+        if (client.role === "broadcaster") {
+          for (const viewer of room.values()) {
+            viewer.queue.push({ from: "system", signal: { type: "broadcaster-left" } });
+          }
+        }
+        if (room.size === 0) streamRooms.delete(streamId);
+      }
+      return sendJson(response, 200, { ok: true });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/stream-rtc/poll") {
+      const streamId = url.searchParams.get("streamId");
+      const clientId = url.searchParams.get("clientId");
+      const room = streamRooms.get(streamId);
+      const client = room?.get(clientId);
+      const user = await getAuthenticatedUser(request);
+      if (!client || !user || client.userId !== user.id) {
+        return sendJson(response, 404, { error: "Yayın bağlantısı bulunamadı" });
+      }
+      const access = await streamAccess(streamId, user.id);
+      if (!access) {
+        room.delete(clientId);
+        return sendJson(response, 403, { error: "Yayın erişimi kapandı" });
+      }
+      client.lastSeen = Date.now();
+      const signals = client.queue.splice(0);
+      const participants = streamParticipants(room);
+      const broadcaster = participants.find((participant) => participant.role === "broadcaster");
+      return sendJson(response, 200, {
+        signals,
+        participants,
+        broadcasterPresent: Boolean(broadcaster),
+        messages: room.messages || [],
+        sourceReady: Boolean(broadcaster?.sourceReady),
+        sourceMode: broadcaster?.sourceMode || null
+      });
+    }
+
+    sendJson(response, 404, { error: "Bulunamadı" });
+  } catch (error) {
+    sendJson(response, error.statusCode === 413 ? 413 : 400, {
+      error: error.statusCode === 413 ? "Istek cok buyuk" : "Gecersiz istek"
+    });
+  }
+}
+
 initializeDatabase()
   .then(() => {
+    setInterval(() => cleanStreamRooms().catch(() => {}), 30_000).unref();
     server.listen(port, () => {
       console.log(`YAAS is running at http://localhost:${port}`);
     });

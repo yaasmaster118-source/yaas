@@ -6,7 +6,10 @@ if (location.protocol === "file:") {
 
 const $ = (selector, parent = document) => parent.querySelector(selector);
 const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
-const UI_VERSION = "1.1.20";
+const UI_VERSION = "1.1.32";
+const isStudioWindow = new URLSearchParams(location.search).get("studio") === "1";
+let studioWindowRef = null;
+let activeStudio = null;
 
 if (localStorage.getItem("yaas:ui-version") !== UI_VERSION) {
   localStorage.setItem("yaas:ui-version", UI_VERSION);
@@ -27,7 +30,8 @@ const PERMISSIONS = {
   "voice.join": "Ses kanalına katıl",
   "voice.speak": "Ses kanalında konuş",
   "voice.mute_members": "Üyeleri sustur",
-  "invites.create": "Davet oluştur"
+  "invites.create": "Davet oluştur",
+  "streams.create": "Yayin ac"
 };
 
 const state = {
@@ -40,6 +44,30 @@ const state = {
   notifications: { friendRequests: 0, total: 0 },
   activeDm: null,
   activeDmTab: "friends",
+  streams: { friends: [], servers: [], global: [] },
+  activeStreamTab: "servers",
+  activeStream: null,
+  streamViewerTimer: null,
+  streamRtc: {
+    streamId: null,
+    clientId: null,
+    role: null,
+    peers: new Map(),
+    pollTimer: null,
+    pollInFlight: false,
+    pollFailures: 0,
+    mediaStream: null,
+    mediaMode: null,
+    remoteStream: null,
+    participants: [],
+    sourceReady: false,
+    sourceMode: null
+  },
+  activeWorkspacePage: "home",
+  settingsPageTab: "appearance",
+  serversPageTab: "mine",
+  streamCreatorOpen: false,
+  eventCreatorOpen: false,
   voice: {
     roomId: null,
     roomName: null,
@@ -68,6 +96,33 @@ const state = {
     participants: new Map()
   }
 };
+
+const DEFAULT_EVENTS = [
+  {
+    id: "yaas-turnuva",
+    title: "YAAS PUBG Turnuvasi",
+    type: "Turnuva",
+    startsAt: "2026-09-15T20:00",
+    location: "Online",
+    description: "Topluluk turnuvasi ve canli yayin duyurusu."
+  },
+  {
+    id: "topluluk-toplantisi",
+    title: "Topluluk Toplantisi",
+    type: "Toplanti",
+    startsAt: "2026-09-16T19:00",
+    location: "Sesli Kanal",
+    description: "Sunucu kurallari, roller ve yeni etkinlikler konusulacak."
+  },
+  {
+    id: "soru-cevap",
+    title: "Soru - Cevap Etkinligi",
+    type: "Ozel Etkinlik",
+    startsAt: "2026-09-18T21:00",
+    location: "Online",
+    description: "Uyeler soru sorar, yonetim cevaplar."
+  }
+];
 
 const RTC_CONFIGURATION = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -285,6 +340,7 @@ function switchSettingsTab(tab) {
 function showApp(user) {
   state.user = user;
   $("#auth-screen").classList.add("hidden");
+  window.yaasEntrance?.hide();
   $("#app").classList.remove("hidden");
   $("#account-name").textContent = user.display_name || user.displayName;
   $("#home-display-name").textContent = user.display_name || user.displayName || "KSTROY";
@@ -309,16 +365,1146 @@ function setSideNavActive(activeId) {
   });
 }
 
-function showHomeView() {
+function closeWorkspacePanels() {
+  $("#server-panel")?.classList.remove("open");
+  $("#server-view")?.classList.remove("channels-open");
+  $("#member-panel")?.classList.remove("open");
+}
+
+function hideWorkspaceViews() {
+  $("#welcome-view")?.classList.add("hidden");
+  $("#server-view")?.classList.add("hidden");
+  $("#workspace-page")?.classList.add("hidden");
+}
+
+function showWorkspacePage(navId, renderer) {
+  if (navId !== "nav-streams-button" && state.activeStream?.id) {
+    stopWatchingStream({ silent: true });
+  }
+  state.activeWorkspacePage = navId.replace(/^nav-|-button$/g, "");
   state.activeServer = null;
   state.activeChannel = null;
+  hideWorkspaceViews();
+  $("#workspace-page")?.classList.remove("hidden");
+  closeWorkspacePanels();
+  setSideNavActive(navId);
+  renderServers();
+  renderer();
+}
+
+function workspaceTopbar(title, subtitle, actions = "") {
+  return `<header class="workspace-page-topbar">
+    <div class="workspace-title">
+      <strong>${escapeHtml(title)}</strong>
+      <small>${escapeHtml(subtitle)}</small>
+    </div>
+    <label class="home-search workspace-search">
+      <span>⌕</span>
+      <input placeholder="Ara..." autocomplete="off">
+    </label>
+    <div class="home-top-actions">
+      ${actions}
+      <button class="icon-button" data-page-action="notifications" type="button" title="Bildirimler">♧</button>
+      <button class="icon-button" data-page-action="messages" type="button" title="Mesajlar">✉</button>
+    </div>
+  </header>`;
+}
+
+function bindWorkspaceTopbarActions() {
+  $$("[data-page-action='notifications']").forEach((button) => button.addEventListener("click", () => {
+    showDmPage("notifications").catch((error) => notify(error.message, true));
+  }));
+  $$("[data-page-action='messages']").forEach((button) => button.addEventListener("click", () => {
+    showDmPage("friends").catch((error) => notify(error.message, true));
+  }));
+}
+
+function loadLocalEvents() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("yaas:local-events") || "[]");
+    return [...DEFAULT_EVENTS, ...saved].sort((first, second) =>
+      new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime());
+  } catch {
+    return DEFAULT_EVENTS;
+  }
+}
+
+function saveLocalEvent(event) {
+  const saved = JSON.parse(localStorage.getItem("yaas:local-events") || "[]");
+  saved.unshift(event);
+  localStorage.setItem("yaas:local-events", JSON.stringify(saved.slice(0, 25)));
+}
+
+function formatEventDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Tarih yok";
+  return date.toLocaleString("tr-TR", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function statusBadge(text) {
+  return `<span class="mini-status">${escapeHtml(text)}</span>`;
+}
+
+function renderDmPageMessages(messages) {
+  const list = $("#dm-page-message-list");
+  if (!list) return;
+  list.innerHTML = messages.length
+    ? messages.map((message) => `<div class="dm-message ${message.sender_id === state.user.id ? "mine" : ""}">
+        ${escapeHtml(message.content)}
+        <small>${new Date(message.created_at).toLocaleString("tr-TR")}</small>
+      </div>`).join("")
+    : '<div class="dm-empty inline-empty">İlk özel mesajı gönder.</div>';
+  list.scrollTop = list.scrollHeight;
+}
+
+async function loadDmPageMessages() {
+  if (!state.activeDm || !$("#dm-page-message-list")) return;
+  try {
+    const data = await api(`/api/dms/${state.activeDm.id}`);
+    renderDmPageMessages(data.messages || []);
+  } catch (error) {
+    $("#dm-page-message-list").innerHTML = `<div class="dm-empty inline-empty">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function dmNotificationItems() {
+  const items = [];
+  state.friends.incoming.forEach((person) => {
+    items.push({
+      type: "friend",
+      title: `${person.display_name} arkadaslik istegi gonderdi`,
+      detail: `@${person.handle}`,
+      userId: person.id
+    });
+  });
+  state.messageRequests.forEach((request) => {
+    items.push({
+      type: "message",
+      title: `${request.sender_name} mesaj istegi gonderdi`,
+      detail: request.content,
+      requestId: request.id
+    });
+  });
+  return items;
+}
+
+function renderDmPage() {
+  const shell = $("#workspace-page-shell");
+  const tabLabels = {
+    friends: "Arkadaslar",
+    requests: "Mesaj istekleri",
+    notifications: "Bildirimler"
+  };
+  const friends = state.friends.friends || [];
+  const requests = state.messageRequests || [];
+  const notifications = dmNotificationItems();
+  const rows = state.activeDmTab === "requests"
+    ? (requests.length ? requests.map((request) => `
+      <article class="dm-list-row message-request-row">
+        ${avatarContent({ display_name: request.sender_name, avatar_url: request.avatar_url, avatar_frame: request.avatar_frame })}
+        <div><strong>${escapeHtml(request.sender_name)}</strong><small>@${escapeHtml(request.sender_handle)}</small><p>${escapeHtml(request.content)}</p></div>
+        <span class="friend-actions">
+          <button class="primary" data-dm-page-accept-request="${request.id}" type="button">Kabul</button>
+          <button class="secondary" data-dm-page-reject-request="${request.id}" type="button">Sil</button>
+        </span>
+      </article>`).join("") : '<small class="empty-list">Mesaj isteği yok</small>')
+    : state.activeDmTab === "notifications"
+      ? (notifications.length ? notifications.map((item, index) => `
+        <button class="dm-list-row dm-notification-row" data-dm-page-notification="${index}" type="button">
+          <span class="avatar">!</span>
+          <div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div>
+        </button>`).join("") : '<small class="empty-list">Yeni bildirim yok</small>')
+      : (friends.length ? friends.map((friend) => `
+        <button class="dm-list-row ${state.activeDm?.id === friend.id ? "active" : ""}" data-dm-page-user="${friend.id}" type="button">
+          ${avatarContent(friend)}
+          <div><strong>${escapeHtml(friend.display_name)}</strong><small>@${escapeHtml(friend.handle)}</small></div>
+          <span class="presence-dot"></span>
+        </button>`).join("") : '<small class="empty-list">Henüz arkadaşın yok</small>');
+
+  const activeFriend = state.activeDm && friends.find((friend) => friend.id === state.activeDm.id);
+  const chatPanel = activeFriend ? `
+    <section class="dm-workspace-chat">
+      <header>
+        ${avatarContent(activeFriend)}
+        <div><strong>${escapeHtml(activeFriend.display_name)}</strong><small>@${escapeHtml(activeFriend.handle)}</small></div>
+        <button class="secondary" data-dm-page-profile="${activeFriend.id}" type="button">Profil</button>
+      </header>
+      <div class="dm-message-list" id="dm-page-message-list"><div class="dm-empty inline-empty">Mesajlar yükleniyor...</div></div>
+      <form class="message-form" id="dm-page-message-form">
+        <input id="dm-page-message-input" maxlength="4000" placeholder="Mesajını yaz..." autocomplete="off">
+        <button class="primary" type="submit">Gönder</button>
+      </form>
+    </section>
+    <aside class="dm-info-panel">
+      ${avatarContent(activeFriend, "large")}
+      <strong>${escapeHtml(activeFriend.display_name)}</strong>
+      <small>@${escapeHtml(activeFriend.handle)}</small>
+      <p>Arkadaş profilini açabilir, konuşmaya devam edebilir veya sunucu içinde ortak alanları görebilirsin.</p>
+      <button class="secondary wide" data-dm-page-profile="${activeFriend.id}" type="button">Profili görüntüle</button>
+    </aside>`
+    : `<section class="dm-workspace-chat empty">
+        <span>✉</span>
+        <strong>${escapeHtml(tabLabels[state.activeDmTab] || "DM")}</strong>
+        <small>Sol taraftan bir kişi, istek veya bildirim seçince detay burada açılır.</small>
+      </section>
+      <aside class="dm-info-panel muted">
+        <strong>Bilgi paneli</strong>
+        <p>Bir konuşma seçildiğinde profil, kullanıcı adı ve hızlı işlemler burada görünür.</p>
+      </aside>`;
+
+  shell.innerHTML = `
+    ${workspaceTopbar("DM'ler", "Arkadaşlar, mesaj istekleri ve bildirimler tek düzenli alanda.", "")}
+    <div class="workspace-card dm-workspace-layout">
+      <aside class="dm-workspace-sidebar">
+        <div class="messenger-quick-tabs">
+          <button class="${state.activeDmTab === "friends" ? "active" : ""}" data-dm-page-tab="friends" type="button"><span>DM</span>Arkadaşlar</button>
+          <button class="${state.activeDmTab === "requests" ? "active" : ""}" data-dm-page-tab="requests" type="button"><span>Mail</span>Mesaj İstekleri ${requests.length ? `<i>${requests.length}</i>` : ""}</button>
+          <button class="${state.activeDmTab === "notifications" ? "active" : ""}" data-dm-page-tab="notifications" type="button"><span>Bell</span>Bildirimler</button>
+        </div>
+        <form class="dm-request-card" id="dm-page-friend-request-form">
+          <label>Kullanıcı adı<input id="dm-page-friend-handle-input" placeholder="@kullanici" required></label>
+          <button class="primary wide" type="submit">Arkadaşlık isteği gönder</button>
+          <p class="form-error"></p>
+        </form>
+        <div class="dm-list">${rows}</div>
+      </aside>
+      ${chatPanel}
+    </div>`;
+  bindWorkspaceTopbarActions();
+  bindDmPageActions();
+  if (activeFriend) loadDmPageMessages();
+}
+
+function bindDmPageActions() {
+  $$("[data-dm-page-tab]").forEach((button) => button.addEventListener("click", () => {
+    state.activeDmTab = button.dataset.dmPageTab;
+    state.activeDm = null;
+    renderDmPage();
+  }));
+  $$("[data-dm-page-user]").forEach((button) => button.addEventListener("click", () => {
+    state.activeDm = state.friends.friends.find((friend) => friend.id === button.dataset.dmPageUser);
+    renderDmPage();
+  }));
+  $$("[data-dm-page-profile]").forEach((button) => button.addEventListener("click", () => openUserProfile(button.dataset.dmPageProfile)));
+  $$("[data-dm-page-accept-request]").forEach((button) => button.addEventListener("click", () =>
+    answerMessageRequestFromPage(button.dataset.dmPageAcceptRequest, "accept")));
+  $$("[data-dm-page-reject-request]").forEach((button) => button.addEventListener("click", () =>
+    answerMessageRequestFromPage(button.dataset.dmPageRejectRequest, "reject")));
+  $$("[data-dm-page-notification]").forEach((button) => button.addEventListener("click", () => {
+    const item = dmNotificationItems()[Number(button.dataset.dmPageNotification)];
+    if (!item) return;
+    const panel = $(".dm-workspace-chat");
+    if (panel) {
+      panel.classList.add("empty");
+      panel.innerHTML = `<span>!</span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small>`;
+    }
+  }));
+  $("#dm-page-friend-request-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = $("#dm-page-friend-handle-input");
+    try {
+      await sendFriendRequest(input.value);
+      input.value = "";
+      await showDmPage("friends");
+    } catch (error) {
+      $(".form-error", event.currentTarget).textContent = error.message;
+    }
+  });
+  $("#dm-page-message-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = $("#dm-page-message-input");
+    const content = input.value.trim();
+    if (!state.activeDm || !content) return;
+    await api(`/api/dms/${state.activeDm.id}`, {
+      method: "POST",
+      body: JSON.stringify({ content })
+    });
+    input.value = "";
+    await loadDmPageMessages();
+  });
+}
+
+async function answerMessageRequestFromPage(requestId, action) {
+  const data = await api(`/api/message-requests/${requestId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action })
+  });
+  await loadFriends();
+  await loadMessageRequests();
+  state.activeDmTab = action === "accept" ? "friends" : "requests";
+  if (action === "accept" && data.friendId) {
+    state.activeDm = state.friends.friends.find((item) => item.id === data.friendId) || null;
+  }
+  renderDmPage();
+  notify(action === "accept" ? "Mesaj isteği kabul edildi" : "Mesaj isteği silindi");
+}
+
+async function showDmPage(tab = "friends", preselectedFriend = null) {
+  state.activeDmTab = tab;
+  await loadFriends();
+  await loadMessageRequests();
+  if (preselectedFriend) {
+    state.activeDmTab = "friends";
+    state.activeDm = preselectedFriend;
+  } else if (tab !== "friends") {
+    state.activeDm = null;
+  }
+  showWorkspacePage(tab === "friends" ? "nav-friends-button" : "nav-dms-button", renderDmPage);
+}
+
+function streamPageCard(stream) {
+  const visibility = {
+    global: "Herkes",
+    friends: "Arkadaşlar",
+    server: "Sunucu"
+  }[stream.visibility] || "Sunucu";
+  const viewers = streamViewers(stream);
+  return `<button class="stream-card live-stream-card stream-page-card" data-stream-page-id="${stream.id || ""}" type="button">
+    <b>CANLI</b>
+    <div>
+      <strong>${escapeHtml(stream.title || "Canlı yayın")}</strong>
+      <small>${escapeHtml(stream.display_name || "YAAS üyesi")}${stream.server_name ? ` · ${escapeHtml(stream.server_name)}` : ""}</small>
+      <span>${escapeHtml(visibility)}</span>
+    </div>
+    <em>${viewers ? `${viewers.toLocaleString("tr-TR")} izleyici` : "İzle"}</em>
+  </button>`;
+}
+
+function renderStreamsPage() {
+  const shell = $("#workspace-page-shell");
+  const streams = streamsForActiveTab();
+  shell.innerHTML = `
+    ${workspaceTopbar("Yayınlar", "Arkadaşların, sunucuların ve global yayınlar burada sıralanır.",
+      '<button class="primary" id="page-start-stream-button" type="button">＋ Yayın başlat</button>')}
+    <div class="workspace-stack">
+      <section class="workspace-card">
+        <div class="stream-tabs page-tabs">
+          <button class="${state.activeStreamTab === "friends" ? "active" : ""}" data-page-stream-tab="friends" type="button">Arkadaşlar</button>
+          <button class="${state.activeStreamTab === "servers" ? "active" : ""}" data-page-stream-tab="servers" type="button">Sunucularım</button>
+          <button class="${state.activeStreamTab === "global" ? "active" : ""}" data-page-stream-tab="global" type="button">Global</button>
+        </div>
+        <div class="stream-create-panel ${state.streamCreatorOpen ? "" : "hidden"}" id="page-stream-create-panel">
+          <label>Yayın başlığı<input id="page-stream-title-input" maxlength="80" placeholder="Bugün ne yayınlıyorsun?"></label>
+          <label>Sunucu<select id="page-stream-server-input">
+            <option value="">Sunucu seç</option>
+            ${state.servers.map((server) => `<option value="${server.id}">${escapeHtml(server.name)}</option>`).join("")}
+          </select></label>
+          <label>Kimler görsün?<select id="page-stream-visibility-input">
+            <option value="server">Sadece seçili sunucudakiler</option>
+            <option value="friends">Sadece arkadaşlarım</option>
+            <option value="global">Herkes görsün</option>
+          </select></label>
+          <button class="primary" id="page-confirm-stream-button" type="button">Canlı yayını aç</button>
+          <small>Sunucuda yayın açmak için Owner veya Yayıncı rolü gerekir.</small>
+        </div>
+      </section>
+      <section class="stream-grid stream-page-grid">
+        ${streams.length ? streams.map(streamPageCard).join("") : '<article class="stream-empty">Bu bölümde şu an canlı yayın yok.</article>'}
+      </section>
+    </div>`;
+  bindWorkspaceTopbarActions();
+  $("#page-start-stream-button")?.addEventListener("click", () => {
+    openStudioWindow();
+  });
+  $$("[data-page-stream-tab]").forEach((button) => button.addEventListener("click", () => {
+    state.activeStreamTab = button.dataset.pageStreamTab;
+    renderStreamsPage();
+  }));
+  $("#page-confirm-stream-button")?.addEventListener("click", startWorkspaceStream);
+  $$("[data-stream-page-id]").forEach((button) => button.addEventListener("click", () => {
+    openStreamViewer(button.dataset.streamPageId).catch((error) => notify(error.message, true));
+  }));
+}
+
+async function showStreamsPage() {
+  await stopWatchingStream({ silent: true });
+  showWorkspacePage("nav-streams-button", renderStreamsPage);
+  await loadStreams();
+  renderStreamsPage();
+}
+
+async function startWorkspaceStream() {
+  openStudioWindow({ title: $("#page-stream-title-input")?.value, serverId: $("#page-stream-server-input")?.value, visibility: $("#page-stream-visibility-input")?.value });
+}
+
+function findStreamById(streamId) {
+  const id = String(streamId || "");
+  return allStreams().find((stream) => String(stream.id) === id) || null;
+}
+
+function streamVisibilityText(value) {
+  return {
+    global: "Herkese açık",
+    friends: "Sadece arkadaşlar",
+    server: "Sadece sunucu"
+  }[value] || "Sadece sunucu";
+}
+
+async function streamRtcApi(path, options = {}) {
+  return api(`/api/stream-rtc/${path}`, options);
+}
+
+function resetStreamRtcState() {
+  Object.assign(state.streamRtc, {
+    streamId: null,
+    clientId: null,
+    role: null,
+    peers: new Map(),
+    pollTimer: null,
+    pollInFlight: false,
+    pollFailures: 0,
+    mediaStream: null,
+    mediaMode: null,
+    remoteStream: null,
+    participants: [],
+    sourceReady: false,
+    sourceMode: null
+  });
+}
+
+function streamRtcStatusText() {
+  if (!state.streamRtc.streamId) return "Yayın bağlantısı hazırlanıyor";
+  if (state.streamRtc.role === "broadcaster") {
+    return state.streamRtc.mediaStream
+      ? `${state.streamRtc.mediaMode === "screen" ? "Ekran" : "Kamera"} yayında`
+      : "Kamera veya ekran paylaşımı seç";
+  }
+  if (state.streamRtc.remoteStream) return "Canlı görüntü alınıyor";
+  if (state.streamRtc.sourceReady) return "Yayın görüntüsü bağlanıyor";
+  return "Yayıncı görüntüyü başlatınca burada görünecek";
+}
+
+function syncStreamViewerMeta() {
+  const status = $("#stream-rtc-status");
+  if (status) status.textContent = streamRtcStatusText();
+  const count = $("#stream-viewer-count");
+  if (count && state.activeStream) {
+    count.textContent = `${streamViewers(state.activeStream).toLocaleString("tr-TR")} izleyici`;
+  }
+  const mode = $("#stream-source-mode");
+  if (mode) mode.textContent = state.streamRtc.sourceMode === "screen" ? "Ekran paylaşımı" : state.streamRtc.sourceMode === "camera" ? "Kamera" : "Hazır değil";
+}
+
+function syncStreamMediaElements() {
+  const localVideo = $("#stream-local-video");
+  const remoteVideo = $("#stream-remote-video");
+  const placeholder = $("#stream-player-placeholder");
+  const isBroadcaster = state.streamRtc.role === "broadcaster";
+  if (localVideo) {
+    localVideo.srcObject = state.streamRtc.mediaStream;
+    localVideo.classList.toggle("hidden", !isBroadcaster || !state.streamRtc.mediaStream);
+  }
+  if (remoteVideo) {
+    remoteVideo.srcObject = state.streamRtc.remoteStream;
+    remoteVideo.classList.toggle("hidden", isBroadcaster || !state.streamRtc.remoteStream);
+  }
+  if (placeholder) {
+    placeholder.classList.toggle("hidden", isBroadcaster ? Boolean(state.streamRtc.mediaStream) : Boolean(state.streamRtc.remoteStream));
+  }
+  $("#stream-broadcast-camera-button")?.classList.toggle("active", state.streamRtc.mediaMode === "camera");
+  $("#stream-broadcast-screen-button")?.classList.toggle("active", state.streamRtc.mediaMode === "screen");
+  $("#stream-broadcast-stop-button")?.classList.toggle("hidden", !state.streamRtc.mediaStream);
+  syncStreamViewerMeta();
+}
+
+function renderStreamParticipants(participants = state.streamRtc.participants) {
+  state.streamRtc.participants = participants;
+  const list = $("#stream-participant-list");
+  if (!list) return;
+  list.innerHTML = participants.length
+    ? participants.map((participant) => `<article class="stream-participant-row ${participant.role === "broadcaster" ? "is-broadcaster" : ""}">
+        <span class="avatar small">${escapeHtml(initials(participant.name))}</span>
+        <div>
+          <strong>${escapeHtml(participant.name)}${participant.id === state.streamRtc.clientId ? " (sen)" : ""}</strong>
+          <small>${participant.role === "broadcaster" ? "Yayıncı" : "İzleyici"}</small>
+        </div>
+        <i>${participant.sourceReady ? "●" : "◌"}</i>
+      </article>`).join("")
+    : '<small class="empty-list">Henüz izleyici yok.</small>';
+}
+
+async function sendStreamSignal(to, signal) {
+  if (!state.streamRtc.streamId || !state.streamRtc.clientId) return;
+  await streamRtcApi("signal", {
+    method: "POST",
+    body: JSON.stringify({
+      streamId: state.streamRtc.streamId,
+      from: state.streamRtc.clientId,
+      to,
+      signal
+    })
+  });
+}
+
+function streamSender(connection, kind) {
+  return connection.getTransceivers()
+    .find((item) => item.receiver.track?.kind === kind || item.sender.track?.kind === kind)?.sender || null;
+}
+
+async function applyStreamSenderLimits(connection) {
+  for (const sender of connection.getSenders()) {
+    if (!sender.track) continue;
+    const parameters = sender.getParameters();
+    if (!parameters.encodings?.length) parameters.encodings = [{}];
+    if (sender.track.kind === "video") {
+      parameters.encodings[0].maxBitrate = state.streamRtc.mediaMode === "screen" ? 2_500_000 : 1_400_000;
+      parameters.degradationPreference = state.streamRtc.mediaMode === "screen" ? "maintain-resolution" : "maintain-framerate";
+    } else {
+      parameters.encodings[0].maxBitrate = 96_000;
+    }
+    await sender.setParameters(parameters).catch(() => {});
+  }
+}
+
+async function attachBroadcastTracks(connection) {
+  if (state.streamRtc.role !== "broadcaster" || !state.streamRtc.mediaStream) return;
+  const videoTrack = state.streamRtc.mediaStream.getVideoTracks()[0] || null;
+  const audioTrack = state.streamRtc.mediaStream.getAudioTracks()[0] || null;
+  const video = streamSender(connection, "video");
+  const audio = streamSender(connection, "audio");
+  if (video) await video.replaceTrack(videoTrack);
+  if (audio) await audio.replaceTrack(audioTrack);
+  await applyStreamSenderLimits(connection);
+}
+
+async function negotiateStreamPeer(peerId, connection) {
+  if (connection.signalingState !== "stable") return;
+  const offer = await connection.createOffer();
+  await connection.setLocalDescription(offer);
+  await sendStreamSignal(peerId, offer);
+}
+
+function removeStreamPeer(peerId) {
+  const connection = state.streamRtc.peers.get(peerId);
+  state.streamRtc.peers.delete(peerId);
+  connection?.close();
+}
+
+function createStreamPeer(peerId, initiator) {
+  if (state.streamRtc.peers.has(peerId)) return state.streamRtc.peers.get(peerId);
+  const connection = new RTCPeerConnection(RTC_CONFIGURATION);
+  if (state.streamRtc.role === "broadcaster") {
+    connection.addTransceiver("video", { direction: "sendonly" });
+    connection.addTransceiver("audio", { direction: "sendonly" });
+    attachBroadcastTracks(connection);
+  } else {
+    connection.addTransceiver("video", { direction: "recvonly" });
+    connection.addTransceiver("audio", { direction: "recvonly" });
+  }
+  connection.onicecandidate = ({ candidate }) => {
+    if (candidate) sendStreamSignal(peerId, { type: "ice", candidate }).catch(() => {});
+  };
+  connection.ontrack = ({ track, streams }) => {
+    if (!state.streamRtc.remoteStream) state.streamRtc.remoteStream = new MediaStream();
+    const incoming = streams[0] || new MediaStream([track]);
+    for (const incomingTrack of incoming.getTracks()) {
+      if (!state.streamRtc.remoteStream.getTracks().some((item) => item.id === incomingTrack.id)) {
+        state.streamRtc.remoteStream.addTrack(incomingTrack);
+      }
+      incomingTrack.onended = () => {
+        state.streamRtc.remoteStream?.removeTrack(incomingTrack);
+        if (!state.streamRtc.remoteStream?.getTracks().length) state.streamRtc.remoteStream = null;
+        syncStreamMediaElements();
+      };
+    }
+    syncStreamMediaElements();
+  };
+  connection.onconnectionstatechange = () => {
+    if (["failed", "closed", "disconnected"].includes(connection.connectionState)) {
+      removeStreamPeer(peerId);
+      if (state.streamRtc.role === "viewer" && !state.streamRtc.peers.size) {
+        state.streamRtc.remoteStream = null;
+        syncStreamMediaElements();
+      }
+    }
+  };
+  state.streamRtc.peers.set(peerId, connection);
+  if (initiator) negotiateStreamPeer(peerId, connection).catch(() => {});
+  return connection;
+}
+
+async function handleStreamSignal(from, signal) {
+  if (from === "system" && signal.type === "broadcaster-left") {
+    state.streamRtc.sourceReady = false;
+    state.streamRtc.sourceMode = null;
+    state.streamRtc.remoteStream = null;
+    state.streamRtc.peers.forEach((connection) => connection.close());
+    state.streamRtc.peers.clear();
+    syncStreamMediaElements();
+    notify("Yayıncı yayından ayrıldı", true);
+    return;
+  }
+  if (from === "system" && signal.type === "stream-source") {
+    state.streamRtc.sourceReady = Boolean(signal.ready);
+    state.streamRtc.sourceMode = signal.mode || null;
+    if (!state.streamRtc.sourceReady) state.streamRtc.remoteStream = null;
+    syncStreamMediaElements();
+    return;
+  }
+  const connection = createStreamPeer(from, false);
+  if (signal.type === "offer") {
+    await connection.setRemoteDescription(signal);
+    await attachBroadcastTracks(connection);
+    const answer = await connection.createAnswer();
+    await connection.setLocalDescription(answer);
+    await sendStreamSignal(from, answer);
+  } else if (signal.type === "answer") {
+    await connection.setRemoteDescription(signal);
+  } else if (signal.type === "ice" && signal.candidate) {
+    await connection.addIceCandidate(signal.candidate).catch(() => {});
+  }
+}
+
+async function pollStreamRtc() {
+  if (!state.streamRtc.streamId || !state.streamRtc.clientId || state.streamRtc.pollInFlight) return;
+  state.streamRtc.pollInFlight = true;
+  try {
+    const data = await streamRtcApi(
+      `poll?streamId=${encodeURIComponent(state.streamRtc.streamId)}&clientId=${encodeURIComponent(state.streamRtc.clientId)}`
+    );
+    state.streamRtc.pollFailures = 0;
+    state.streamRtc.sourceReady = Boolean(data.sourceReady);
+    state.streamRtc.sourceMode = data.sourceMode || null;
+    renderStreamParticipants(data.participants || []);
+    updateLiveChat(data.messages || []);
+    activeStudio?.receiveParticipants?.(data.participants || []);
+    for (const item of data.signals || []) {
+      await handleStreamSignal(item.from, item.signal).catch(() => {});
+    }
+    syncStreamMediaElements();
+    state.streamRtc.pollTimer = setTimeout(pollStreamRtc, document.hidden ? 5000 : 900);
+  } catch {
+    state.streamRtc.pollFailures += 1;
+    if (state.streamRtc.pollFailures >= (document.hidden ? 20 : 8)) {
+      notify("Yayın bağlantısı koptu", true);
+      if (isStudioWindow) { await stopStandaloneBroadcast(); return; }
+      await leaveStreamRtc(false);
+      syncStreamMediaElements();
+      return;
+    }
+    state.streamRtc.pollTimer = setTimeout(pollStreamRtc, document.hidden ? 5000 : 1500);
+  } finally {
+    state.streamRtc.pollInFlight = false;
+  }
+}
+
+async function joinStreamRtc(stream) {
+  if (!stream?.id || !window.RTCPeerConnection) {
+    notify("Bu tarayıcı canlı yayını desteklemiyor", true);
+    return;
+  }
+  const role = isStudioWindow && stream.user_id === state.user?.id ? "broadcaster" : "viewer";
+  if (state.streamRtc.streamId === stream.id && state.streamRtc.role === role) return;
+  await leaveStreamRtc(false, isStudioWindow);
+  const clientId = crypto.randomUUID();
+  Object.assign(state.streamRtc, {
+    streamId: stream.id,
+    clientId,
+    role,
+    peers: new Map(),
+    pollFailures: 0,
+    participants: [],
+    sourceReady: false,
+    sourceMode: null
+  });
+  const data = await streamRtcApi("join", {
+    method: "POST",
+    body: JSON.stringify({
+      streamId: stream.id,
+      clientId,
+      role,
+      name: state.user?.display_name || state.user?.displayName || "YAAS üyesi"
+    })
+  });
+  renderStreamParticipants(data.participants || []);
+  for (const peer of data.peers || []) createStreamPeer(peer.id, true);
+  pollStreamRtc();
+  syncStreamMediaElements();
+}
+
+async function updateStreamSourceState(sourceReady, sourceMode = null) {
+  if (state.streamRtc.role !== "broadcaster" || !state.streamRtc.streamId || !state.streamRtc.clientId) return;
+  await streamRtcApi("state", {
+    method: "POST",
+    body: JSON.stringify({
+      streamId: state.streamRtc.streamId,
+      clientId: state.streamRtc.clientId,
+      sourceReady,
+      sourceMode
+    })
+  }).catch(() => {});
+}
+
+async function setStreamBroadcastMedia(mediaStream, mode) {
+  await stopStreamBroadcast(false);
+  state.streamRtc.mediaStream = mediaStream;
+  state.streamRtc.mediaMode = mode;
+  for (const connection of state.streamRtc.peers.values()) {
+    await attachBroadcastTracks(connection);
+  }
+  mediaStream.getVideoTracks().forEach((track) => {
+    track.onended = () => stopStreamBroadcast();
+  });
+  mediaStream.getAudioTracks().forEach((track) => {
+    track.onended = () => {
+      if (!state.streamRtc.mediaStream?.getVideoTracks().length) stopStreamBroadcast();
+    };
+  });
+  await updateStreamSourceState(true, mode);
+  syncStreamMediaElements();
+}
+
+async function startStreamBroadcast(mode) {
+  if (state.streamRtc.role !== "broadcaster") return;
+  if (!mediaFeatureAvailable(mode === "screen" ? "screen" : "camera")) return;
+  try {
+    const mediaStream = mode === "screen"
+      ? await navigator.mediaDevices.getDisplayMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } },
+        audio: true
+      })
+      : await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 24, max: 30 },
+          facingMode: "user"
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 48000
+        }
+      });
+    if (!mediaStream.getVideoTracks().length) throw new Error("Görüntü bulunamadı");
+    await setStreamBroadcastMedia(mediaStream, mode);
+    notify(mode === "screen" ? "Ekran yayına verildi" : "Kamera yayına verildi");
+  } catch (error) {
+    if (error.name !== "NotAllowedError") notify(mode === "screen" ? "Ekran paylaşımı başlatılamadı" : "Kamera açılamadı", true);
+  }
+}
+
+async function stopStreamBroadcast(updateServer = true) {
+  const mediaStream = state.streamRtc.mediaStream;
+  state.streamRtc.mediaStream = null;
+  state.streamRtc.mediaMode = null;
+  for (const connection of state.streamRtc.peers.values()) {
+    const video = streamSender(connection, "video");
+    const audio = streamSender(connection, "audio");
+    if (video) await video.replaceTrack(null).catch(() => {});
+    if (audio) await audio.replaceTrack(null).catch(() => {});
+  }
+  mediaStream?.getTracks().forEach((track) => {
+    track.onended = null;
+    track.stop();
+  });
+  if (updateServer) await updateStreamSourceState(false);
+  syncStreamMediaElements();
+}
+
+async function leaveStreamRtc(notifyServer = true, preserveStudio = false) {
+  if (!preserveStudio) {
+    activeStudio?.dispose();
+    activeStudio = null;
+  }
+  clearTimeout(state.streamRtc.pollTimer);
+  state.streamRtc.pollTimer = null;
+  await stopStreamBroadcast(false);
+  if (notifyServer && state.streamRtc.streamId && state.streamRtc.clientId) {
+    await streamRtcApi("leave", {
+      method: "POST",
+      body: JSON.stringify({ streamId: state.streamRtc.streamId, clientId: state.streamRtc.clientId })
+    }).catch(() => {});
+  }
+  state.streamRtc.peers.forEach((connection) => connection.close());
+  resetStreamRtcState();
+}
+
+function stopStreamViewerHeartbeat() {
+  clearInterval(state.streamViewerTimer);
+  state.streamViewerTimer = null;
+}
+
+async function stopWatchingStream(options = {}) {
+  const streamId = state.activeStream?.id;
+  stopStreamViewerHeartbeat();
+  await leaveStreamRtc(!options.silent);
+  state.activeStream = null;
+  if (!streamId) return;
+  try {
+    await api(`/api/streams/${encodeURIComponent(streamId)}/viewers/me`, { method: "DELETE" });
+  } catch (error) {
+    if (!options.silent) notify(error.message, true);
+  }
+}
+
+function startStreamViewerHeartbeat() {
+  stopStreamViewerHeartbeat();
+  state.streamViewerTimer = setInterval(async () => {
+    if (!state.activeStream?.id) return;
+    try {
+      const data = await api(`/api/streams/${encodeURIComponent(state.activeStream.id)}/viewers`, {
+        method: "POST",
+        body: "{}"
+      });
+      state.activeStream = data.stream || state.activeStream;
+      const viewerCount = $(".viewer-count-pill");
+      if (viewerCount) viewerCount.textContent = `${streamViewers(state.activeStream).toLocaleString("tr-TR")} izleyici`;
+    } catch (error) {
+      stopStreamViewerHeartbeat();
+      state.activeStream = null;
+      notify("Yayın bağlantısı yenilenemedi", true);
+      showStreamsPage().catch(() => {});
+    }
+  }, 30000);
+}
+
+async function openStreamViewer(streamId) {
+  if (!streamId) return;
+  if (state.activeStream?.id && state.activeStream.id !== streamId) {
+    await stopWatchingStream({ silent: true });
+  }
+  const cachedStream = findStreamById(streamId);
+  state.activeStream = cachedStream || { id: streamId, title: "Yayın açılıyor", viewer_count: 0 };
+  showWorkspacePage("nav-streams-button", () => renderStreamViewer(state.activeStream));
+  const data = await api(`/api/streams/${encodeURIComponent(streamId)}/viewers`, {
+    method: "POST",
+    body: "{}"
+  });
+  state.activeStream = data.stream || state.activeStream;
+  await joinStreamRtc(state.activeStream);
+  renderStreamViewer(state.activeStream);
+  startStreamViewerHeartbeat();
+  await loadStreams();
+}
+
+async function endActiveStream() {
+  const streamId = state.activeStream?.id;
+  if (!streamId) return;
+  try {
+    await leaveStreamRtc(true);
+    await api(`/api/streams/${encodeURIComponent(streamId)}`, { method: "DELETE" });
+    stopStreamViewerHeartbeat();
+    state.activeStream = null;
+    await loadStreams();
+    await showStreamsPage();
+    notify("Yayın kapatıldı");
+  } catch (error) {
+    notify(error.message, true);
+  }
+}
+
+function renderStreamViewer(stream = {}) {
+  const shell = $("#workspace-page-shell");
+  if (!shell) return;
+  const owner = stream.display_name || "YAAS üyesi";
+  const handle = stream.handle ? `@${stream.handle}` : stream.server_name || "Canlı yayın";
+  const viewers = streamViewers(stream);
+  const canEnd = stream.user_id && state.user?.id && stream.user_id === state.user.id;
+  const broadcastControls = false ? `
+    <button class="secondary" id="stream-broadcast-camera-button" type="button">Kamera aç</button>
+    <button class="secondary" id="stream-broadcast-screen-button" type="button">Ekran paylaş</button>
+    <button class="secondary hidden" id="stream-broadcast-stop-button" type="button">Görüntüyü durdur</button>` : "";
+  const startedAt = stream.started_at
+    ? new Date(stream.started_at).toLocaleString("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+    : "Şimdi";
+  shell.innerHTML = `
+    ${workspaceTopbar("Yayın İzle", "Canlı yayın sahnesi, izleyici sayısı ve yayın bilgisi.",
+      '<button class="secondary" id="stream-view-back-button" type="button">← Yayınlara dön</button>')}
+    <div class="stream-viewer-layout">
+      <section class="workspace-card stream-watch-main">
+        <div class="stream-viewer-header">
+          <div class="stream-host-card">
+            ${avatarContent(stream, "small")}
+            <div>
+              <strong>${escapeHtml(stream.title || "Canlı yayın")}</strong>
+              <small>${escapeHtml(owner)} · ${escapeHtml(handle)}</small>
+            </div>
+          </div>
+          <span class="viewer-count-pill">${viewers.toLocaleString("tr-TR")} izleyici</span>
+        </div>
+        <div class="stream-player-card" aria-label="Yayın izleme alanı">
+          <span class="stream-live-badge">CANLI</span>
+          <video class="stream-video stream-local-video hidden" id="stream-local-video" autoplay playsinline muted></video>
+          <video class="stream-video stream-remote-video hidden" id="stream-remote-video" autoplay playsinline controls></video>
+          <div class="stream-player-placeholder" id="stream-player-placeholder">
+            <img src="assets/yaas-main-logo.svg" alt="YAAS">
+            <strong>${escapeHtml(stream.title || "YAAS canlı yayın")}</strong>
+            <small id="stream-rtc-status">${canEnd ? "Kamera veya ekran paylaşımı seç" : "Yayıncı görüntüyü başlatınca burada görünecek"}</small>
+          </div>
+        </div>
+        <div class="stream-viewer-controls">
+          ${broadcastControls}
+          <button class="secondary" id="stream-view-refresh-button" type="button">Bağlantıyı yenile</button>
+          ${canEnd ? '<button class="secondary" id="stream-open-studio-button" type="button">Studio’yu aç</button>' : ""}
+        </div>
+      </section>
+      <aside class="workspace-card stream-watch-side">
+        <h3>Yayın Bilgisi</h3>
+        <div class="stream-info-line"><span>Yayıncı</span><strong>${escapeHtml(owner)}</strong></div>
+        <div class="stream-info-line"><span>Görünürlük</span><strong>${escapeHtml(streamVisibilityText(stream.visibility))}</strong></div>
+        <div class="stream-info-line"><span>Sunucu</span><strong>${escapeHtml(stream.server_name || "Global")}</strong></div>
+        <div class="stream-info-line"><span>Başlangıç</span><strong>${escapeHtml(startedAt)}</strong></div>
+        <div class="stream-info-line"><span>Kaynak</span><strong id="stream-source-mode">Hazır değil</strong></div>
+        <div class="stream-participant-box">
+          <strong>Yayındaki kişiler</strong>
+          <div id="stream-participant-list"><small class="empty-list">Bağlantı kuruluyor...</small></div>
+        </div>
+        <div class="stream-chat-preview">
+          <strong>Canlı sohbet</strong>
+          <div id="stream-live-chat" class="studio-chat-messages" role="log" aria-label="Canlı sohbet"></div><form id="stream-chat-form"><input aria-label="Sohbet mesajı" id="stream-chat-input" maxlength="500" placeholder="Mesaj yaz"><button class="secondary" type="submit">Gönder</button></form>
+        </div>
+      </aside>
+    </div>`;
+  bindWorkspaceTopbarActions();
+  $("#stream-view-back-button")?.addEventListener("click", async () => {
+    await stopWatchingStream({ silent: true });
+    await showStreamsPage();
+  });
+  $("#stream-view-refresh-button")?.addEventListener("click", () => {
+    openStreamViewer(stream.id).catch((error) => notify(error.message, true));
+  });
+  $("#stream-broadcast-camera-button")?.addEventListener("click", () => startStreamBroadcast("camera"));
+  $("#stream-broadcast-screen-button")?.addEventListener("click", () => startStreamBroadcast("screen"));
+  $("#stream-broadcast-stop-button")?.addEventListener("click", () => stopStreamBroadcast());
+  $("#stream-open-studio-button")?.addEventListener("click", () => openStudioWindow());
+  bindLiveChat(shell);
+  renderStreamParticipants();
+  syncStreamMediaElements();
+}
+
+function renderEventsPage() {
+  const shell = $("#workspace-page-shell");
+  const events = loadLocalEvents();
+  shell.innerHTML = `
+    ${workspaceTopbar("Etkinlikler", "Turnuva, toplantı ve özel yayınlarını düzenli takip et.",
+      '<button class="primary" id="page-create-event-button" type="button">＋ Etkinlik oluştur</button>')}
+    <div class="workspace-stack">
+      <section class="workspace-card event-create-card ${state.eventCreatorOpen ? "" : "hidden"}">
+        <form id="page-event-form" class="event-form-grid">
+          <label>Başlık<input id="page-event-title-input" maxlength="80" required placeholder="Turnuva"></label>
+          <label>Tür<select id="page-event-type-input"><option>Turnuva</option><option>Toplantı</option><option>Özel Etkinlik</option><option>Yayın</option></select></label>
+          <label>Tarih ve saat<input id="page-event-date-input" type="datetime-local" required></label>
+          <label>Konum<select id="page-event-location-input"><option>Online</option><option>Sesli Kanal</option><option>Sunucu içi</option></select></label>
+          <label class="wide">Açıklama<textarea id="page-event-description-input" maxlength="180" placeholder="Kısa bilgi yaz."></textarea></label>
+          <button class="primary" type="submit">Oluştur</button>
+        </form>
+      </section>
+      <section class="event-page-list">
+        ${events.map((event) => `
+          <article class="event-page-row">
+            <b>${escapeHtml(formatEventDate(event.startsAt).split(" ")[0] || "YAAS")}</b>
+            <div>
+              <strong>${escapeHtml(event.title)}</strong>
+              <small>${escapeHtml(formatEventDate(event.startsAt))} · ${escapeHtml(event.location)} · ${escapeHtml(event.type)}</small>
+              <p>${escapeHtml(event.description || "Detay eklenmedi.")}</p>
+            </div>
+            <button class="secondary" type="button">Katıl</button>
+          </article>`).join("")}
+      </section>
+    </div>`;
+  bindWorkspaceTopbarActions();
+  $("#page-create-event-button")?.addEventListener("click", () => {
+    state.eventCreatorOpen = !state.eventCreatorOpen;
+    renderEventsPage();
+  });
+  $("#page-event-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveLocalEvent({
+      id: `local-${Date.now()}`,
+      title: $("#page-event-title-input").value.trim(),
+      type: $("#page-event-type-input").value,
+      startsAt: $("#page-event-date-input").value,
+      location: $("#page-event-location-input").value,
+      description: $("#page-event-description-input").value.trim()
+    });
+    state.eventCreatorOpen = false;
+    renderEventsPage();
+    notify("Etkinlik oluşturuldu");
+  });
+}
+
+function showEventsPage() {
+  showWorkspacePage("nav-events-button", renderEventsPage);
+}
+
+function renderServersPage() {
+  const shell = $("#workspace-page-shell");
+  const mine = state.servers || [];
+  const discover = [
+    { name: "YAAS Official", type: "Topluluk", members: "1,2K üye" },
+    { name: "PUBG Mobile TR", type: "Oyun", members: "856 üye" },
+    { name: "Sohbet Alanı", type: "Sohbet", members: "423 üye" },
+    { name: "Espor Türkiye", type: "Espor", members: "1,1K üye" }
+  ];
+  const rows = state.serversPageTab === "mine"
+    ? (mine.length ? mine.map((server) => `
+      <article class="server-directory-row">
+        ${serverIconMarkup(server)}
+        <div><strong>${escapeHtml(server.name)}</strong><small>${escapeHtml(server.description || `${server.member_count} üye`)}</small></div>
+        <button class="primary" data-open-server-page="${server.id}" type="button">Aç</button>
+      </article>`).join("") : '<article class="stream-empty">Henüz sunucun yok. Sunucu oluştur veya davetle katıl.</article>')
+    : discover.map((server) => `
+      <article class="server-directory-row">
+        <span class="server-icon">${escapeHtml(server.name.slice(0, 1))}</span>
+        <div><strong>${escapeHtml(server.name)}</strong><small>${escapeHtml(server.type)} · ${escapeHtml(server.members)}</small></div>
+        <button class="secondary" data-open-modal="join-server-modal" type="button">Davet kodu kullan</button>
+      </article>`).join("");
+  shell.innerHTML = `
+    ${workspaceTopbar("Sunucular", "Topluluklarını yönet, keşfet ve davet koduyla katıl.",
+      '<button class="primary" data-open-modal="create-server-modal" type="button">＋ Sunucu oluştur</button><button class="secondary" data-open-modal="join-server-modal" type="button">Davetle katıl</button>')}
+    <div class="workspace-stack">
+      <section class="workspace-card">
+        <div class="stream-tabs page-tabs">
+          <button class="${state.serversPageTab === "mine" ? "active" : ""}" data-server-page-tab="mine" type="button">Senin Sunucuların</button>
+          <button class="${state.serversPageTab === "discover" ? "active" : ""}" data-server-page-tab="discover" type="button">Keşfet</button>
+        </div>
+      </section>
+      <section class="server-directory-list">${rows}</section>
+    </div>`;
+  bindWorkspaceTopbarActions();
+  $$("[data-open-modal]", shell).forEach((button) => button.addEventListener("click", () => openModal(button.dataset.openModal)));
+  $$("[data-server-page-tab]").forEach((button) => button.addEventListener("click", () => {
+    state.serversPageTab = button.dataset.serverPageTab;
+    renderServersPage();
+  }));
+  $$("[data-open-server-page]").forEach((button) => button.addEventListener("click", () => openServer(button.dataset.openServerPage)));
+}
+
+function showServersPage() {
+  showWorkspacePage("nav-servers-button", renderServersPage);
+}
+
+function settingsPagePanel(tab) {
+  const appearance = localStorage.getItem("yaas:appearance-mode") || "dark";
+  const showAllChannels = localStorage.getItem("yaas:show-all-channels-setting") !== "false";
+  if (tab === "account") {
+    return `<section class="settings-page-panel">
+      <h3>Hesabım</h3>
+      <p>Profil bilgilerin, görünen ismin ve notun burada yönetilir.</p>
+      <article class="profile-mini-card">
+        ${avatarContent(state.user, "large")}
+        <div><strong>${escapeHtml(state.user.display_name || state.user.displayName || "Kullanıcı")}</strong><small>@${escapeHtml(state.user.handle)}</small></div>
+        <button class="primary" id="settings-page-profile-edit" type="button">Profili düzenle</button>
+      </article>
+    </section>`;
+  }
+  if (tab === "notifications") {
+    return `<section class="settings-page-panel">
+      <h3>Bildirimler</h3>
+      <p>Arkadaşlık ve mesaj istekleri DM merkezindeki bildirim kutusuna düşer.</p>
+      <article class="settings-info-row"><strong>Bekleyen bildirim</strong>${statusBadge(String(state.notifications.total || 0))}</article>
+      <button class="secondary" id="settings-page-open-notifications" type="button">Bildirimleri aç</button>
+    </section>`;
+  }
+  if (tab === "privacy") {
+    return `<section class="settings-page-panel">
+      <h3>Gizlilik</h3>
+      <p>Sunucu ve kanal görünürlüğü tercihlerini buradan yönet.</p>
+      <label class="setting-switch"><span><strong>Tüm kanalları göster</strong><small>Boş kategoriler dahil kanal düzenini gör.</small></span><input id="settings-page-show-all-channels" type="checkbox" ${showAllChannels ? "checked" : ""}></label>
+      <label class="setting-switch"><span><strong>DM isteklerine izin ver</strong><small>Arkadaş olmayan kişiler mesaj isteği gönderebilir.</small></span><input type="checkbox" checked></label>
+    </section>`;
+  }
+  if (tab === "connections") {
+    return `<section class="settings-page-panel">
+      <h3>Bağlantılar</h3>
+      <p>Google ve Apple girişleri ortam bilgileri tamamlandığında burada aktif görünür.</p>
+      <article class="settings-info-row"><strong>Google</strong>${statusBadge("Kurulum bekliyor")}</article>
+      <article class="settings-info-row"><strong>Apple</strong>${statusBadge("Kurulum bekliyor")}</article>
+    </section>`;
+  }
+  if (tab === "language") {
+    return `<section class="settings-page-panel">
+      <h3>Dil</h3>
+      <p>YAAS şu an Türkçe arayüzle çalışıyor.</p>
+      <article class="settings-info-row"><strong>Aktif dil</strong>${statusBadge("Türkçe")}</article>
+    </section>`;
+  }
+  if (tab === "about") {
+    return `<section class="settings-page-panel">
+      <h3>Hakkında</h3>
+      <p>YAAS, topluluk, arkadaşlık, DM, yayın ve etkinlik alanlarını tek uygulamada toplar.</p>
+      <article class="settings-info-row"><strong>Sürüm</strong>${statusBadge(UI_VERSION)}</article>
+    </section>`;
+  }
+  return `<section class="settings-page-panel">
+    <h3>Görünüm</h3>
+    <p>Mevcut koyu premium tasarım korunur; burada sadece tercih seviyesi ayarlanır.</p>
+    <div class="appearance-grid">
+      ${["system", "dark", "light"].map((mode) => `
+        <button class="${appearance === mode ? "active" : ""}" data-appearance-mode="${mode}" type="button">
+          <span>${mode === "system" ? "▣" : mode === "dark" ? "◉" : "✦"}</span>
+          <strong>${mode === "system" ? "Sistem" : mode === "dark" ? "Karanlık" : "Aydınlık"}</strong>
+        </button>`).join("")}
+    </div>
+    <label class="setting-switch"><span><strong>Animasyonlar</strong><small>Işık ve geçiş efektleri açık kalsın.</small></span><input type="checkbox" checked></label>
+    <label class="setting-switch"><span><strong>Kompakt görünüm</strong><small>Kartları daha sıkı göster.</small></span><input type="checkbox"></label>
+    <label class="setting-switch"><span><strong>Arka plan efektleri</strong><small>Lacivert/mor ışık efektleri açık kalsın.</small></span><input type="checkbox" checked></label>
+  </section>`;
+}
+
+function renderSettingsPage() {
+  const shell = $("#workspace-page-shell");
+  const tabs = [
+    ["account", "Hesabım"],
+    ["appearance", "Görünüm"],
+    ["notifications", "Bildirimler"],
+    ["privacy", "Gizlilik"],
+    ["connections", "Bağlantılar"],
+    ["language", "Dil"],
+    ["about", "Hakkında"]
+  ];
+  shell.innerHTML = `
+    ${workspaceTopbar("Ayarlar", "Hesabını, görünümünü ve tercihlerini yönet.", "")}
+    <div class="workspace-card settings-page-layout">
+      <aside class="settings-page-nav">
+        ${tabs.map(([tab, label]) => `<button class="${state.settingsPageTab === tab ? "active" : ""}" data-settings-page-tab="${tab}" type="button">${escapeHtml(label)}</button>`).join("")}
+      </aside>
+      ${settingsPagePanel(state.settingsPageTab)}
+    </div>`;
+  bindWorkspaceTopbarActions();
+  $$("[data-settings-page-tab]").forEach((button) => button.addEventListener("click", () => {
+    state.settingsPageTab = button.dataset.settingsPageTab;
+    renderSettingsPage();
+  }));
+  $$("[data-appearance-mode]").forEach((button) => button.addEventListener("click", () => {
+    localStorage.setItem("yaas:appearance-mode", button.dataset.appearanceMode);
+    renderSettingsPage();
+  }));
+  $("#settings-page-profile-edit")?.addEventListener("click", () => {
+    fillProfileSettings();
+    openModal("profile-settings-modal");
+  });
+  $("#settings-page-open-notifications")?.addEventListener("click", () => showDmPage("notifications"));
+  $("#settings-page-show-all-channels")?.addEventListener("change", (event) => {
+    localStorage.setItem("yaas:show-all-channels-setting", event.currentTarget.checked ? "true" : "false");
+    notify("Kanal görünüm tercihi kaydedildi");
+  });
+}
+
+function showSettingsPage() {
+  showWorkspacePage("nav-settings-button", renderSettingsPage);
+}
+
+function showHomeView() {
+  stopWatchingStream({ silent: true });
+  state.activeServer = null;
+  state.activeChannel = null;
+  state.activeWorkspacePage = "home";
+  $("#workspace-page")?.classList.add("hidden");
   $("#server-view").classList.add("hidden");
   $("#welcome-view").classList.remove("hidden");
-  $("#server-panel").classList.remove("open");
-  $("#server-view").classList.remove("channels-open");
-  $("#member-panel").classList.remove("open");
+  closeWorkspacePanels();
   setSideNavActive("nav-home-button");
   renderServers();
+  renderStreams();
 }
 
 async function loadNotificationSummary() {
@@ -331,6 +1517,7 @@ function showAuth() {
   state.user = null;
   $("#app").classList.add("hidden");
   $("#auth-screen").classList.remove("hidden");
+  window.yaasEntrance?.show();
 }
 
 function switchAuth(tab) {
@@ -349,6 +1536,7 @@ async function loadServers(selectId) {
   const data = await api("/api/servers");
   state.servers = data.servers;
   renderServers();
+  populateStreamServerOptions();
   if (selectId) await openServer(selectId);
 }
 
@@ -361,6 +1549,101 @@ function renderServers() {
     </button>`).join("");
   $("#server-list-empty").classList.toggle("hidden", state.servers.length > 0);
   $$(".server-item", list).forEach((button) => button.addEventListener("click", () => openServer(button.dataset.serverId)));
+}
+
+function allStreams() {
+  return [
+    ...(state.streams.friends || []),
+    ...(state.streams.servers || []),
+    ...(state.streams.global || [])
+  ];
+}
+
+function streamViewers(stream) {
+  return Number(stream.viewer_count ?? stream.viewers ?? stream.audience ?? 0) || 0;
+}
+
+function streamsForActiveTab() {
+  const streams = [...(state.streams[state.activeStreamTab] || [])];
+  if (state.activeStreamTab === "global") {
+    streams.sort((first, second) => streamViewers(second) - streamViewers(first));
+  }
+  return streams;
+}
+
+function streamCard(stream) {
+  const visibility = {
+    global: "Herkese acik",
+    friends: "Arkadaslar",
+    server: "Sunucu"
+  }[stream.visibility] || "Sunucu";
+  const owner = stream.display_name || "YAAS uyesi";
+  const server = stream.server_name ? ` · ${stream.server_name}` : "";
+  const viewers = streamViewers(stream);
+  const viewerLabel = viewers > 0 ? `${viewers.toLocaleString("tr-TR")} izleyici` : "Izle";
+  return `<button class="stream-card live-stream-card" data-stream-id="${escapeHtml(stream.id || "")}" type="button">
+    <b>CANLI</b>
+    <div>
+      <strong>${escapeHtml(stream.title || "Canli yayin")}</strong>
+      <small>${escapeHtml(owner)}${escapeHtml(server)}</small>
+      <span>${escapeHtml(visibility)}</span>
+    </div>
+    <em>${escapeHtml(viewerLabel)}</em>
+  </button>`;
+}
+
+function renderStreams() {
+  const grid = $("#stream-grid");
+  if (!grid) return;
+  const streams = streamsForActiveTab();
+  $$("[data-stream-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.streamTab === state.activeStreamTab);
+  });
+  grid.innerHTML = streams.length
+    ? streams.map(streamCard).join("")
+    : `<article class="stream-empty">Bu bolumde su an canli yayin yok.</article>`;
+  $$("[data-stream-id]", grid).forEach((button) => button.addEventListener("click", () => {
+    openStreamViewer(button.dataset.streamId).catch((error) => notify(error.message, true));
+  }));
+  renderServerStreams();
+}
+
+function renderServerStreams() {
+  const list = $("#server-stream-list");
+  if (!list) return;
+  const serverId = state.activeServer?.server?.id;
+  const streams = serverId ? allStreams().filter((stream) => stream.server_id === serverId) : [];
+  list.innerHTML = streams.length
+    ? streams.map((stream) => `<button class="server-stream-pill" data-server-stream-id="${escapeHtml(stream.id || "")}" type="button">
+        <span>CANLI</span><strong>${escapeHtml(stream.title || "Canli yayin")}</strong><small>${escapeHtml(stream.display_name || "YAAS uyesi")}</small>
+      </button>`).join("")
+    : "<small>Henuz yayin yok</small>";
+  $$("[data-server-stream-id]", list).forEach((button) => button.addEventListener("click", () => {
+    openStreamViewer(button.dataset.serverStreamId).catch((error) => notify(error.message, true));
+  }));
+}
+
+function populateStreamServerOptions() {
+  const select = $("#stream-server-input");
+  if (!select) return;
+  const activeId = state.activeServer?.server?.id || state.servers[0]?.id || "";
+  select.innerHTML = '<option value="">Sunucu sec</option>'
+    + state.servers.map((server) =>
+      `<option value="${server.id}" ${server.id === activeId ? "selected" : ""}>${escapeHtml(server.name)}</option>`).join("");
+}
+
+async function loadStreams() {
+  try {
+    const data = await api("/api/streams");
+    state.streams = data.streams || { friends: [], servers: [], global: [] };
+  } catch (error) {
+    state.streams = { friends: [], servers: [], global: [] };
+  }
+  renderStreams();
+}
+
+async function startStream() {
+  openStudioWindow({ title: $("#stream-title-input")?.value, serverId: $("#stream-server-input")?.value, visibility: $("#stream-visibility-input")?.value });
 }
 
 function mergeServerSummary(server) {
@@ -383,9 +1666,12 @@ function mergeServerSummary(server) {
 
 async function openServer(serverId, preferredChannelId = null) {
   try {
+    await stopWatchingStream({ silent: true });
     const data = await api(`/api/servers/${serverId}`);
     state.activeServer = data;
     state.activeChannel = null;
+    state.activeWorkspacePage = "server";
+    $("#workspace-page")?.classList.add("hidden");
     $("#welcome-view").classList.add("hidden");
     $("#server-view").classList.remove("hidden");
     $("#active-server-name").textContent = data.server.name;
@@ -424,6 +1710,8 @@ async function openServer(serverId, preferredChannelId = null) {
     renderSettingsMembers();
     renderTransferOwnerOptions();
     renderRoles();
+    populateStreamServerOptions();
+    renderServerStreams();
     const preferredChannel = data.channels.find((channel) => channel.id === preferredChannelId);
     if (preferredChannel) await openChannel(preferredChannel);
     else showNoChannel();
@@ -782,15 +2070,7 @@ async function answerMessageRequest(requestId, action) {
 }
 
 async function openMessengerPage(preselectedFriend = null) {
-  await loadFriends();
-  await loadMessageRequests();
-  if (preselectedFriend) state.activeDmTab = "friends";
-  renderDmTabContent();
-  openModal("friends-modal");
-  $("#server-panel").classList.remove("open");
-  $("#server-view").classList.remove("channels-open");
-  $("#member-panel").classList.remove("open");
-  if (preselectedFriend) await openDm(preselectedFriend);
+  await showDmPage("friends", preselectedFriend);
 }
 
 async function loadFriends() {
@@ -1748,7 +3028,7 @@ async function start() {
   });
   $("#social-login-note").textContent = enabledProviders.google || enabledProviders.apple
     ? "Google ile ilk girişte YAAS hesabın otomatik oluşur, sonraki girişlerde aynı hesaba girersin."
-    : "Google girişi Render ortam anahtarları tamamlanınca açılacak.";
+    : "Google ve Apple girişi güvenli bağlantı tamamlanınca açılacak.";
   const data = await api("/api/me");
   if (!data.user) {
     if (socialAuthError) $("#login-error").textContent = socialAuthError;
@@ -1760,9 +3040,11 @@ async function start() {
     return showAuth();
   }
   showApp(data.user);
+  if (isStudioWindow) return initializeStudioWindow();
   await loadNotificationSummary().catch(() => {});
   await loadVoiceConfiguration().catch(() => {});
   if (!(await joinPendingInvite())) await loadServers();
+  await loadStreams();
 }
 
 $$("[data-auth-tab]").forEach((button) => button.addEventListener("click", () => switchAuth(button.dataset.authTab)));
@@ -1810,42 +3092,52 @@ $("#home-profile-shortcut")?.addEventListener("click", () => {
   openModal("profile-settings-modal");
 });
 $("#home-open-friends")?.addEventListener("click", async () => {
-  await openMessengerPage();
+  await showDmPage("friends");
 });
 $("#nav-home-button")?.addEventListener("click", showHomeView);
 $("#nav-friends-button")?.addEventListener("click", async () => {
   try {
-    state.activeDmTab = "friends";
-    setSideNavActive("nav-friends-button");
-    await openMessengerPage();
+    await showDmPage("friends");
   } catch (error) {
     notify(error.message, true);
   }
 });
 $("#nav-dms-button")?.addEventListener("click", async () => {
   try {
-    state.activeDmTab = "requests";
-    setSideNavActive("nav-dms-button");
-    await openMessengerPage();
+    await showDmPage("requests");
   } catch (error) {
     notify(error.message, true);
   }
 });
 $("#nav-streams-button")?.addEventListener("click", () => {
-  showHomeView();
-  setSideNavActive("nav-streams-button");
-  document.querySelector(".stream-grid")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  showStreamsPage().catch((error) => notify(error.message, true));
 });
 $("#nav-events-button")?.addEventListener("click", () => {
-  showHomeView();
-  setSideNavActive("nav-events-button");
-  document.querySelector(".event-list")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  showEventsPage();
+});
+$("#nav-servers-button")?.addEventListener("click", () => {
+  showServersPage();
 });
 $("#nav-settings-button")?.addEventListener("click", () => {
-  setSideNavActive("nav-settings-button");
-  fillProfileSettings();
-  openModal("profile-settings-modal");
+  showSettingsPage();
 });
+$("#quick-invite-friends")?.addEventListener("click", () => showDmPage("friends").catch((error) => notify(error.message, true)));
+$("#quick-start-stream")?.addEventListener("click", () => {
+  openStudioWindow();
+});
+$("#quick-create-event")?.addEventListener("click", () => {
+  state.eventCreatorOpen = true;
+  showEventsPage();
+});
+$("#quick-open-servers")?.addEventListener("click", showServersPage);
+$("#start-stream-button")?.addEventListener("click", () => {
+  openStudioWindow();
+});
+$("#confirm-start-stream-button")?.addEventListener("click", startStream);
+$$("[data-stream-tab]").forEach((button) => button.addEventListener("click", () => {
+  state.activeStreamTab = button.dataset.streamTab;
+  renderStreams();
+}));
 $("#profile-avatar-picker").addEventListener("click", () => $("#profile-avatar-file-input").click());
 $("#profile-avatar-file-input").addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
@@ -1918,6 +3210,10 @@ $("#settings-server-logo-file-input").addEventListener("change", async (event) =
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  if (form.dataset.pending === "true") return;
+  form.dataset.pending = "true";
+  const submit = form.querySelector('[type="submit"]');
+  submit.disabled = true;
   $("#login-error").textContent = "";
   try {
     const data = await api("/api/auth/login", {
@@ -1925,14 +3221,20 @@ $("#login-form").addEventListener("submit", async (event) => {
       body: JSON.stringify({ email: $("#login-email").value, password: $("#login-password").value })
     });
     form.reset();
-    showApp(data.user);
+    if (window.yaasEntrance) await window.yaasEntrance.enter(() => showApp(data.user));
+    else showApp(data.user);
+    if (isStudioWindow) return initializeStudioWindow();
     await loadNotificationSummary().catch(() => {});
     if (!(await joinPendingInvite())) await loadServers();
+    await loadStreams();
   } catch (error) {
     $("#login-error").textContent = error.message;
     if (error.status === 404) {
       $("#register-email").value = $("#login-email").value.trim();
     }
+  } finally {
+    delete form.dataset.pending;
+    submit.disabled = false;
   }
 });
 
@@ -1961,8 +3263,10 @@ $("#register-form").addEventListener("submit", async (event) => {
     });
     form.reset();
     showApp(data.user);
+    if (isStudioWindow) return initializeStudioWindow();
     await loadNotificationSummary().catch(() => {});
     if (!(await joinPendingInvite())) await loadServers();
+    await loadStreams();
   } catch (error) {
     $("#register-error").textContent = error.message;
   }
@@ -2011,7 +3315,7 @@ $("#logout-button").addEventListener("click", async () => {
 
 $("#friends-button").addEventListener("click", async () => {
   try {
-    await openMessengerPage();
+    await showDmPage("friends");
   } catch (error) {
     notify(error.message, true);
   }
@@ -2019,7 +3323,7 @@ $("#friends-button").addEventListener("click", async () => {
 
 $("#mobile-friends-button").addEventListener("click", async () => {
   try {
-    await openMessengerPage();
+    await showDmPage("friends");
   } catch (error) {
     notify(error.message, true);
   }
@@ -2485,11 +3789,26 @@ window.addEventListener("keyup", (event) => {
   syncVoiceConnectionBar();
 });
 window.addEventListener("beforeunload", () => {
+  if (isStudioWindow) cleanupStandaloneBroadcast();
+  if (state.streamRtc.streamId && state.streamRtc.clientId) {
+    fetch("/api/stream-rtc/leave", {
+      method: "POST", credentials: "same-origin", keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ streamId: state.streamRtc.streamId, clientId: state.streamRtc.clientId })
+    }).catch(() => {});
+  }
   if (state.voice.roomId) {
     navigator.sendBeacon("/api/voice/leave", JSON.stringify({
       roomId: state.voice.roomId,
       clientId: state.voice.clientId
     }));
+  }
+  if (state.activeStream?.id) {
+    fetch(`/api/streams/${encodeURIComponent(state.activeStream.id)}/viewers/me`, {
+      method: "DELETE",
+      credentials: "same-origin",
+      keepalive: true
+    }).catch(() => {});
   }
 });
 

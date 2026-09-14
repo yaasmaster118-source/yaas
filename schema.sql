@@ -162,3 +162,27 @@ CREATE TABLE IF NOT EXISTS message_requests (
 CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships(addressee_id, status);
 CREATE INDEX IF NOT EXISTS direct_messages_pair_idx ON direct_messages(sender_id, recipient_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS message_requests_recipient_idx ON message_requests(recipient_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS stream_sessions (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  server_id UUID REFERENCES servers(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  visibility TEXT NOT NULL DEFAULT 'server' CHECK(visibility IN ('global', 'server', 'friends')),
+  status TEXT NOT NULL DEFAULT 'live' CHECK(status IN ('live', 'ended')),
+  viewer_count INTEGER NOT NULL DEFAULT 0,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS stream_viewers (
+  stream_id UUID NOT NULL REFERENCES stream_sessions(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(stream_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS stream_sessions_status_idx ON stream_sessions(status, visibility, started_at DESC);
+CREATE INDEX IF NOT EXISTS stream_sessions_server_idx ON stream_sessions(server_id, status, started_at DESC);
+CREATE INDEX IF NOT EXISTS stream_viewers_stream_idx ON stream_viewers(stream_id, last_seen DESC);

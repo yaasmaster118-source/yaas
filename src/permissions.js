@@ -3,7 +3,7 @@
 const ALL_PERMISSIONS = [
   "server.view", "server.manage", "members.view", "members.manage", "roles.manage",
   "channels.manage", "channel.view", "messages.send", "messages.manage", "voice.join",
-  "voice.speak", "voice.mute_members", "invites.create"
+  "voice.speak", "voice.mute_members", "invites.create", "streams.create"
 ];
 
 const ROLE_TEMPLATES = [
@@ -13,6 +13,7 @@ const ROLE_TEMPLATES = [
     name: "Moderator", color: "#8d7aff", position: 50,
     permissions: ["server.view", "members.view", "members.manage", "channel.view", "messages.send", "messages.manage", "voice.join", "voice.speak", "voice.mute_members", "invites.create"]
   },
+  { name: "Yayinci", color: "#d6aa52", position: 30, permissions: ["server.view", "members.view", "channel.view", "messages.send", "voice.join", "voice.speak", "streams.create"] },
   { name: "Member", color: "#8d949f", position: 10, permissions: ["server.view", "members.view", "channel.view", "messages.send", "voice.join", "voice.speak"] }
 ];
 

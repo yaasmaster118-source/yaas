@@ -149,6 +149,70 @@ async function requirePermission(response, sendJson, serverId, userId, permissio
   return granted;
 }
 
+function streamVisibility(value) {
+  return ["global", "server", "friends"].includes(value) ? value : "server";
+}
+
+async function visibleStream(streamId, userId) {
+  const result = await query(
+    `SELECT ss.id, ss.title, ss.visibility, ss.status, ss.started_at, ss.server_id,
+            ss.viewer_count::int AS viewer_count,
+            u.id AS user_id, u.display_name, u.handle, u.avatar_url, u.avatar_frame,
+            s.name AS server_name, s.logo_url AS server_logo_url, s.icon_color AS server_icon_color
+       FROM stream_sessions ss
+       JOIN users u ON u.id = ss.user_id
+       LEFT JOIN servers s ON s.id = ss.server_id
+      WHERE ss.id = $2
+        AND ss.status = 'live'
+        AND (
+          ss.visibility = 'global'
+          OR ss.user_id = $1
+          OR (ss.visibility = 'friends' AND EXISTS (
+            SELECT 1 FROM friendships f
+             WHERE f.status = 'accepted'
+               AND ((f.requester_id = $1 AND f.addressee_id = ss.user_id)
+                 OR (f.requester_id = ss.user_id AND f.addressee_id = $1))
+          ))
+          OR (ss.visibility = 'server' AND ss.server_id IN (
+            SELECT server_id FROM memberships WHERE user_id = $1
+          ))
+        )`,
+    [userId, streamId]
+  );
+  return result.rows[0] || null;
+}
+
+async function refreshStreamViewerCount(streamId) {
+  await query(
+    `UPDATE stream_sessions
+        SET viewer_count = (SELECT COUNT(*) FROM stream_viewers WHERE stream_id = $1)
+      WHERE id = $1`,
+    [streamId]
+  );
+  const result = await query("SELECT viewer_count::int AS viewer_count FROM stream_sessions WHERE id = $1", [streamId]);
+  return Number(result.rows[0]?.viewer_count || 0);
+}
+
+async function ensureStreamerRole(serverId) {
+  const template = ROLE_TEMPLATES.find((role) => role.name === "Yayinci");
+  if (!template) return;
+  await query(
+    `INSERT INTO roles (id, server_id, name, color, role_icon, role_hoist, position, permissions, is_system)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, TRUE)
+     ON CONFLICT(server_id, name) DO NOTHING`,
+    [
+      crypto.randomUUID(),
+      serverId,
+      template.name,
+      template.color,
+      roleIconValue("", template.name),
+      false,
+      template.position,
+      JSON.stringify(template.permissions)
+    ]
+  );
+}
+
 async function areFriends(firstUserId, secondUserId) {
   const result = await query(
     `SELECT 1 FROM friendships
@@ -627,6 +691,108 @@ async function handleApi(request, response, helpers) {
       return sendJson(response, 200, { ok: true, friendId: messageRequest.sender_id });
     }
 
+    if (method === "GET" && url.pathname === "/api/streams") {
+      const result = await query(
+        `SELECT ss.id, ss.title, ss.visibility, ss.status, ss.started_at, ss.server_id,
+                ss.viewer_count::int AS viewer_count,
+                u.id AS user_id, u.display_name, u.handle, u.avatar_url, u.avatar_frame,
+                s.name AS server_name, s.logo_url AS server_logo_url, s.icon_color AS server_icon_color
+           FROM stream_sessions ss
+           JOIN users u ON u.id = ss.user_id
+           LEFT JOIN servers s ON s.id = ss.server_id
+          WHERE ss.status = 'live'
+            AND (
+              ss.visibility = 'global'
+              OR ss.user_id = $1
+              OR (ss.visibility = 'friends' AND EXISTS (
+                SELECT 1 FROM friendships f
+                 WHERE f.status = 'accepted'
+                   AND ((f.requester_id = $1 AND f.addressee_id = ss.user_id)
+                     OR (f.requester_id = ss.user_id AND f.addressee_id = $1))
+              ))
+              OR (ss.visibility = 'server' AND ss.server_id IN (
+                SELECT server_id FROM memberships WHERE user_id = $1
+              ))
+            )
+          ORDER BY CASE WHEN ss.visibility = 'global' THEN ss.viewer_count ELSE 0 END DESC,
+                   ss.started_at DESC
+          LIMIT 80`,
+        [user.id]
+      );
+      const streams = { friends: [], servers: [], global: [] };
+      for (const stream of result.rows) {
+        if (stream.visibility === "friends") streams.friends.push(stream);
+        else if (stream.visibility === "server") streams.servers.push(stream);
+        else streams.global.push(stream);
+      }
+      return sendJson(response, 200, { streams });
+    }
+
+    if (method === "POST" && url.pathname === "/api/streams") {
+      const body = await readJson(request);
+      const serverId = text(body.serverId, 80) || null;
+      const visibility = streamVisibility(body.visibility);
+      const title = text(body.title, 80) || "YAAS yayini";
+      if (serverId) {
+        const granted = await requirePermission(response, sendJson, serverId, user.id, "streams.create");
+        if (!granted) return;
+      }
+      if (!serverId && visibility === "server") {
+        return sendJson(response, 400, { error: "Sunucu yayini icin sunucu secmelisin" });
+      }
+      const id = crypto.randomUUID();
+      await query(
+        `INSERT INTO stream_sessions (id, user_id, server_id, title, visibility)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [id, user.id, serverId, title, visibility]
+      );
+      return sendJson(response, 201, { stream: { id, title, visibility, server_id: serverId, user_id: user.id } });
+    }
+
+    const streamViewerRoute = url.pathname.match(/^\/api\/streams\/([0-9a-f-]+)\/viewers$/i);
+    if (method === "POST" && streamViewerRoute) {
+      const stream = await visibleStream(streamViewerRoute[1], user.id);
+      if (!stream) return sendJson(response, 404, { error: "Yayin bulunamadi" });
+      await query(
+        `INSERT INTO stream_viewers (stream_id, user_id, last_seen)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT(stream_id, user_id) DO UPDATE SET last_seen = NOW()`,
+        [stream.id, user.id]
+      );
+      stream.viewer_count = await refreshStreamViewerCount(stream.id);
+      return sendJson(response, 200, { stream });
+    }
+
+    const streamViewerLeaveRoute = url.pathname.match(/^\/api\/streams\/([0-9a-f-]+)\/viewers\/me$/i);
+    if (method === "DELETE" && streamViewerLeaveRoute) {
+      await query(
+        "DELETE FROM stream_viewers WHERE stream_id = $1 AND user_id = $2",
+        [streamViewerLeaveRoute[1], user.id]
+      );
+      const viewerCount = await refreshStreamViewerCount(streamViewerLeaveRoute[1]);
+      return sendJson(response, 200, { ok: true, viewer_count: viewerCount });
+    }
+
+    const streamRoute = url.pathname.match(/^\/api\/streams\/([0-9a-f-]+)$/i);
+    if (method === "GET" && streamRoute) {
+      const stream = await visibleStream(streamRoute[1], user.id);
+      if (!stream) return sendJson(response, 404, { error: "Yayin bulunamadi" });
+      return sendJson(response, 200, { stream });
+    }
+
+    if (method === "DELETE" && streamRoute) {
+      await transaction(async (client) => {
+        const ended = await client.query(
+          "UPDATE stream_sessions SET status = 'ended', viewer_count = 0, ended_at = NOW() WHERE id = $1 AND user_id = $2",
+          [streamRoute[1], user.id]
+        );
+        if (ended.rowCount) {
+          await client.query("DELETE FROM stream_viewers WHERE stream_id = $1", [streamRoute[1]]);
+        }
+      });
+      return sendJson(response, 200, { ok: true });
+    }
+
     if (method === "GET" && url.pathname === "/api/servers") {
       const result = await query(
         `SELECT s.id, s.name, s.description, s.icon_color, s.logo_url, s.owner_id, m.joined_at,
@@ -751,6 +917,7 @@ async function handleApi(request, response, helpers) {
 
     if (method === "GET" && serverRoute) {
       const serverId = serverRoute[1];
+      await ensureStreamerRole(serverId);
       const granted = await permissions(serverId, user.id);
       if (!granted) return sendJson(response, 404, { error: "Sunucu bulunamadı" });
       const [server, categories, channels, members, memberRoles, roles] = await Promise.all([

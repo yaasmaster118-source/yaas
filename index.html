@@ -13,11 +13,20 @@
     <link rel="icon" href="assets/yaas-main-logo.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="stylesheet" href="styles.css?v=1.1.23">
-    <link rel="stylesheet" href="clean.css?v=1.1.23">
-    <script src="app.js?v=1.1.23" defer></script>
+    <link rel="stylesheet" href="clean.css?v=1.1.31">
+    <link rel="stylesheet" href="studio.css?v=1.1.31">
+    <link rel="stylesheet" href="auth-entrance.css?v=1.1.32">
+    <script src="auth-entrance.js?v=1.1.32" defer></script>
+    <script src="studio.js?v=1.1.31" defer></script>
+    <script src="studio-window.js?v=1.1.31" defer></script>
+    <script src="app.js?v=1.1.32" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
+      <div class="auth-scene" aria-hidden="true"><video autoplay loop muted playsinline preload="auto" poster="assets/yaas-entry-poster.png" tabindex="-1"><source src="assets/yaas-entry.mp4" type="video/mp4"></video></div>
+      <div class="auth-scene-shade" aria-hidden="true"></div>
+      <header class="auth-scene-header"><strong>YAAS</strong><button type="button" data-auth-motion aria-pressed="false">Hareketi durdur</button></header>
+      <p class="auth-entry-status" role="status" aria-live="polite"></p>
       <div class="auth-brand">
         <div class="premium-top-brand">
           <span class="logo-symbol"><i></i><i></i><i></i><i></i></span>
@@ -77,20 +86,17 @@
         <header>
           <div class="wordmark video-wordmark">
             <img class="brand-loop-fallback" src="assets/yaas-main-logo.svg" alt="YAAS">
-            <video class="brand-loop-video" autoplay muted loop playsinline preload="metadata" aria-label="YAAS" oncanplay="this.classList.add('ready')" onerror="this.classList.remove('ready')">
-              <source src="assets/yaas-brand-loop.mp4" type="video/mp4">
-              <source src="assets/yaas-brand-loop.mov" type="video/quicktime">
-            </video>
           </div>
           <button class="icon-button mobile-close" data-close-panel="server-panel" type="button">×</button>
         </header>
         <nav class="main-side-nav" aria-label="YAAS ana menü">
-          <button class="active" id="nav-home-button" type="button" onclick="document.getElementById('server-view')?.classList.add('hidden');document.getElementById('welcome-view')?.classList.remove('hidden');document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-home-button'))"><span>⌂</span>Ana Sayfa</button>
-          <button id="nav-friends-button" type="button" onclick="window.state&&(state.activeDmTab='friends');window.openMessengerPage&&openMessengerPage();document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-friends-button'))"><span>♙</span>Arkadaşlar</button>
-          <button id="nav-dms-button" type="button" onclick="window.state&&(state.activeDmTab='requests');window.openMessengerPage&&openMessengerPage();document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-dms-button'))"><span>✉</span>DM'ler <b class="notification-badge hidden" id="nav-notification-badge">0</b></button>
-          <button id="nav-streams-button" type="button" onclick="document.getElementById('server-view')?.classList.add('hidden');document.getElementById('welcome-view')?.classList.remove('hidden');setTimeout(()=>document.querySelector('.stream-grid')?.scrollIntoView({behavior:'smooth',block:'center'}),50);document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-streams-button'))"><span>◉</span>Yayınlar</button>
-          <button id="nav-events-button" type="button" onclick="document.getElementById('server-view')?.classList.add('hidden');document.getElementById('welcome-view')?.classList.remove('hidden');setTimeout(()=>document.querySelector('.event-list')?.scrollIntoView({behavior:'smooth',block:'center'}),50);document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-events-button'))"><span>▣</span>Etkinlikler</button>
-          <button id="nav-settings-button" type="button" onclick="window.fillProfileSettings&&fillProfileSettings();window.openModal&&openModal('profile-settings-modal');document.querySelectorAll('.main-side-nav button').forEach((button)=>button.classList.toggle('active',button.id==='nav-settings-button'))"><span>⚙</span>Ayarlar</button>
+          <button class="active" id="nav-home-button" type="button"><span>⌂</span>Ana Sayfa</button>
+          <button id="nav-friends-button" type="button"><span>♙</span>Arkadaşlar</button>
+          <button id="nav-dms-button" type="button"><span>✉</span>DM'ler <b class="notification-badge hidden" id="nav-notification-badge">0</b></button>
+          <button id="nav-streams-button" type="button"><span>◉</span>Yayınlar</button>
+          <button id="nav-events-button" type="button"><span>▣</span>Etkinlikler</button>
+          <button id="nav-servers-button" type="button"><span>▤</span>Sunucular</button>
+          <button id="nav-settings-button" type="button"><span>⚙</span>Ayarlar</button>
         </nav>
         <div class="server-actions">
           <button class="primary" data-open-modal="create-server-modal" type="button">＋ Sunucu oluştur</button>
@@ -116,10 +122,6 @@
           <button class="icon-button" data-open-panel="server-panel" type="button">☰</button>
           <div class="wordmark video-wordmark">
             <img class="brand-loop-fallback" src="assets/yaas-main-logo.svg" alt="YAAS">
-            <video class="brand-loop-video" autoplay muted loop playsinline preload="metadata" aria-label="YAAS" oncanplay="this.classList.add('ready')" onerror="this.classList.remove('ready')">
-              <source src="assets/yaas-brand-loop.mp4" type="video/mp4">
-              <source src="assets/yaas-brand-loop.mov" type="video/quicktime">
-            </video>
           </div>
           <button class="icon-button" data-open-panel="member-panel" type="button">♙</button>
         </header>
@@ -159,20 +161,39 @@
             <section class="home-section">
               <h3>Hızlı Erişim</h3>
               <div class="quick-grid">
-                <button class="quick-card" data-open-modal="join-server-modal" type="button"><span>♚</span><strong>Arkadaşlarını Davet Et</strong><small>Arkadaşlarını YAAS'a getir.</small></button>
-                <button class="quick-card" data-open-modal="create-server-modal" type="button"><span>◉</span><strong>Yayın Başlat</strong><small>Topluluğuna yayın yap.</small></button>
-                <button class="quick-card" data-open-modal="create-server-modal" type="button"><span>▣</span><strong>Etkinlik Oluştur</strong><small>Etkinlik planla ve duyur.</small></button>
-                <button class="quick-card" data-open-modal="join-server-modal" type="button"><span>⌖</span><strong>Sunucu Keşfet</strong><small>Yeni topluluklara katıl.</small></button>
+                <button class="quick-card" id="quick-invite-friends" type="button"><span>♚</span><strong>Arkadaşlarını Davet Et</strong><small>Arkadaşlarını YAAS'a getir.</small></button>
+                <button class="quick-card" id="quick-start-stream" type="button"><span>◉</span><strong>Yayın Başlat</strong><small>Topluluğuna yayın yap.</small></button>
+                <button class="quick-card" id="quick-create-event" type="button"><span>▣</span><strong>Etkinlik Oluştur</strong><small>Etkinlik planla ve duyur.</small></button>
+                <button class="quick-card" id="quick-open-servers" type="button"><span>⌖</span><strong>Sunucu Keşfet</strong><small>Yeni topluluklara katıl.</small></button>
               </div>
             </section>
 
             <section class="home-section">
-              <h3>Popüler Yayınlar</h3>
-              <div class="stream-grid" aria-label="Öne çıkan yayın kartları">
-                <article class="stream-card stream-one"><b>● YAYINDA</b><div><strong>KSTROY</strong><small>PUBG Mobile</small></div><em>◔ 1.2K</em></article>
-                <article class="stream-card stream-two"><b>● YAYINDA</b><div><strong>Mortwain</strong><small>Valorant</small></div><em>◔ 856</em></article>
-                <article class="stream-card stream-three"><b>● YAYINDA</b><div><strong>ErenX</strong><small>Minecraft</small></div><em>◔ 643</em></article>
-                <article class="stream-card stream-four"><b>● YAYINDA</b><div><strong>Zeyrox</strong><small>Just Chatting</small></div><em>◔ 412</em></article>
+              <div class="stream-section-header">
+                <div>
+                  <h3>Yayinlar</h3>
+                  <small>Arkadaslarin, sunucularin ve global yayinlar burada.</small>
+                </div>
+                <button class="primary" id="start-stream-button" type="button">Yayin baslat</button>
+              </div>
+              <div class="stream-tabs" aria-label="Yayin filtreleri">
+                <button data-stream-tab="friends" type="button">Arkadaslar</button>
+                <button class="active" data-stream-tab="servers" type="button">Sunucularim</button>
+                <button data-stream-tab="global" type="button">Global</button>
+              </div>
+              <div class="stream-create-panel hidden" id="stream-create-panel">
+                <label>Yayin basligi<input id="stream-title-input" maxlength="80" placeholder="Bugun ne yayinliyorsun?"></label>
+                <label>Sunucu<select id="stream-server-input"></select></label>
+                <label>Kimler gorsun?<select id="stream-visibility-input">
+                  <option value="server">Sadece secili sunucudakiler</option>
+                  <option value="friends">Sadece arkadaslarim</option>
+                  <option value="global">Herkes gorsun</option>
+                </select></label>
+                <button class="primary" id="confirm-start-stream-button" type="button">Canli yayini ac</button>
+                <small id="stream-create-note">Sunucuda yayin acmak icin Owner veya Yayinci rolu gerekir.</small>
+              </div>
+              <div class="stream-grid" id="stream-grid" aria-label="Canli yayin kartlari">
+                <article class="stream-empty">Yayinlar yukleniyor...</article>
               </div>
             </section>
 
@@ -203,12 +224,16 @@
             <section class="home-side-card">
               <header><strong>Yaklaşan Etkinlikler</strong><span>Tümü</span></header>
               <div class="event-list">
-                <article><b>🏆</b><div><strong>YAAS Turnuvası</strong><small>15 Haziran · 20:00</small></div></article>
-                <article><b>⚔</b><div><strong>PUBG Mobile Scrim</strong><small>16 Haziran · 18:00</small></div></article>
-                <article><b>◆</b><div><strong>Valorant 5v5 Cup</strong><small>18 Haziran · 21:00</small></div></article>
+                <article><b>🏆</b><div><strong>YAAS Turnuvası</strong><small>15 Eylül · 20:00</small></div></article>
+                <article><b>⚔</b><div><strong>PUBG Mobile Scrim</strong><small>16 Eylül · 18:00</small></div></article>
+                <article><b>◆</b><div><strong>Valorant 5v5 Cup</strong><small>18 Eylül · 21:00</small></div></article>
               </div>
             </section>
           </aside>
+        </section>
+
+        <section class="workspace-page hidden" id="workspace-page" aria-live="polite">
+          <div class="workspace-page-shell" id="workspace-page-shell"></div>
         </section>
 
         <section class="server-view hidden" id="server-view">
@@ -217,6 +242,10 @@
               <div class="active-server-title"><span class="server-icon active-server-logo" id="active-server-logo">S</span><div><strong id="active-server-name">Sunucu</strong><small id="active-server-description"></small></div></div>
               <button class="icon-button manage-server-button hidden" data-open-modal="manage-server-modal" type="button">⚙</button>
             </header>
+            <section class="server-live-streams">
+              <div><strong>Canli yayinlar</strong><small>Bu sunucuda su an acik olan yayinlar.</small></div>
+              <div id="server-stream-list"><small>Henuz yayin yok</small></div>
+            </section>
             <div class="channel-list" id="channel-list"></div>
             <button class="add-channel-button hidden" id="add-category-button" data-open-modal="category-modal" type="button">＋ Kategori ekle</button>
             <button class="add-channel-button hidden" id="add-channel-button" data-open-modal="channel-modal" type="button">＋ Kanal ekle</button>
