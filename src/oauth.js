@@ -2,7 +2,7 @@
 
 const crypto = require("crypto");
 const { query } = require("./database");
-const { createSession, hashPassword } = require("./auth");
+const { createSession, hashPassword, isConfiguredSiteOwner } = require("./auth");
 
 const STATE_COOKIE = "yaas_oauth_state";
 const providers = {
@@ -205,6 +205,9 @@ async function loginOAuthUser(provider, identity, response) {
       "INSERT INTO oauth_accounts (provider, provider_user_id, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
       [provider, identity.id, userId]
     );
+  }
+  if (isConfiguredSiteOwner(identity.email)) {
+    await query("UPDATE users SET is_site_owner = $1 WHERE id = $2", [true, userId]);
   }
   await createSession(userId, response);
 }

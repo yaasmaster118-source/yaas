@@ -8,6 +8,11 @@ const scrypt = promisify(crypto.scrypt);
 const SESSION_COOKIE = "yaas_session";
 const SESSION_DAYS = 30;
 
+function isConfiguredSiteOwner(email) {
+  const ownerEmail = process.env.OWNER_EMAIL?.trim().toLowerCase();
+  return Boolean(ownerEmail) && String(email || "").trim().toLowerCase() === ownerEmail;
+}
+
 async function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
   const derived = await scrypt(password, salt, 64);
@@ -70,7 +75,12 @@ async function getAuthenticatedUser(request) {
       WHERE s.token_hash = $1 AND s.expires_at > NOW()`,
     [hashToken(token)]
   );
-  return result.rows[0] || null;
+  const user = result.rows[0] || null;
+  if (user && isConfiguredSiteOwner(user.email) && !user.is_site_owner) {
+    await query("UPDATE users SET is_site_owner = $1 WHERE id = $2", [true, user.id]);
+    user.is_site_owner = true;
+  }
+  return user;
 }
 
 async function requireUser(request, response, sendJson) {
@@ -87,6 +97,7 @@ module.exports = {
   destroySession,
   getAuthenticatedUser,
   hashPassword,
+  isConfiguredSiteOwner,
   requireUser,
   verifyPassword
 };
