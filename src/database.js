@@ -288,8 +288,14 @@ function getPool() {
 
   if (!pool) {
     const { Pool } = require("pg");
+    let connectionString = process.env.DATABASE_URL;
+    if (process.env.NODE_ENV === "production") {
+      const databaseUrl = new URL(connectionString);
+      for (const key of ["sslmode", "sslcert", "sslkey", "sslrootcert", "uselibpqcompat"]) databaseUrl.searchParams.delete(key);
+      connectionString = databaseUrl.toString();
+    }
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       ssl: process.env.NODE_ENV === "production"
         ? { rejectUnauthorized: process.env.DATABASE_SSL_ALLOW_SELF_SIGNED !== "1" }
         : undefined,

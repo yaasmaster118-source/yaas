@@ -42,3 +42,11 @@ Render point-in-time recovery creates a separate recovery instance. Validate it 
 ## Drill evidence
 
 Record the backup timestamp, Git commit, operator, restore start/end, checksum result, row-count checks, application checks, achieved RPO/RTO, and every gap. A backup is not verified until a restore drill succeeds.
+
+## SQLite to Neon migration
+
+`scripts/migrate-sqlite.js` reads a SQLite source without modifying it, checks integrity and foreign keys, and imports all known tables into an empty PostgreSQL database in one transaction. It rejects unknown tables/columns, a populated destination, an empty account source, and mismatched row counts. PostgreSQL constraints remain enabled. HTTPS/database credentials must never be printed or committed. TLS certificate verification remains enabled even when the supplied URI contains SSL options.
+
+Run with `SQLITE_SOURCE_PATH` and `DATABASE_URL` provided through private environment variables. Freeze writes and obtain a consistent final snapshot before cutover; a downloaded file alone does not prove consistency while the source is accepting writes. Verify accounts, memberships, messages, OAuth login, and owner permissions before routing production to Neon.
+
+On 2026-10-04, an authorized local backup was encrypted with Windows DPAPI for the current Windows user. Decryption and SQLite integrity checks passed. The downloaded live SQLite database contained zero rows in every application table. Render had no configured `DATABASE_URL`, `LOCAL_DATABASE_PATH`, secret files, or linked environment groups. The user confirmed there was no history to preserve and explicitly authorized continuing empty. The Neon schema was then created transactionally and all 18 application table counts were verified as zero. Production cutover is still pending. The backup contains no recoverable past records; DPAPI is a local protection method and is not a portable disaster-recovery backup.
