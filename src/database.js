@@ -290,7 +290,9 @@ function getPool() {
     const { Pool } = require("pg");
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+      ssl: process.env.NODE_ENV === "production"
+        ? { rejectUnauthorized: process.env.DATABASE_SSL_ALLOW_SELF_SIGNED !== "1" }
+        : undefined,
       max: 10,
       idleTimeoutMillis: 30_000
     });

@@ -2,6 +2,19 @@
 
 ## Render origin and database
 
+### Ücretsiz alternatif: Neon + mevcut Render hizmeti
+
+YAAS'ın ücretsiz kalıcı veritabanı için seçilen geçici production çözümü Neon Free PostgreSQL'dir. [2 Ekim 2026 plan duyurusu](https://neon.com/blog/neon-free-plan-1-gb-per-project) proje başına 1 GB depolama, ayda 100 CU-saat ve 6 saat anlık geri dönüş penceresi belirtir. Kota ve soğuk başlangıç gecikmesi göz önünde bulundurulmalıdır; bağımsız yedek hâlâ gerekir.
+
+1. Neon hesabına giriş yapın; yeni hesap kullanım koşullarını kullanıcı kendisi onaylamalıdır.
+2. `YAAS` adında Free proje oluşturun. Render bölgesine yakın Avrupa bölgesi seçin. Ücretli yükseltme veya otomatik ödeme açmayın.
+3. Neon bağlantı panelinden PostgreSQL URL'sini alın. Değeri yalnızca Render `DATABASE_URL` secret alanına koyun; sohbete veya Git'e yazmayın.
+4. `NODE_ENV=production` ve `DATABASE_SSL_ALLOW_SELF_SIGNED=0` kullanın. Neon bağlantısında sertifika doğrulaması açık tutulmalıdır. `sslmode=no-verify` kullanmayın.
+5. Mevcut SQLite verisini yedekleyip yeni veritabanına kontrollü olarak aktarın. Aktarım ve kayıt sayısı kontrolü yapılmadan Render'ı yeniden başlatmayın.
+6. Sağlık kontrolü ve owner login çalıştıktan sonra güvenlik dalını main'e alın ve deploy edin.
+
+E-posta için Resend Free kullanılabilir: [resmi fiyatlandırma](https://www.resend.com/pricing?product=transactional) ayda 3.000 ve günde 100 e-posta sınırı belirtir. Gönderim alan adı yoksa ilk testler yalnızca Resend hesabının kendi adresine gönderilebilir; gerçek gönderici alan adı daha sonra doğrulanmalıdır. Bu servis hesapları henüz oluşturulmuş veya bağlı değildir.
+
 1. Create Render Postgres in the same region as YAAS. Use its internal URL for `DATABASE_URL`; Render recommends internal URLs for same-region services: [Postgres connection guide](https://render.com/docs/postgresql-creating-connecting).
 2. Set `DATABASE_URL`, `OWNER_EMAIL`, `SECURITY_LOG_SALT`, OAuth/TURN credentials, and optionally `SECURITY_ALERT_WEBHOOK_URL` as Render secrets. Never commit their values.
 3. Keep `NODE_ENV=production` and `TRUST_PROXY=1`. Deploy and confirm `/health` returns 200. [Render health checks](https://render.com/docs/health-checks) can restart an unhealthy instance.

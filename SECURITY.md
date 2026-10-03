@@ -57,6 +57,7 @@ Server deletion, ownership transfer, role creation/change/deletion, member role 
 ### MANUAL SETUP REQUIRED
 
 - Create Render PostgreSQL, set the internal connection URL as `DATABASE_URL`, and verify the dashboard says “Kalıcı veritabanı: Aktif”.
+- The user requested free services. Neon Free is the selected alternative; connect it only after account authorization and migration of existing SQLite data. No paid service has been purchased.
 - Set `OWNER_EMAIL`, OAuth credentials, a random `SECURITY_LOG_SALT`, and optionally `SECURITY_ALERT_WEBHOOK_URL` in Render secrets.
 - For the requested email destination, configure `SECURITY_ALERT_EMAIL=yaasmaster118@gmail.com`, `SECURITY_ALERT_FROM`, and `RESEND_API_KEY`, then verify actual delivery. No email service is configured yet.
 - Add a custom domain to Render, proxy it through Cloudflare, disable the `onrender.com` subdomain, and configure WAF/rate-limit rules as described in `SECURITY_DEPLOYMENT.md`.
@@ -77,4 +78,5 @@ Server deletion, ownership transfer, role creation/change/deletion, member role 
 - Pending alert aggregation is in memory and is lost on restart; a durable alert queue is still needed for guaranteed delivery. Log retention and off-site log export are not automated.
 - CSP still permits inline styles because the current UI uses them. Removing inline styling would allow a stricter `style-src` policy.
 - Site-owner status is controlled by `OWNER_EMAIL`; protect changes to that environment variable and audit Render workspace access.
+- External PostgreSQL uses certificate verification by default. Set `DATABASE_SSL_ALLOW_SELF_SIGNED=1` only for a documented private Render connection requiring self-signed certificates; never use it for Neon.
 
