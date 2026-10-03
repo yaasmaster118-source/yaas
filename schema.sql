@@ -121,6 +121,31 @@ CREATE INDEX IF NOT EXISTS channel_categories_server_idx ON channel_categories(s
 CREATE INDEX IF NOT EXISTS messages_channel_idx ON messages(channel_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS member_roles_member_idx ON member_roles(server_id, user_id);
 
+CREATE TABLE IF NOT EXISTS security_events (
+  id UUID PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK(severity IN ('info', 'warning', 'high', 'critical')),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  ip_hash TEXT NOT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id UUID PRIMARY KEY,
+  actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT,
+  ip_hash TEXT NOT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS security_events_created_idx ON security_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS security_events_type_idx ON security_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS admin_audit_created_idx ON admin_audit_logs(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS oauth_accounts (
   provider TEXT NOT NULL,
   provider_user_id TEXT NOT NULL,

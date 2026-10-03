@@ -153,7 +153,7 @@ async function fetchIdentity(provider, code, origin, callbackUser) {
     });
     if (!profileResponse.ok) throw new Error("Google profile request failed");
     const profile = await profileResponse.json();
-    if (profile.email_verified === false) throw new Error("Google e-posta adresi doğrulanmamış");
+    if (profile.email_verified !== true) throw new Error("Google e-posta adresi doğrulanmamış");
     return { id: profile.sub, email: profile.email, name: profile.name || profile.email.split("@")[0] };
   }
 

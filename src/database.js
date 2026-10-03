@@ -45,6 +45,25 @@ function getLocalDatabase() {
       owner_id TEXT NOT NULL REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS security_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      ip_hash TEXT NOT NULL,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+      id TEXT PRIMARY KEY,
+      actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      action TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT,
+      ip_hash TEXT NOT NULL,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS roles (
       id TEXT PRIMARY KEY,
       server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
@@ -171,6 +190,9 @@ function getLocalDatabase() {
     CREATE INDEX IF NOT EXISTS member_roles_member_idx ON member_roles(server_id, user_id);
     CREATE INDEX IF NOT EXISTS oauth_accounts_user_idx ON oauth_accounts(user_id);
     CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships(addressee_id, status);
+    CREATE INDEX IF NOT EXISTS security_events_created_idx ON security_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS security_events_type_idx ON security_events(event_type, created_at DESC);
+    CREATE INDEX IF NOT EXISTS admin_audit_created_idx ON admin_audit_logs(created_at DESC);
     CREATE INDEX IF NOT EXISTS direct_messages_pair_idx ON direct_messages(sender_id, recipient_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS message_requests_recipient_idx ON message_requests(recipient_id, status, created_at DESC);
     CREATE INDEX IF NOT EXISTS stream_sessions_status_idx ON stream_sessions(status, visibility, started_at DESC);
@@ -266,9 +288,17 @@ function getPool() {
 
   if (!pool) {
     const { Pool } = require("pg");
+    let connectionString = process.env.DATABASE_URL;
+    if (process.env.NODE_ENV === "production") {
+      const databaseUrl = new URL(connectionString);
+      for (const key of ["sslmode", "sslcert", "sslkey", "sslrootcert", "uselibpqcompat"]) databaseUrl.searchParams.delete(key);
+      connectionString = databaseUrl.toString();
+    }
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+      connectionString,
+      ssl: process.env.NODE_ENV === "production"
+        ? { rejectUnauthorized: process.env.DATABASE_SSL_ALLOW_SELF_SIGNED !== "1" }
+        : undefined,
       max: 10,
       idleTimeoutMillis: 30_000
     });

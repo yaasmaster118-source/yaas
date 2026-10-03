@@ -5,15 +5,29 @@ services:
     plan: free
     branch: main
     autoDeployTrigger: commit
-    buildCommand: npm install
+    buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: "24"
+      - key: NODE_ENV
+        value: production
       - key: OWNER_EMAIL
-        value: alimelekaliyev545@gmail.com
+        sync: false
       - key: DATABASE_URL
+        sync: false
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SECURITY_LOG_SALT
+        generateValue: true
+      - key: SECURITY_ALERT_WEBHOOK_URL
+        sync: false
+      - key: SECURITY_ALERT_EMAIL
+        sync: false
+      - key: SECURITY_ALERT_FROM
+        sync: false
+      - key: RESEND_API_KEY
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false

@@ -4,6 +4,7 @@ const path = require("path");
 const { handleApi } = require("./src/api");
 const { getAuthenticatedUser } = require("./src/auth");
 const { initializeDatabase, query } = require("./src/database");
+const { applyRateLimit, recordSecurityEvent } = require("./src/security");
 
 const port = Number(process.env.PORT) || 4173;
 const root = __dirname;
@@ -11,13 +12,6 @@ const voiceRooms = new Map();
 const streamRooms = new Map();
 const MAX_JSON_BYTES = 450_000;
 const MAX_FORM_BYTES = 80_000;
-const RATE_LIMITS = {
-  global: { limit: 600, windowMs: 60_000 },
-  auth: { limit: 25, windowMs: 60_000 },
-  write: { limit: 180, windowMs: 60_000 },
-  voice: { limit: 900, windowMs: 60_000 }
-};
-const rateBuckets = new Map();
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -40,8 +34,9 @@ const server = http.createServer((request, response) => {
   if (!applyRateLimit(request, response)) return;
 
   if (request.url.startsWith("/api/") && !request.url.startsWith("/api/voice/") && !request.url.startsWith("/api/stream-rtc/")) {
-    const isAppleCallback = request.url.startsWith("/api/auth/oauth/apple/callback");
+    const isAppleCallback = request.url.split("?")[0] === "/api/auth/oauth/apple/callback";
     if (!isAppleCallback && !isSameOrigin(request)) {
+      recordSecurityEvent({ request, eventType: "origin_rejected", severity: "high", metadata: { path: request.url.split("?")[0] } }).catch(() => {});
       sendJson(response, 403, { error: "Geçersiz istek kaynağı" });
       return;
     }
@@ -86,12 +81,13 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.url === "/health") {
-    response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-    response.end(JSON.stringify({
-      status: "ok",
-      version: "1.1.0-dev",
-      build: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || "local"
-    }));
+    query("SELECT 1")
+      .then(() => sendJson(response, 200, {
+        status: "ok",
+        version: "1.1.0-dev",
+        build: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || "local"
+      }))
+      .catch(() => sendJson(response, 503, { status: "unavailable" }));
     return;
   }
 
@@ -107,6 +103,14 @@ const server = http.createServer((request, response) => {
   }
   const filePath = path.resolve(root, `.${decodedPath}`);
   const relativePath = path.relative(root, filePath);
+  const publicFiles = new Set(["index.html", "app.js", "styles.css", "clean.css", "auth-entrance.css", "auth-entrance.js", "studio.js", "studio-window.js", "studio.css", "icon.svg", "social-card.svg", "manifest.webmanifest", "googled68ecb0ee296f9ef.html"]);
+  const assetPath = relativePath.replace(/\\/g, "/");
+  const publicAsset = assetPath.startsWith("assets/") && !assetPath.split("/").some(part => part.startsWith(".")) && !assetPath.includes("local-backup") && Object.hasOwn(contentTypes, path.extname(filePath).toLowerCase());
+  if (!publicFiles.has(assetPath) && !publicAsset) {
+    response.writeHead(404);
+    response.end("Not found");
+    return;
+  }
 
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     response.writeHead(403);
@@ -136,63 +140,24 @@ server.requestTimeout = 25_000;
 server.keepAliveTimeout = 5_000;
 server.maxHeadersCount = 80;
 
-function clientIp(request) {
-  return String(request.headers["x-forwarded-for"] || request.socket.remoteAddress || "unknown")
-    .split(",")[0]
-    .trim();
-}
-
-function ratePolicy(request) {
-  const pathname = request.url.split("?")[0];
-  if (pathname.startsWith("/api/auth/")) return "auth";
-  if (pathname.startsWith("/api/voice/") || pathname.startsWith("/api/stream-rtc/")) return "voice";
-  if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) return "write";
-  return "global";
-}
-
-function applyRateLimit(request, response) {
-  const policyName = ratePolicy(request);
-  const policy = RATE_LIMITS[policyName];
-  const now = Date.now();
-  const key = `${clientIp(request)}:${policyName}`;
-  const bucket = rateBuckets.get(key);
-  if (!bucket || bucket.resetAt <= now) {
-    rateBuckets.set(key, { count: 1, resetAt: now + policy.windowMs });
-    return true;
-  }
-  bucket.count += 1;
-  if (bucket.count <= policy.limit) return true;
-  response.writeHead(429, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-    "Retry-After": String(Math.ceil((bucket.resetAt - now) / 1000))
-  });
-  response.end(JSON.stringify({ error: "Cok fazla istek. Biraz bekleyip tekrar dene." }));
-  return false;
-}
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, bucket] of rateBuckets) {
-    if (bucket.resetAt <= now) rateBuckets.delete(key);
-  }
-}, 60_000).unref();
-
 function applySecurityHeaders(response) {
   response.setHeader("X-Content-Type-Options", "nosniff");
-  response.setHeader("X-Frame-Options", "SAMEORIGIN");
+  response.setHeader("X-Frame-Options", "DENY");
   response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   response.setHeader("Permissions-Policy", "geolocation=(), payment=(), usb=(), fullscreen=(self), camera=(self), microphone=(self), display-capture=(self)");
   response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
   response.setHeader("Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' blob: data:; connect-src 'self' https://accounts.google.com https://appleid.apple.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self' https://appleid.apple.com"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' blob: data:; connect-src 'self' https://accounts.google.com https://appleid.apple.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://appleid.apple.com"
   );
+  if (process.env.NODE_ENV === "production") response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
 }
 
 function getOrigin(request) {
-  const protocol = request.headers["x-forwarded-proto"] || "http";
-  const host = request.headers["x-forwarded-host"] || request.headers.host || `localhost:${port}`;
+  if (process.env.PUBLIC_ORIGIN) return new URL(process.env.PUBLIC_ORIGIN).origin;
+  const proxyTrusted = process.env.TRUST_PROXY === "1" || process.env.RENDER === "true";
+  const protocol = proxyTrusted && request.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+  const host = request.headers.host || `localhost:${port}`;
   return `${protocol}://${host}`;
 }
 
@@ -203,9 +168,14 @@ function isSameOrigin(request) {
 }
 
 function readJson(request) {
+  if (!String(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
+    return Promise.reject(Object.assign(new Error("JSON required"), { statusCode: 400 }));
+  }
   return readBody(request, MAX_JSON_BYTES).then((body) => {
     try {
-      return body ? JSON.parse(body) : {};
+      const parsed = body ? JSON.parse(body) : {};
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Object required");
+      return parsed;
     } catch (error) {
       error.statusCode = 400;
       throw error;
