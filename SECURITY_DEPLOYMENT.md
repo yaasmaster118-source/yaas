@@ -13,7 +13,9 @@ YAAS'ın ücretsiz kalıcı veritabanı için seçilen geçici production çöz�
 5. Mevcut SQLite verisini yedekleyip yeni veritabanına kontrollü olarak aktarın. Aktarım ve kayıt sayısı kontrolü yapılmadan Render'ı yeniden başlatmayın.
 6. Sağlık kontrolü ve owner login çalıştıktan sonra güvenlik dalını main'e alın ve deploy edin.
 
-E-posta için Resend Free kullanılabilir: [resmi fiyatlandırma](https://www.resend.com/pricing?product=transactional) ayda 3.000 ve günde 100 e-posta sınırı belirtir. Gönderim alan adı yoksa ilk testler yalnızca Resend hesabının kendi adresine gönderilebilir; gerçek gönderici alan adı daha sonra doğrulanmalıdır. Bu servis hesapları henüz oluşturulmuş veya bağlı değildir.
+E-posta için Resend Free kullanılabilir: [resmi fiyatlandırma](https://www.resend.com/pricing?product=transactional) ayda 3.000 ve günde 100 e-posta sınırı belirtir. Gönderim alan adı yoksa ilk testler yalnızca Resend hesabının kendi adresine gönderilebilir; gerçek gönderici alan adı daha sonra doğrulanmalıdır. Resend hesabı henüz bağlanmamıştır.
+
+4 Ekim 2026 kurulum durumu: Neon'da `YAAS` Free projesi Frankfurt bölgesinde oluşturuldu (`broad-sea-34167397`). Panel bu hesap için 0,5 GB alan gösteriyor; gerçek kota panelden kontrol edilmelidir. Proje henüz Render'a bağlanmadı ve veri aktarılmadı. Canlı Render ortamında `DATABASE_URL` yok. Canlı yedek girişimi ek onay nedeniyle engellendi; yedek varmış gibi işlem yapılmamalıdır. Yeni güvenlik kodu `security/production-hardening` dalında ve taslak PR #1'de bekliyor.
 
 1. Create Render Postgres in the same region as YAAS. Use its internal URL for `DATABASE_URL`; Render recommends internal URLs for same-region services: [Postgres connection guide](https://render.com/docs/postgresql-creating-connecting).
 2. Set `DATABASE_URL`, `OWNER_EMAIL`, `SECURITY_LOG_SALT`, OAuth/TURN credentials, and optionally `SECURITY_ALERT_WEBHOOK_URL` as Render secrets. Never commit their values.
