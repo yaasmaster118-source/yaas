@@ -46,19 +46,20 @@ Server deletion, ownership transfer, role creation/change/deletion, member role 
 - Public registration cannot claim the reserved owner email or grant site-owner status.
 - Resend email alert adapter and duplicate suppression are implemented and tested with mocked delivery.
 - Automated checks for auth persistence, authorization/IDOR boundaries, session expiry behavior, invalid input, headers, rate-limit policy, and upload signature validation.
+- Neon Free PostgreSQL connected to the live Render service with verified TLS; no paid service was purchased. All 18 application tables were initialized after the user confirmed no old records needed preserving.
+- Production deployment `e5b5e45` succeeded on 2026-10-04. Live checks returned health 200, internal database/source paths 404, unauthenticated admin 401, HSTS and frame denial. Local 47 tests and GitHub CI passed.
 
 ### PARTIALLY IMPLEMENTED
 
 - Brute-force defense is per-IP/route and intentionally avoids account lockout denial-of-service. Distributed enforcement must also be configured in Cloudflare.
 - Alerts support a generic webhook. Provider-specific email/SMS delivery depends on the selected external service.
-- GitHub Actions security checks and weekly dependency updates are configured. Remote workflow execution is pending merging the update; local `npm audit` is also available.
+- GitHub Actions security checks have passed and weekly dependency updates are configured; local `npm audit` reported no vulnerabilities.
 - Uploads are stored as small validated image data or HTTPS references. A dedicated object-storage malware scanning pipeline is not present.
 
 ### MANUAL SETUP REQUIRED
 
-- Create Render PostgreSQL, set the internal connection URL as `DATABASE_URL`, and verify the dashboard says “Kalıcı veritabanı: Aktif”.
-- The user requested free services. Neon Free is the selected alternative; connect it only after account authorization and migration of existing SQLite data. No paid service has been purchased.
-- Set `OWNER_EMAIL`, OAuth credentials, a random `SECURITY_LOG_SALT`, and optionally `SECURITY_ALERT_WEBHOOK_URL` in Render secrets.
+- Verify the owner login and Security Center using the intended Google identity; no real user account was created during deployment checks.
+- Google OAuth, `OWNER_EMAIL`, a generated `SECURITY_LOG_SALT`, `NODE_ENV`, `TRUST_PROXY`, and `PUBLIC_ORIGIN` are configured in Render. Apple OAuth and optional alert webhook still require setup.
 - For the requested email destination, configure `SECURITY_ALERT_EMAIL=yaasmaster118@gmail.com`, `SECURITY_ALERT_FROM`, and `RESEND_API_KEY`, then verify actual delivery. No email service is configured yet.
 - Add a custom domain to Render, proxy it through Cloudflare, disable the `onrender.com` subdomain, and configure WAF/rate-limit rules as described in `SECURITY_DEPLOYMENT.md`.
 - Enable MFA on GitHub, Render, Cloudflare, Google/Apple developer, database, and owner identity accounts.
@@ -72,7 +73,7 @@ Server deletion, ownership transfer, role creation/change/deletion, member role 
 
 ### SECURITY RISKS
 
-- Running without `DATABASE_URL` on Render uses ephemeral SQLite and can lose accounts, messages, sessions, and logs after restart or redeploy.
+- Production now uses Neon. Removing `DATABASE_URL` would re-enable ephemeral SQLite and its data-loss risk; free database capacity and availability must be monitored.
 - The public `onrender.com` hostname can bypass Cloudflare until it is disabled after adding a verified custom domain.
 - In-memory application rate limits reset on deploy and are per instance; Cloudflare limits are required for distributed enforcement.
 - Pending alert aggregation is in memory and is lost on restart; a durable alert queue is still needed for guaranteed delivery. Log retention and off-site log export are not automated.
