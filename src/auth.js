@@ -37,7 +37,7 @@ function parseCookies(request) {
   for (const part of String(request.headers.cookie || "").split(";")) {
     const index = part.indexOf("=");
     if (index === -1) continue;
-    cookies[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
+    try { cookies[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim()); } catch { /* Ignore malformed cookie values. */ }
   }
   return cookies;
 }
@@ -54,6 +54,11 @@ async function createSession(userId, response) {
     "Set-Cookie",
     `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Priority=High; Max-Age=${SESSION_DAYS * 86400}${secure}`
   );
+  await query("DELETE FROM sessions WHERE expires_at <= NOW()");
+  const sessions = await query("SELECT id FROM sessions WHERE user_id = $1 ORDER BY created_at DESC", [userId]);
+  for (const oldSession of sessions.rows.slice(10)) {
+    await query("DELETE FROM sessions WHERE id = $1 AND user_id = $2", [oldSession.id, userId]);
+  }
 }
 
 async function destroySession(request, response) {

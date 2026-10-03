@@ -12,6 +12,8 @@ const {
 } = require("./auth");
 const { ALL_PERMISSIONS, ROLE_TEMPLATES, validPermissions } = require("./permissions");
 const { finishOAuth, publicProviders, startOAuth } = require("./oauth");
+const { clientIp, consumeRateLimit, recordAdminAudit, recordSecurityEvent, validateImageValue } = require("./security");
+const DUMMY_PASSWORD_HASH = `scrypt:${"0".repeat(32)}:${"0".repeat(128)}`;
 
 function text(value, max) {
   return String(value || "").trim().slice(0, max);
@@ -26,16 +28,7 @@ function validEmail(email) {
 }
 
 function profileImageValue(value) {
-  const image = String(value || "").trim();
-  if (!image) return "";
-  if (image.length > 900_000) return null;
-  if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i.test(image)) return image;
-  try {
-    const parsed = new URL(image);
-    return ["http:", "https:"].includes(parsed.protocol) ? image.slice(0, 500) : null;
-  } catch {
-    return null;
-  }
+  return validateImageValue(value);
 }
 
 async function serverSummary(serverId) {
@@ -325,7 +318,7 @@ async function handleApi(request, response, helpers) {
       try {
         await finishOAuth(oauthCallback[1], request, response, getOrigin(request), callbackValues);
       } catch (error) {
-        console.error(error);
+        console.error("OAuth failed", { code: String(error.code || "OAUTH_ERROR").slice(0, 40) });
         const providerName = oauthCallback[1] === "google" ? "Google" : "Apple";
         response.writeHead(302, {
           Location: `/?authError=${encodeURIComponent(`${providerName} girişi tamamlanamadı. Client ID, secret ve yönlendirme adresini kontrol et.`)}`
@@ -340,6 +333,7 @@ async function handleApi(request, response, helpers) {
       const email = normalizeEmail(body.email);
       const name = text(body.name, 40);
       const password = String(body.password || "");
+      if (password.length > 1024) return sendJson(response, 400, { error: "Geçersiz istek" });
       if (!validEmail(email) || name.length < 2 || !strongPassword(password)) {
         return sendJson(response, 400, { error: "Geçerli ad, e-posta ve en az 8 karakterli, harf ve rakam içeren şifre gerekli" });
       }
@@ -347,8 +341,10 @@ async function handleApi(request, response, helpers) {
         return sendJson(response, 409, { error: "Bu e-posta zaten kayıtlı. Lütfen giriş yap." });
       }
       const user = { id: crypto.randomUUID(), email, name, handle: makeHandle(email) };
-      const isSiteOwner = Boolean(process.env.OWNER_EMAIL)
-        && email === process.env.OWNER_EMAIL.trim().toLowerCase();
+      if (email === String(process.env.OWNER_EMAIL || "").trim().toLowerCase()) {
+        return sendJson(response, 403, { error: "Bu hesap için doğrulanmış sosyal giriş veya yönetici kurulumu gerekli" });
+      }
+      const isSiteOwner = false;
       try {
         await query(
           "INSERT INTO users (id, email, display_name, handle, password_hash, is_site_owner) VALUES ($1, $2, $3, $4, $5, $6)",
@@ -368,15 +364,20 @@ async function handleApi(request, response, helpers) {
 
     if (method === "POST" && url.pathname === "/api/auth/login") {
       const body = await readJson(request);
+      if (String(body.password || "").length > 1024) return sendJson(response, 400, { error: "Geçersiz istek" });
       const result = await query(
         "SELECT id, email, display_name, handle, bio, avatar_url, avatar_frame, password_hash, is_site_owner FROM users WHERE email = $1",
         [normalizeEmail(body.email)]
       );
       const user = result.rows[0];
-      if (!user || !(await verifyPassword(String(body.password || ""), user.password_hash))) {
+      const passwordMatches = await verifyPassword(String(body.password || ""), user?.password_hash || DUMMY_PASSWORD_HASH);
+      if (!user || !passwordMatches) {
+        const failures = consumeRateLimit(`login-failure:${clientIp(request)}`, "failedLogin");
+        await recordSecurityEvent({ request, eventType: "login_failed", severity: failures.allowed ? "warning" : "high", metadata: { attempts: failures.bucket.count } });
         return sendJson(response, 401, { error: "E-posta veya sifre hatali" });
       }
       await createSession(user.id, response);
+      await recordSecurityEvent({ request, userId: user.id, eventType: "login_succeeded" });
       return sendJson(response, 200, {
         user: {
           id: user.id,
@@ -402,6 +403,30 @@ async function handleApi(request, response, helpers) {
 
     const user = await requireUser(request, response, sendJson);
     if (!user) return;
+
+    if (method === "GET" && url.pathname === "/api/admin/security/summary") {
+      if (!user.is_site_owner) {
+        await recordSecurityEvent({ request, userId: user.id, eventType: "admin_access_denied", severity: "high", metadata: { path: url.pathname } });
+        return sendJson(response, 403, { error: "Bu alan yalnızca YAAS sahibi içindir" });
+      }
+      const [recent, audits] = await Promise.all([
+        query(`SELECT event_type, severity, metadata, created_at FROM security_events ORDER BY created_at DESC LIMIT 200`),
+        query(`SELECT action, target_type, target_id, metadata, created_at FROM admin_audit_logs ORDER BY created_at DESC LIMIT 30`)
+      ]);
+      const counts = {};
+      for (const event of recent.rows) counts[event.event_type] = (counts[event.event_type] || 0) + 1;
+      await recordAdminAudit({ request, actorUserId: user.id, action: "security_dashboard_view", targetType: "security" });
+      return sendJson(response, 200, {
+        security: {
+          counts,
+          recentEvents: recent.rows.slice(0, 30),
+          auditLogs: audits.rows,
+          alertWebhookConfigured: Boolean(process.env.SECURITY_ALERT_WEBHOOK_URL),
+          alertEmailConfigured: Boolean(process.env.RESEND_API_KEY && process.env.SECURITY_ALERT_FROM && process.env.SECURITY_ALERT_EMAIL),
+          persistentDatabase: Boolean(process.env.DATABASE_URL)
+        }
+      });
+    }
 
     if (method === "PATCH" && url.pathname === "/api/me/profile") {
       const body = await readJson(request);
@@ -833,7 +858,7 @@ async function handleApi(request, response, helpers) {
       if (iconColor !== null && !/^#[0-9a-f]{6}$/i.test(iconColor)) {
         return sendJson(response, 400, { error: "Geçerli bir simge rengi seçmelisin" });
       }
-      if (logoUrl === null) {
+      if (hasLogoUrl && logoUrl === null) {
         return sendJson(response, 400, { error: "Sunucu logosu icin gecerli bir gorsel baglantisi kullanmalisin" });
       }
       await query(
@@ -858,6 +883,7 @@ async function handleApi(request, response, helpers) {
       const serverId = serverRoute[1];
       const owned = await query("SELECT id FROM servers WHERE id = $1 AND owner_id = $2", [serverId, user.id]);
       if (!owned.rowCount) return sendJson(response, 403, { error: "Yalnızca sunucu sahibi sunucuyu silebilir" });
+      await recordAdminAudit({ request, actorUserId: user.id, action: "server_delete", targetType: "server", targetId: serverId });
       await query("DELETE FROM servers WHERE id = $1", [serverId]);
       return sendJson(response, 200, { ok: true });
     }
@@ -898,6 +924,7 @@ async function handleApi(request, response, helpers) {
           );
         }
       });
+      await recordAdminAudit({ request, actorUserId: user.id, action: "server_owner_transfer", targetType: "server", targetId: serverId, metadata: { newOwnerId } });
       return sendJson(response, 200, { ok: true });
     }
 
@@ -1000,6 +1027,7 @@ async function handleApi(request, response, helpers) {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
         [role.id, serverId, role.name, text(body.color, 20) || "#8d7aff", role.role_icon, role.role_hoist, role.position, JSON.stringify(role.permissions)]
       );
+      await recordAdminAudit({ request, actorUserId: user.id, action: "role_create", targetType: "role", targetId: role.id, metadata: { serverId, name: role.name } });
       return sendJson(response, 201, { role });
     }
 
@@ -1018,6 +1046,7 @@ async function handleApi(request, response, helpers) {
       if (method === "DELETE") {
         if (role.is_system) return sendJson(response, 403, { error: "Sistem rolü silinemez" });
         await query("DELETE FROM roles WHERE id = $1 AND server_id = $2", [roleId, serverId]);
+        await recordAdminAudit({ request, actorUserId: user.id, action: "role_delete", targetType: "role", targetId: roleId, metadata: { serverId } });
         return sendJson(response, 200, { ok: true });
       }
       const body = await readJson(request);
@@ -1043,6 +1072,7 @@ async function handleApi(request, response, helpers) {
           body.roleHoist !== undefined ? Boolean(body.roleHoist) : null
         ]
       );
+      await recordAdminAudit({ request, actorUserId: user.id, action: "role_update", targetType: "role", targetId: roleId, metadata: { serverId } });
       return sendJson(response, 200, { ok: true });
     }
 
@@ -1061,6 +1091,7 @@ async function handleApi(request, response, helpers) {
          SELECT $1, $2, id FROM roles WHERE id = $3 AND server_id = $1 ON CONFLICT DO NOTHING`,
         [serverId, memberId, roleId]
       );
+      await recordAdminAudit({ request, actorUserId: user.id, action: "member_role_assign", targetType: "member", targetId: memberId, metadata: { serverId, roleId } });
       return sendJson(response, 200, { ok: true });
     }
     if (method === "DELETE" && assignRoute) {
@@ -1076,6 +1107,7 @@ async function handleApi(request, response, helpers) {
         "DELETE FROM member_roles WHERE server_id = $1 AND user_id = $2 AND role_id = $3",
         [serverId, memberId, roleId]
       );
+      await recordAdminAudit({ request, actorUserId: user.id, action: "member_role_remove", targetType: "member", targetId: memberId, metadata: { serverId, roleId } });
       return sendJson(response, 200, { ok: true });
     }
 
@@ -1252,9 +1284,17 @@ async function handleApi(request, response, helpers) {
 
     const messageRoute = url.pathname.match(/^\/api\/channels\/([0-9a-f-]+)\/messages$/i);
     if (messageRoute) {
-      const channelResult = await query("SELECT id, server_id, type FROM channels WHERE id = $1", [messageRoute[1]]);
+      const channelResult = await query("SELECT id, server_id, type, is_private, allowed_role_ids FROM channels WHERE id = $1", [messageRoute[1]]);
       const channel = channelResult.rows[0];
       if (!channel || !(await membership(channel.server_id, user.id))) return sendJson(response, 404, { error: "Kanal bulunamadı" });
+      if (channel.is_private) {
+        const serverOwner = await query("SELECT owner_id FROM servers WHERE id = $1", [channel.server_id]);
+        if (serverOwner.rows[0]?.owner_id !== user.id) {
+          const memberRoles = await query("SELECT role_id FROM member_roles WHERE server_id = $1 AND user_id = $2", [channel.server_id, user.id]);
+          const allowedRoles = new Set(jsonArray(channel.allowed_role_ids));
+          if (!memberRoles.rows.some(role => allowedRoles.has(role.role_id))) return sendJson(response, 404, { error: "Kanal bulunamadı" });
+        }
+      }
       if (channel.type !== "text") return sendJson(response, 400, { error: "Bu bir yazı kanalı değil" });
       if (method === "GET") {
         if (!(await requirePermission(response, sendJson, channel.server_id, user.id, "channel.view"))) return;
@@ -1289,7 +1329,8 @@ async function handleApi(request, response, helpers) {
     if (error.code === "23505" || /UNIQUE constraint failed/i.test(error.message)) {
       return sendJson(response, 409, { error: "Bu kayıt zaten mevcut" });
     }
-    console.error(error);
+    console.error("API error", { code: String(error.code || "INTERNAL_ERROR").slice(0, 40) });
+    recordSecurityEvent({ request, eventType: "server_error", severity: "high", metadata: { path: url.pathname, code: String(error.code || "INTERNAL_ERROR").slice(0, 40) } }).catch(() => {});
     sendJson(response, 500, { error: "Sunucu hatası" });
   }
 }

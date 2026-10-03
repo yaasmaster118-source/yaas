@@ -65,6 +65,7 @@ const state = {
   },
   activeWorkspacePage: "home",
   settingsPageTab: "appearance",
+  securityDashboard: null,
   serversPageTab: "mine",
   streamCreatorOpen: false,
   eventCreatorOpen: false,
@@ -1385,6 +1386,33 @@ function showServersPage() {
 function settingsPagePanel(tab) {
   const appearance = localStorage.getItem("yaas:appearance-mode") || "dark";
   const showAllChannels = localStorage.getItem("yaas:show-all-channels-setting") !== "false";
+  if (tab === "security" && state.user?.is_site_owner) {
+    const security = state.securityDashboard;
+    if (!security) return `<section class="settings-page-panel"><h3>Güvenlik</h3><p>Güvenlik durumu yükleniyor…</p></section>`;
+    const labels = {
+      login_failed: "Başarısız giriş",
+      login_succeeded: "Başarılı giriş",
+      rate_limit: "Hız sınırı",
+      origin_rejected: "Kaynak engeli",
+      admin_access_denied: "Yönetici erişimi engellendi"
+    };
+    return `<section class="settings-page-panel">
+      <h3>Güvenlik merkezi</h3>
+      <p>Son 200 güvenlik olayı ve yönetici işlemleri. IP adresleri yalnızca tek yönlü özet olarak saklanır.</p>
+      <div class="security-status-grid">
+        <article class="settings-info-row"><strong>Kalıcı veritabanı</strong>${statusBadge(security.persistentDatabase ? "Aktif" : "Kurulum gerekli")}</article>
+        <article class="settings-info-row"><strong>Kritik uyarı kanalı</strong>${statusBadge(security.alertWebhookConfigured ? "Aktif" : "Kurulum gerekli")}</article>
+        <article class="settings-info-row"><strong>E-posta uyarıları</strong>${statusBadge(security.alertEmailConfigured ? "Yapılandırıldı" : "Kurulum gerekli")}</article>
+      </div>
+      <h4>Olay sayıları</h4>
+      ${Object.entries(security.counts || {}).length ? Object.entries(security.counts).map(([key, value]) => `<article class="settings-info-row"><strong>${escapeHtml(labels[key] || key)}</strong>${statusBadge(String(value))}</article>`).join("") : "<p>Henüz güvenlik olayı yok.</p>"}
+      <h4>Son olaylar</h4>
+      ${(security.recentEvents || []).slice(0, 10).map((event) => `<article class="settings-info-row"><span><strong>${escapeHtml(labels[event.event_type] || event.event_type)}</strong><small>${escapeHtml(new Date(event.created_at).toLocaleString("tr-TR"))}</small></span>${statusBadge(event.severity)}</article>`).join("") || "<p>Henüz olay yok.</p>"}
+      <button class="secondary" id="security-dashboard-refresh" type="button">Yenile</button>
+      <h4>Yönetici işlem geçmişi</h4>
+      ${(security.auditLogs || []).slice(0, 10).map(event => `<article class="settings-info-row"><strong>${escapeHtml(event.action)}</strong><small>${escapeHtml(new Date(event.created_at).toLocaleString("tr-TR"))}</small></article>`).join("") || "<p>Henüz işlem yok.</p>"}
+    </section>`;
+  }
   if (tab === "account") {
     return `<section class="settings-page-panel">
       <h3>Hesabım</h3>
@@ -1461,6 +1489,7 @@ function renderSettingsPage() {
     ["language", "Dil"],
     ["about", "Hakkında"]
   ];
+  if (state.user?.is_site_owner) tabs.splice(1, 0, ["security", "Güvenlik"]);
   shell.innerHTML = `
     ${workspaceTopbar("Ayarlar", "Hesabını, görünümünü ve tercihlerini yönet.", "")}
     <div class="workspace-card settings-page-layout">
@@ -1487,6 +1516,19 @@ function renderSettingsPage() {
     localStorage.setItem("yaas:show-all-channels-setting", event.currentTarget.checked ? "true" : "false");
     notify("Kanal görünüm tercihi kaydedildi");
   });
+  $("#security-dashboard-refresh")?.addEventListener("click", () => loadSecurityDashboard());
+  if (state.settingsPageTab === "security" && !state.securityDashboard) loadSecurityDashboard();
+}
+
+async function loadSecurityDashboard() {
+  if (!state.user?.is_site_owner) return;
+  try {
+    const data = await api("/api/admin/security/summary");
+    state.securityDashboard = data.security;
+    if (state.settingsPageTab === "security") renderSettingsPage();
+  } catch (error) {
+    notify(error.message, true);
+  }
 }
 
 function showSettingsPage() {
