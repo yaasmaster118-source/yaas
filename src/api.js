@@ -15,6 +15,8 @@ const { ALL_PERMISSIONS, ROLE_TEMPLATES, validPermissions } = require("./permiss
 const { finishOAuth, publicProviders, startOAuth } = require("./oauth");
 const { clientIp, consumeRateLimit, recordAdminAudit, recordSecurityEvent, validateImageValue } = require("./security");
 const DUMMY_PASSWORD_HASH = `scrypt:${"0".repeat(32)}:${"0".repeat(128)}`;
+const activeUsers = new Map();
+let presenceCleanupAt=0;
 
 function text(value, max) {
   return String(value || "").trim().slice(0, max);
@@ -403,6 +405,10 @@ async function handleApi(request, response, helpers) {
     }
 
     const user = await requireUser(request, response, sendJson);
+    if(user){
+      const now=Date.now();activeUsers.set(user.id,now);
+      if(now>presenceCleanupAt){for(const [id,seen] of activeUsers)if(now-seen>60000)activeUsers.delete(id);presenceCleanupAt=now+60000;}
+    }
     if (!user) return;
 
     if (method === "GET" && url.pathname === "/api/admin/security/summary") {
@@ -642,7 +648,7 @@ async function handleApi(request, response, helpers) {
       response.setHeader("Accept-Ranges","bytes");
       if(!range){response.writeHead(416,{"Content-Range":`bytes */${bytes.length}`});return response.end();}
       response.setHeader("Content-Type",attachment.mime_type);
-      response.setHeader("Content-Disposition",`inline; filename*=UTF-8''${encodeURIComponent(attachment.name).replace(/'/g,"%27")}`);
+      response.setHeader("Content-Disposition",`${attachment.mime_type.startsWith('application/')||attachment.mime_type==='text/plain'?'attachment':'inline'}; filename*=UTF-8''${encodeURIComponent(attachment.name).replace(/'/g,"%27")}`);
       response.setHeader("Content-Length",range.end-range.start+1);
       if(range.partial)response.setHeader("Content-Range",`bytes ${range.start}-${range.end}/${bytes.length}`);
       response.writeHead(range.partial?206:200);
@@ -667,12 +673,13 @@ async function handleApi(request, response, helpers) {
             ORDER BY dm.created_at DESC, dm.id DESC LIMIT 101`,
           [user.id, friendId, url.searchParams.get("before") || null, url.searchParams.get("beforeId") || null]
         );
-        return sendJson(response, 200, { messages: result.rows.slice(0,100).reverse(), hasMore: result.rows.length > 100 });
+        const receipt=await query("SELECT read_at FROM contact_preferences WHERE user_id=$1 AND contact_id=$2",[friendId,user.id]);
+        return sendJson(response, 200, { messages: result.rows.slice(0,100).reverse(), hasMore: result.rows.length > 100, peerOnline:Date.now()-(activeUsers.get(friendId)||0)<40000, peerReadAt:receipt.rows[0]?.read_at||null });
       }
       const body = await readJson(request,12*1024*1024);
       let attachment;
       try { attachment=validateDmAttachment(body.attachment); } catch(error) { return sendJson(response,400,{error:error.message}); }
-      const content = text(body.content, 4000) || (attachment ? attachment.mime.startsWith("image/")?"[Fotoğraf]":attachment.mime.startsWith("audio/")?"[Ses kaydı]":"[Video]" : "");
+      const content = text(body.content, 4000) || (attachment ? attachment.mime==='image/gif'?"[GIF]":attachment.mime.startsWith("image/")?"[Fotoğraf]":attachment.mime.startsWith("audio/")?"[Ses kaydı]":attachment.mime.startsWith('video/')?"[Video]":"[Dosya]" : "");
       if (!content) return sendJson(response, 400, { error: "Mesaj boş olamaz" });
       const message = { id: crypto.randomUUID(), content };
       await transaction(async client=>{

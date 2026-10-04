@@ -1,12 +1,12 @@
 "use strict";
 const MAX_MEDIA_BYTES = 8 * 1024 * 1024;
-const MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "audio/webm", "audio/ogg", "audio/mp4", "audio/wav", "video/webm", "video/mp4"]);
+const MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "audio/webm", "audio/ogg", "audio/mp4", "audio/wav", "video/webm", "video/mp4", "application/pdf", "application/zip", "text/plain"]);
 function invalid(message) { return Object.assign(new Error(message), { statusCode: 400 }); }
 function validateDmAttachment(value) {
   if (value == null) return null;
   if (typeof value !== "object" || Array.isArray(value) || typeof value.data !== "string") throw invalid("Geçersiz dosya");
   const match = value.data.match(/^data:([\w/+.-]+)(?:;codecs=[\w,.-]+)?;base64,([A-Za-z0-9+/]+={0,2})$/);
-  if (!match || !MIME_TYPES.has(match[1]) || match[2].length > Math.ceil(MAX_MEDIA_BYTES / 3) * 4) throw invalid("JPEG, PNG, WebP, WebM, MP4, Ogg veya WAV seç. Dosya en fazla 8 MB olabilir.");
+  if (!match || !MIME_TYPES.has(match[1]) || match[2].length > Math.ceil(MAX_MEDIA_BYTES / 3) * 4) throw invalid("Fotoğraf, GIF, video, ses, PDF, TXT veya ZIP seç. Dosya en fazla 8 MB olabilir.");
   const bytes = Buffer.from(match[2], "base64"), mime = match[1];
   if (!bytes.length || bytes.length > MAX_MEDIA_BYTES || bytes.toString("base64") !== match[2]) throw invalid("Dosya boyutu veya kodlaması geçersiz");
   const prefix = bytes.subarray(0, 12);
@@ -17,8 +17,12 @@ function validateDmAttachment(value) {
   const webm = prefix.subarray(0,4).equals(Buffer.from([26,69,223,163]));
   const mp4 = prefix.toString("ascii",4,8) === "ftyp";
   const ogg = prefix.toString("ascii",0,4) === "OggS";
-  const valid = mime === "image/png" ? png : mime === "image/jpeg" ? jpeg : mime === "image/webp" ? webp : mime === "audio/wav" ? wav : mime === "audio/ogg" ? ogg : mime.endsWith("/webm") ? webm : mp4;
-  if (!valid || bytes.length < 12) throw invalid("Dosyanın içeriği seçilen türle eşleşmiyor");
+  const gif = ['GIF87a','GIF89a'].includes(prefix.toString('ascii',0,6));
+  const pdf = prefix.toString('ascii',0,5)==='%PDF-';
+  const zip = prefix[0]===80&&prefix[1]===75&&[[3,4],[5,6],[7,8]].some(pair=>prefix[2]===pair[0]&&prefix[3]===pair[1]);
+  const plain = !bytes.includes(0)&&Buffer.from(bytes.toString('utf8'),'utf8').equals(bytes);
+  const valid = mime === "image/png" ? png : mime === "image/jpeg" ? jpeg : mime === "image/webp" ? webp : mime === "image/gif" ? gif : mime === "application/pdf" ? pdf : mime === "application/zip" ? zip : mime === "text/plain" ? plain : mime === "audio/wav" ? wav : mime === "audio/ogg" ? ogg : mime.endsWith("/webm") ? webm : mp4;
+  if (!valid || (mime!=='text/plain'&&bytes.length<12)) throw invalid("Dosyanın içeriği seçilen türle eşleşmiyor");
   const name = String(value.name || "medya").replace(/[\x00-\x1f\x7f\\/]/g, "_").slice(0,100);
   return { name, mime, bytes, size: bytes.length };
 }

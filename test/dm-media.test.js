@@ -2,6 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {validateDmAttachment,mediaRange}=require('../src/dm-media');
 const {DmCapture}=require('../dm-composer');
+const {DM_EMOJIS,DM_GIFS,DM_STICKERS,dmCatalogSearch}=require('../dm-catalog');
 const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jk1sAAAAASUVORK5CYII=';
 test('media validates signatures and range requests',()=>{
   assert.equal(validateDmAttachment({name:'photo.png',data:'data:image/png;base64,'+png}).mime,'image/png');
@@ -10,6 +11,15 @@ test('media validates signatures and range requests',()=>{
   assert.deepEqual(mediaRange('bytes=2-5',10),{start:2,end:5,partial:true});
   assert.deepEqual(mediaRange('bytes=-3',10),{start:7,end:9,partial:true});
   assert.equal(mediaRange('bytes=12-',10),null);assert.equal(mediaRange('bytes=-0',10),null);assert.equal(mediaRange('bytes=0-1,4-5',10),null);
+});
+test('GIF catalog contains animated files and Turkish emoji search works',()=>{
+  const fs=require('node:fs'),path=require('node:path');
+  assert.equal(dmCatalogSearch(DM_GIFS,'kahkaha').length,1);
+  assert.ok(dmCatalogSearch(Object.values(DM_EMOJIS).flat(),'kalp').some(item=>item[0]==='❤️'));
+  assert.equal(dmCatalogSearch(DM_GIFS,'nonexistent-word').length,0);
+  for(const item of [...DM_GIFS,...DM_STICKERS]){const bytes=fs.readFileSync(path.join(__dirname,'..',item.src));assert.equal(validateDmAttachment({name:item.id+'.gif',data:'data:image/gif;base64,'+bytes.toString('base64')}).mime,'image/gif');assert.ok(bytes.includes(Buffer.from('NETSCAPE2.0')));}
+  assert.equal(validateDmAttachment({name:'note.txt',data:'data:text/plain;base64,'+Buffer.from('Merhaba').toString('base64')}).mime,'text/plain');
+  assert.throws(()=>validateDmAttachment({name:'bad.pdf',data:'data:application/pdf;base64,'+png}));
 });
 test('cancelled permission request releases a late microphone',async()=>{
   let resolve,stopped=0;const stream={getTracks:()=>[{stop:()=>stopped++}]};
@@ -41,6 +51,11 @@ test('HTTP attachments persist, restrict access and support media seeking',{time
     assert.equal((await req(route,b.cookie,null,'GET',{Range:'bytes=99999-'})).status,416);
     const head=await req(route,b.cookie,null,'HEAD');assert.equal(head.status,200);assert.equal((await head.arrayBuffer()).byteLength,0);
     const history=await (await req(`/api/dms/${a.user.id}`,b.cookie)).json();assert.equal(history.messages[0].attachment_id,message.attachment_id);assert.equal(history.messages[0].attachment_name,'test.png');assert.equal(history.messages[0].data,undefined);
+    assert.equal(history.peerOnline,true);assert.equal(history.peerReadAt,null);
+    await req(`/api/contacts/${a.user.id}`,b.cookie,{read:true},'PATCH');
+    const receipt=await (await req(`/api/dms/${b.user.id}`,a.cookie)).json();assert.ok(receipt.peerReadAt);
+    const document=await req(`/api/dms/${b.user.id}`,a.cookie,{attachment:{name:'note.txt',data:'data:text/plain;base64,'+Buffer.from('Merhaba').toString('base64')}});assert.equal(document.status,201);const docId=(await document.json()).message.attachment_id;
+    const doc=await req('/api/dm-attachments/'+docId,b.cookie);assert.match(doc.headers.get('content-disposition'),/^attachment;/);assert.equal(await doc.text(),'Merhaba');
     assert.equal((await req(`/api/dms/${b.user.id}`,a.cookie,{attachment:{name:'fake.jpg',data:'data:image/jpeg;base64,'+png}})).status,400);
     const oversized=Buffer.alloc(8*1024*1024+1);oversized.set(Buffer.from(png,'base64'));assert.equal((await req(`/api/dms/${b.user.id}`,a.cookie,{attachment:{name:'large.png',data:'data:image/png;base64,'+oversized.toString('base64')}})).status,400);
     db.prepare('UPDATE dm_attachments SET size_bytes=8388608').run();for(let i=0;i<3;i++){const id=crypto.randomUUID();db.prepare('INSERT INTO direct_messages(id,sender_id,recipient_id,content) VALUES (?,?,?,?)').run(id,a.user.id,b.user.id,'quota');db.prepare('INSERT INTO dm_attachments(id,message_id,owner_id,name,mime_type,size_bytes,data) VALUES (?,?,?,?,?,?,?)').run(crypto.randomUUID(),id,a.user.id,'quota.png','image/png',8388608,Buffer.from(png,'base64'));}

@@ -451,6 +451,11 @@ function statusBadge(text) {
   return `<span class="mini-status">${escapeHtml(text)}</span>`;
 }
 
+function dmDate(value){return new Date(typeof value==='string'&&/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d/.test(value)?value.replace(' ','T')+'Z':value);}
+function updateDmPeerStatus(data){
+  state.dmPeerReadAt=data.peerReadAt;
+  const presence=$('#dm-peer-presence');if(presence){const label=data.peerOnline?'● Çevrimiçi':'● Çevrimdışı';if(presence.textContent!==label)presence.textContent=label;presence.classList.toggle('online',data.peerOnline===true);}
+}
 function renderDmPageMessages(messages) {
   const list = $("#dm-page-message-list");
   if (!list) return;
@@ -462,10 +467,11 @@ function renderDmPageMessages(messages) {
     const node=document.createElement('div');node.className=`dm-message ${message.sender_id===state.user.id?'mine':''}`;node.dataset.messageId=message.id;
     const media=message.attachment_id ? `/api/dm-attachments/${encodeURIComponent(message.attachment_id)}` : null;
     const mime=message.attachment_mime||'';
-    const label=media&&['[Fotoğraf]','[Ses kaydı]','[Video]'].includes(message.content)?'':message.content;
-    node.innerHTML=`${media ? mime.startsWith('image/')?`<a href="${media}" target="_blank" rel="noopener"><img class="dm-photo" src="${media}" alt="${escapeHtml(message.attachment_name)}" loading="lazy"></a>`:mime.startsWith('audio/')?`<audio controls preload="metadata" src="${media}" aria-label="Ses kaydı"></audio>`:`<video controls playsinline preload="metadata" src="${media}" aria-label="Video"></video>`:''}${label?`<p class="dm-message-text">${escapeHtml(label)}</p>`:''}${media?`<a class="dm-download" href="${media}" download="${escapeHtml(message.attachment_name)}">${escapeHtml(message.attachment_name)} · İndir</a>`:''}<small>${new Date(message.created_at).toLocaleString('tr-TR')}</small>`;
+    const label=media&&['[Fotoğraf]','[Ses kaydı]','[Video]','[GIF]','[Dosya]'].includes(message.content)?'':message.content;
+    node.innerHTML=`${media ? mime.startsWith('image/')?`<a href="${media}" target="_blank" rel="noopener"><img class="dm-photo" src="${media}" alt="${escapeHtml(message.attachment_name)}" loading="lazy"></a>`:mime.startsWith('audio/')?`<audio controls preload="metadata" src="${media}" aria-label="Ses kaydı"></audio>`:mime.startsWith('video/')?`<video controls playsinline preload="metadata" src="${media}" aria-label="Video"></video>`:`<div class="dm-sent-file">▤ ${escapeHtml(message.attachment_name)}</div>`:''}${label?`<p class="dm-message-text">${escapeHtml(label)}</p>`:''}${media?`<a class="dm-download" href="${media}" download="${escapeHtml(message.attachment_name)}">${escapeHtml(message.attachment_name)} · İndir</a>`:''}<small class="dm-message-meta">${dmDate(message.created_at).toLocaleString('tr-TR')}${message.sender_id===state.user.id?'<span data-receipt aria-label="Gönderildi">✓</span>':''}</small>`;
     const next=messages.slice(index+1).map(item=>existing.get(item.id)).find(Boolean);list.insertBefore(node,next||null);existing.set(message.id,node);
   });
+  messages.forEach(message=>{const receipt=existing.get(message.id)?.querySelector('[data-receipt]');if(receipt){const read=state.dmPeerReadAt&&dmDate(message.created_at)<=dmDate(state.dmPeerReadAt);const label=read?'Okundu':'Gönderildi',symbol=read?'✓✓':'✓';if(receipt.textContent!==symbol)receipt.textContent=symbol;if(receipt.getAttribute('aria-label')!==label)receipt.setAttribute('aria-label',label);receipt.title=label;}});
   if(!messages.length)list.innerHTML='<div class="dm-empty inline-empty">İlk özel mesajı gönder.</div>';
   if(nearBottom)list.scrollTop=list.scrollHeight;
 }
@@ -578,6 +584,7 @@ function renderFriendsPage() {
 
 function renderDmPage() {
   state.inboxMessages=[];
+  state.dmPeerReadAt=null;
   const conversations = state.conversations || [];
   const selected = state.activeDm;
   const isFriend = selected && state.friends.friends.some(person => person.id === selected.id);
@@ -587,8 +594,8 @@ function renderDmPage() {
     <label class="inbox-search">Sohbet ara<input id="inbox-search" placeholder="İsim veya kullanıcı adı"></label><div class="dm-list" id="inbox-conversations">${state.activeDmTab === 'requests' ? state.messageRequests.map(request => `<article class="dm-list-row"><div><strong>${escapeHtml(request.sender_name)}</strong><p>${escapeHtml(request.content)}</p><button class="primary" data-inbox-request="${request.id}" data-answer="accept">Kabul</button><button class="secondary" data-inbox-request="${request.id}" data-answer="reject">Reddet</button></div></article>`).join('') || '<p class="empty-list">Mesaj isteği yok.</p>' : conversations.map(person => `<button class="dm-list-row ${selected?.id === person.id ? 'active' : ''}" data-inbox-person="${person.id}" data-search="${escapeHtml(`${contactName(person)} ${person.handle}`.toLocaleLowerCase('tr-TR'))}">${avatarContent(person)}<div><strong>${person.pinned ? '★ ' : ''}${escapeHtml(contactName(person))}</strong><small>${escapeHtml(person.last_message || 'Henüz mesaj yok')}</small></div>${Number(person.unread_count) ? `<b class="notification-badge">${Number(person.unread_count)}</b>` : ''}</button>`).join('') || '<p class="empty-list">Bir arkadaşından sohbet başlat. Mesajların burada kalır.</p>'}</div>
     <button class="secondary wide" id="inbox-open-friends">Arkadaş listesini aç</button></aside>
     ${selected ? `<section class="dm-workspace-chat"><header>${avatarContent(selected)}<div><strong>${escapeHtml(contactName(selected))}</strong><small>@${escapeHtml(selected.handle)}</small></div><button class="secondary" id="inbox-pin">${selected.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle'}</button><button class="secondary" id="inbox-profile">Profil</button></header>
-    <button class="secondary hidden" id="inbox-older">Eski mesajları yükle</button><div class="dm-message-list" id="dm-page-message-list" aria-live="polite"></div>
-    ${isFriend ? '<form class="dm-rich-composer" id="dm-page-message-form"><div data-preview class="dm-pending-media" hidden></div><textarea id="dm-page-message-input" maxlength="4000" placeholder="Mesajını yaz…" aria-label="Mesajını yaz" rows="2"></textarea><div class="dm-composer-tools"><button type="button" data-gallery title="Galeriden fotoğraf, video veya ses seç">Galeri</button><button type="button" data-camera>Kamera</button><button type="button" data-mic>Ses kaydı</button><button type="button" data-emoji aria-label="Emoji seç">☺</button><button type="button" data-stop hidden>Kaydı durdur</button><button type="button" data-cancel hidden>Kaydı iptal et</button><span class="dm-enter-hint">Enter gönder · Shift+Enter yeni satır</span><button class="primary" data-send>Gönder ➜</button></div><input type="file" accept="image/jpeg,image/png,image/webp,video/webm,video/mp4,audio/webm,audio/ogg,audio/mp4,audio/wav" hidden><div data-emojis hidden class="dm-composer-emojis"><button type="button">😀</button><button type="button">❤️</button><button type="button">👍</button><button type="button">😂</button><button type="button">🔥</button><button type="button">🎉</button></div><p data-status role="status" class="dm-composer-status"></p></form>' : '<p class="empty-list">Sohbet geçmişin korunuyor. Yeni mesaj için yeniden arkadaş olmalısınız.</p>'}</section>` : '<section class="dm-workspace-chat empty"><span>✉</span><strong>Mesajların burada</strong><small>Soldan bir sohbet seç veya arkadaş listenden mesaj başlat.</small></section>'}</div>`;
+    <span id="dm-peer-presence" class="dm-peer-presence" aria-live="polite">Durum kontrol ediliyor…</span><button class="secondary hidden" id="inbox-older">Eski mesajları yükle</button><div class="dm-message-list" id="dm-page-message-list" aria-live="polite"></div>
+    ${isFriend ? window.dmComposerMarkup() : '<p class="empty-list">Sohbet geçmişin korunuyor. Yeni mesaj için yeniden arkadaş olmalısınız.</p>'}</section>` : '<section class="dm-workspace-chat empty"><span>✉</span><strong>Mesajların burada</strong><small>Soldan bir sohbet seç veya arkadaş listenden mesaj başlat.</small></section>'}</div>`;
   bindWorkspaceTopbarActions();
   $("#inbox-open-friends").onclick = () => showDmPage("friends").catch(error => notify(error.message,true));
   $$("[data-inbox-tab]").forEach(button => button.onclick = () => { state.activeDmTab=button.dataset.inboxTab; renderDmPage(); });
@@ -617,6 +624,7 @@ async function loadInboxMessages(older=false) {
     const data=await api(`/api/dms/${id}${cursor}`);
     if(state.activeDm?.id!==id || !$('#dm-page-message-list'))return;
     const list=$('#dm-page-message-list'), oldHeight=list.scrollHeight;
+    updateDmPeerStatus(data);
     state.inboxMessages=older ? [...data.messages,...state.inboxMessages] : data.messages;
     renderDmPageMessages(state.inboxMessages);
     if(older)list.scrollTop=list.scrollHeight-oldHeight;
@@ -3915,6 +3923,7 @@ setInterval(async()=>{
     if(state.activeWorkspacePage==='dms' && id && list){
       const data=await api(`/api/dms/${id}`);
       if(state.activeDm?.id===id && $('#dm-page-message-list')===list){
+        updateDmPeerStatus(data);
         const nearBottom=list.scrollHeight-list.scrollTop-list.clientHeight<100, oldTop=list.scrollTop;
         const merged=new Map((state.inboxMessages||[]).map(message=>[message.id,message]));
         data.messages.forEach(message=>merged.set(message.id,message));
