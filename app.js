@@ -454,13 +454,20 @@ function statusBadge(text) {
 function renderDmPageMessages(messages) {
   const list = $("#dm-page-message-list");
   if (!list) return;
-  list.innerHTML = messages.length
-    ? messages.map((message) => `<div class="dm-message ${message.sender_id === state.user.id ? "mine" : ""}">
-        ${escapeHtml(message.content)}
-        <small>${new Date(message.created_at).toLocaleString("tr-TR")}</small>
-      </div>`).join("")
-    : '<div class="dm-empty inline-empty">İlk özel mesajı gönder.</div>';
-  list.scrollTop = list.scrollHeight;
+  const nearBottom=list.scrollHeight-list.scrollTop-list.clientHeight<90;
+  list.querySelector('.dm-empty')?.remove();
+  const existing=new Map([...list.children].map(node=>[node.dataset.messageId,node]));
+  messages.forEach((message,index)=>{
+    if(existing.has(message.id))return;
+    const node=document.createElement('div');node.className=`dm-message ${message.sender_id===state.user.id?'mine':''}`;node.dataset.messageId=message.id;
+    const media=message.attachment_id ? `/api/dm-attachments/${encodeURIComponent(message.attachment_id)}` : null;
+    const mime=message.attachment_mime||'';
+    const label=media&&['[Fotoğraf]','[Ses kaydı]','[Video]'].includes(message.content)?'':message.content;
+    node.innerHTML=`${media ? mime.startsWith('image/')?`<a href="${media}" target="_blank" rel="noopener"><img class="dm-photo" src="${media}" alt="${escapeHtml(message.attachment_name)}" loading="lazy"></a>`:mime.startsWith('audio/')?`<audio controls preload="metadata" src="${media}" aria-label="Ses kaydı"></audio>`:`<video controls playsinline preload="metadata" src="${media}" aria-label="Video"></video>`:''}${label?`<p class="dm-message-text">${escapeHtml(label)}</p>`:''}${media?`<a class="dm-download" href="${media}" download="${escapeHtml(message.attachment_name)}">${escapeHtml(message.attachment_name)} · İndir</a>`:''}<small>${new Date(message.created_at).toLocaleString('tr-TR')}</small>`;
+    const next=messages.slice(index+1).map(item=>existing.get(item.id)).find(Boolean);list.insertBefore(node,next||null);existing.set(message.id,node);
+  });
+  if(!messages.length)list.innerHTML='<div class="dm-empty inline-empty">İlk özel mesajı gönder.</div>';
+  if(nearBottom)list.scrollTop=list.scrollHeight;
 }
 
 async function loadDmPageMessages() {
@@ -570,6 +577,7 @@ function renderFriendsPage() {
 }
 
 function renderDmPage() {
+  state.inboxMessages=[];
   const conversations = state.conversations || [];
   const selected = state.activeDm;
   const isFriend = selected && state.friends.friends.some(person => person.id === selected.id);
@@ -580,7 +588,7 @@ function renderDmPage() {
     <button class="secondary wide" id="inbox-open-friends">Arkadaş listesini aç</button></aside>
     ${selected ? `<section class="dm-workspace-chat"><header>${avatarContent(selected)}<div><strong>${escapeHtml(contactName(selected))}</strong><small>@${escapeHtml(selected.handle)}</small></div><button class="secondary" id="inbox-pin">${selected.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle'}</button><button class="secondary" id="inbox-profile">Profil</button></header>
     <button class="secondary hidden" id="inbox-older">Eski mesajları yükle</button><div class="dm-message-list" id="dm-page-message-list" aria-live="polite"></div>
-    ${isFriend ? '<form class="message-form" id="dm-page-message-form"><input id="dm-page-message-input" maxlength="4000" placeholder="Mesajını yaz..." required autocomplete="off"><button class="primary">Gönder</button></form>' : '<p class="empty-list">Sohbet geçmişin korunuyor. Yeni mesaj için yeniden arkadaş olmalısınız.</p>'}</section>` : '<section class="dm-workspace-chat empty"><span>✉</span><strong>Mesajların burada</strong><small>Soldan bir sohbet seç veya arkadaş listenden mesaj başlat.</small></section>'}</div>`;
+    ${isFriend ? '<form class="dm-rich-composer" id="dm-page-message-form"><div data-preview class="dm-pending-media" hidden></div><textarea id="dm-page-message-input" maxlength="4000" placeholder="Mesajını yaz…" aria-label="Mesajını yaz" rows="2"></textarea><div class="dm-composer-tools"><button type="button" data-gallery title="Galeriden fotoğraf, video veya ses seç">Galeri</button><button type="button" data-camera>Kamera</button><button type="button" data-mic>Ses kaydı</button><button type="button" data-emoji aria-label="Emoji seç">☺</button><button type="button" data-stop hidden>Kaydı durdur</button><button type="button" data-cancel hidden>Kaydı iptal et</button><span class="dm-enter-hint">Enter gönder · Shift+Enter yeni satır</span><button class="primary" data-send>Gönder ➜</button></div><input type="file" accept="image/jpeg,image/png,image/webp,video/webm,video/mp4,audio/webm,audio/ogg,audio/mp4,audio/wav" hidden><div data-emojis hidden class="dm-composer-emojis"><button type="button">😀</button><button type="button">❤️</button><button type="button">👍</button><button type="button">😂</button><button type="button">🔥</button><button type="button">🎉</button></div><p data-status role="status" class="dm-composer-status"></p></form>' : '<p class="empty-list">Sohbet geçmişin korunuyor. Yeni mesaj için yeniden arkadaş olmalısınız.</p>'}</section>` : '<section class="dm-workspace-chat empty"><span>✉</span><strong>Mesajların burada</strong><small>Soldan bir sohbet seç veya arkadaş listenden mesaj başlat.</small></section>'}</div>`;
   bindWorkspaceTopbarActions();
   $("#inbox-open-friends").onclick = () => showDmPage("friends").catch(error => notify(error.message,true));
   $$("[data-inbox-tab]").forEach(button => button.onclick = () => { state.activeDmTab=button.dataset.inboxTab; renderDmPage(); });
@@ -590,11 +598,14 @@ function renderDmPage() {
   $("#inbox-profile")?.addEventListener("click",()=>openUserProfile(selected.id));
   $("#inbox-pin")?.addEventListener("click",async()=>{ try { await updateContact(selected.id,{pinned:!selected.pinned}); state.activeDm={...selected,pinned:!selected.pinned}; renderDmPage(); } catch(error) { notify(error.message,true); } });
   $("#inbox-older")?.addEventListener("click",()=>loadInboxMessages(true));
-  $("#dm-page-message-form")?.addEventListener("submit",async event=>{
-    event.preventDefault(); const input=$("#dm-page-message-input"), button=event.currentTarget.querySelector('button'); const content=input.value.trim(); if(!content)return; button.disabled=true;
-    try { await api(`/api/dms/${selected.id}`,{method:'POST',body:JSON.stringify({content})}); input.value=''; state.conversations=(await api('/api/dms')).conversations; if(state.activeDm?.id===selected.id && state.activeWorkspacePage==='dms')renderDmPage(); }
-    catch(error){notify(error.message,true);} finally{button.disabled=false;}
-  });
+  const composer=$('#dm-page-message-form');
+  state.dmDrafts ||= {};
+  if(composer)window.mountDmComposer(composer,{draft:state.dmDrafts[selected.id],onDraft:value=>state.dmDrafts[selected.id]=value,send:async body=>{
+    const data=await api(`/api/dms/${selected.id}`,{method:'POST',body:JSON.stringify(body)});
+    if(state.activeDm?.id===selected.id&&composer.isConnected){state.inboxMessages=[...(state.inboxMessages||[]),data.message];renderDmPageMessages(state.inboxMessages);const list=$('#dm-page-message-list');list.scrollTop=list.scrollHeight;}
+    try{state.conversations=(await api('/api/dms')).conversations;}catch{ /* The sent message remains successful; polling refreshes the sidebar. */ }
+    const row=$(`[data-inbox-person="${selected.id}"] small`);if(row)row.textContent=data.message.content;
+  }});
   if(selected) loadInboxMessages();
 }
 

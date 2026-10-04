@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("crypto");
+const { validateDmAttachment, mediaRange } = require("./dm-media");
 const { query, transaction } = require("./database");
 const {
   createSession,
@@ -632,6 +633,21 @@ async function handleApi(request, response, helpers) {
       if (body.read === true) await query("UPDATE contact_preferences SET read_at=NOW() WHERE user_id=$1 AND contact_id=$2", [user.id, contactId]);
       return sendJson(response, 200, { ok: true });
     }
+    const mediaRoute = url.pathname.match(/^\/api\/dm-attachments\/([0-9a-f-]+)$/i);
+    if (mediaRoute && ["GET", "HEAD"].includes(method)) {
+      const result = await query(`SELECT a.* FROM dm_attachments a JOIN direct_messages dm ON dm.id=a.message_id WHERE a.id=$1 AND (dm.sender_id=$2 OR dm.recipient_id=$2)`, [mediaRoute[1], user.id]);
+      if (!result.rowCount) return sendJson(response,404,{error:"Dosya bulunamadı"});
+      const attachment=result.rows[0], bytes=Buffer.from(attachment.data), range=mediaRange(request.headers.range,bytes.length);
+      response.setHeader("Cache-Control","private, no-store");
+      response.setHeader("Accept-Ranges","bytes");
+      if(!range){response.writeHead(416,{"Content-Range":`bytes */${bytes.length}`});return response.end();}
+      response.setHeader("Content-Type",attachment.mime_type);
+      response.setHeader("Content-Disposition",`inline; filename*=UTF-8''${encodeURIComponent(attachment.name).replace(/'/g,"%27")}`);
+      response.setHeader("Content-Length",range.end-range.start+1);
+      if(range.partial)response.setHeader("Content-Range",`bytes ${range.start}-${range.end}/${bytes.length}`);
+      response.writeHead(range.partial?206:200);
+      return response.end(method==="HEAD"?undefined:bytes.subarray(range.start,range.end+1));
+    }
     const dmRoute = url.pathname.match(/^\/api\/dms\/([0-9a-f-]+)$/i);
     if (dmRoute && ["GET", "POST"].includes(method)) {
       const friendId = dmRoute[1];
@@ -642,8 +658,9 @@ async function handleApi(request, response, helpers) {
       if (method === "GET") {
         const result = await query(
           `SELECT dm.id, dm.sender_id, dm.recipient_id, dm.content, dm.created_at,
-                  u.display_name AS sender_name, u.handle AS sender_handle
-             FROM direct_messages dm JOIN users u ON u.id = dm.sender_id
+                  u.display_name AS sender_name, u.handle AS sender_handle,
+                  a.id AS attachment_id, a.name AS attachment_name, a.mime_type AS attachment_mime, a.size_bytes AS attachment_size
+             FROM direct_messages dm JOIN users u ON u.id = dm.sender_id LEFT JOIN dm_attachments a ON a.message_id=dm.id
             WHERE ((dm.sender_id = $1 AND dm.recipient_id = $2)
                OR (dm.sender_id = $2 AND dm.recipient_id = $1))
               AND (dm.created_at < COALESCE($3,dm.created_at) OR ($3 IS NULL) OR (dm.created_at = $3 AND dm.id < $4))
@@ -652,14 +669,28 @@ async function handleApi(request, response, helpers) {
         );
         return sendJson(response, 200, { messages: result.rows.slice(0,100).reverse(), hasMore: result.rows.length > 100 });
       }
-      const body = await readJson(request);
-      const content = text(body.content, 4000);
+      const body = await readJson(request,12*1024*1024);
+      let attachment;
+      try { attachment=validateDmAttachment(body.attachment); } catch(error) { return sendJson(response,400,{error:error.message}); }
+      const content = text(body.content, 4000) || (attachment ? attachment.mime.startsWith("image/")?"[Fotoğraf]":attachment.mime.startsWith("audio/")?"[Ses kaydı]":"[Video]" : "");
       if (!content) return sendJson(response, 400, { error: "Mesaj boş olamaz" });
       const message = { id: crypto.randomUUID(), content };
-      await query(
+      await transaction(async client=>{
+        if(attachment){
+          if(process.env.DATABASE_URL)await client.query("SELECT pg_advisory_xact_lock(794112119)");
+          const quota=await client.query("SELECT COALESCE(SUM(size_bytes),0) AS total, COALESCE(SUM(CASE WHEN owner_id=$1 THEN size_bytes ELSE 0 END),0) AS personal FROM dm_attachments",[user.id]);
+          if(Number(quota.rows[0].total)+attachment.size>128*1024*1024 || Number(quota.rows[0].personal)+attachment.size>32*1024*1024)throw Object.assign(new Error("Media quota exceeded"),{statusCode:400,publicMessage:"Medya depolama sınırına ulaşıldı. Yazılı mesaj gönderebilirsin."});
+        }
+        await client.query(
         "INSERT INTO direct_messages (id, sender_id, recipient_id, content) VALUES ($1, $2, $3, $4)",
         [message.id, user.id, friendId, content]
-      );
+        );
+        if(attachment){
+          const id=crypto.randomUUID();
+          await client.query("INSERT INTO dm_attachments (id,message_id,owner_id,name,mime_type,size_bytes,data) VALUES ($1,$2,$3,$4,$5,$6,$7)",[id,message.id,user.id,attachment.name,attachment.mime,attachment.size,attachment.bytes]);
+          Object.assign(message,{attachment_id:id,attachment_name:attachment.name,attachment_mime:attachment.mime,attachment_size:attachment.size});
+        }
+      });
       return sendJson(response, 201, {
         message: {
           ...message,
@@ -1350,7 +1381,7 @@ async function handleApi(request, response, helpers) {
       return sendJson(response, 413, { error: "Istek cok buyuk" });
     }
     if (error.statusCode === 400) {
-      return sendJson(response, 400, { error: "Gecersiz istek" });
+      return sendJson(response, 400, { error: error.publicMessage || "Gecersiz istek" });
     }
     if (error.code === "23505" || /UNIQUE constraint failed/i.test(error.message)) {
       return sendJson(response, 409, { error: "Bu kayıt zaten mevcut" });

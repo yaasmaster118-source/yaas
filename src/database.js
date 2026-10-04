@@ -163,6 +163,17 @@ function getLocalDatabase() {
       content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 4000),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS dm_attachments (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL UNIQUE REFERENCES direct_messages(id) ON DELETE CASCADE,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL CHECK(size_bytes BETWEEN 1 AND 8388608),
+      data BLOB NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS dm_attachments_owner_idx ON dm_attachments(owner_id);
     CREATE TABLE IF NOT EXISTS message_requests (
       id TEXT PRIMARY KEY,
       sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

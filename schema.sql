@@ -174,6 +174,18 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS dm_attachments (
+  id UUID PRIMARY KEY,
+  message_id UUID NOT NULL UNIQUE REFERENCES direct_messages(id) ON DELETE CASCADE,
+  owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK(size_bytes BETWEEN 1 AND 8388608),
+  data BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS dm_attachments_owner_idx ON dm_attachments(owner_id);
+
 CREATE TABLE IF NOT EXISTS message_requests (
   id UUID PRIMARY KEY,
   sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
