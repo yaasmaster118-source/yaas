@@ -1589,3 +1589,7 @@
 @media(max-width:760px) { .inbox-layout { grid-template-columns:1fr; } .inbox-layout .dm-workspace-sidebar { max-height:280px; overflow:auto; } .friend-card { flex-wrap:wrap; } .friend-actions { width:100%; } .notification-popover { right:12px; top:64px; width:min(350px,calc(100vw - 24px)); } .inbox-layout .dm-workspace-chat header { flex-wrap:wrap; } }
 .inbox-search input,.friend-directory input { background:#12151a; color:#eee; border:1px solid #393b42; padding:12px; border-radius:10px; }
 .inbox-layout .dm-list-row[hidden] { display:none; }
+.friend-action-dialog { max-width:460px; }
+.friend-action-dialog label { display:block; margin:20px 0 12px; }
+.friend-action-dialog input { display:block; width:100%; margin-top:10px; background:#13161a; color:#eee; border:1px solid #4a4435; border-radius:10px; padding:12px; }
+.contact-dialog-help { color:#a8a399; font-size:13px; margin-bottom:20px; }

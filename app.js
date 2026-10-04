@@ -496,6 +496,43 @@ function dmNotificationItems() {
 
 function contactName(person) { return person.nickname || person.display_name; }
 
+function openFriendActionDialog(person, mode) {
+  $('#friend-action-dialog')?.remove();
+  const rename = mode === 'nickname';
+  const layer = document.createElement('div');
+  layer.id = 'friend-action-dialog';
+  layer.className = 'modal-layer';
+  layer.innerHTML = `<section class="modal friend-action-dialog" role="dialog" aria-modal="true" aria-labelledby="friend-action-title">
+    <header class="modal-header"><h2 id="friend-action-title">${rename ? 'Takma ad düzenle' : 'Arkadaşlığı / isteği kaldır'}</h2><button class="icon-button" data-contact-cancel type="button" aria-label="Kapat">×</button></header>
+    <p>${escapeHtml(person.display_name || person.handle || 'Bu kişi')}</p>
+    <form id="friend-action-form">${rename ? '<label>Sadece senin göreceğin takma ad<input id="contact-nickname" name="nickname" maxlength="60" autocomplete="off"></label><p class="contact-dialog-help">Boş bırakıp kaydedersen gerçek adı görünür.</p>' : '<p>Sohbet geçmişin korunacak. Tekrar arkadaşlık isteği gönderebilirsin.</p>'}
+    <p class="form-error" role="alert"></p><div class="friend-actions"><button class="secondary" data-contact-cancel type="button">Vazgeç</button><button class="primary" type="submit">${rename ? 'Kaydet' : 'Kaldır'}</button></div></form></section>`;
+  document.body.append(layer);
+  const previousFocus = document.activeElement;
+  function close() { layer.remove(); document.removeEventListener('keydown', onKey); previousFocus?.focus(); }
+  function onKey(event) {
+    if (event.key === 'Escape') { event.preventDefault(); close(); }
+    if (event.key === 'Tab') {
+      const controls = [...layer.querySelectorAll('button:not(:disabled),input:not(:disabled)')];
+      const first = controls[0], last = controls.at(-1);
+      if(event.shiftKey && document.activeElement===first){event.preventDefault();last.focus();}
+      else if(!event.shiftKey && document.activeElement===last){event.preventDefault();first.focus();}
+    }
+  }
+  document.addEventListener('keydown', onKey);
+  layer.querySelectorAll('[data-contact-cancel]').forEach(button => button.onclick=close);
+  if(rename){$('#contact-nickname').value=person.nickname || '';$('#contact-nickname').focus();}
+  else layer.querySelector('button[type="submit"]').focus();
+  $('#friend-action-form').onsubmit=async event=>{
+    event.preventDefault(); const submit=event.currentTarget.querySelector('[type="submit"]'); const error=event.currentTarget.querySelector('.form-error'); submit.disabled=true;error.textContent='';
+    try {
+      if(rename)await updateContact(person.id,{nickname:$('#contact-nickname').value});
+      else {await api(`/api/friends/${person.id}`,{method:'DELETE'});await loadFriends();}
+      close();renderFriendsPage();notify(rename?'Takma ad kaydedildi':'Arkadaşlık / istek kaldırıldı');
+    }catch(failure){error.textContent=failure.message;submit.disabled=false;}
+  };
+}
+
 async function updateContact(id, values) {
   await api(`/api/contacts/${id}`, { method: "PATCH", body: JSON.stringify(values) });
   await loadFriends();
@@ -519,15 +556,13 @@ function renderFriendsPage() {
     try { await sendFriendRequest(event.currentTarget.elements.handle.value); renderFriendsPage(); } catch (error) { notify(error.message, true); }
   });
   $$("[data-friend-message]").forEach(button => button.addEventListener("click", () => showDmPage("conversations", state.friends.friends.find(person => person.id === button.dataset.friendMessage)).catch(error => notify(error.message,true))));
-  $$("[data-friend-name]").forEach(button => button.addEventListener("click", async () => {
+  $$("[data-friend-name]").forEach(button => button.addEventListener("click", () => {
     const person = state.friends.friends.find(person => person.id === button.dataset.friendName);
-    const nickname = window.prompt("Sadece senin göreceğin takma ad (boş bırakırsan kaldırılır):", person.nickname || "");
-    if (nickname === null) return;
-    try { await updateContact(person.id,{nickname}); renderFriendsPage(); } catch(error) { notify(error.message,true); }
+    if(person)openFriendActionDialog(person,'nickname');
   }));
-  $$("[data-friend-remove]").forEach(button => button.addEventListener("click", async () => {
-    if (!window.confirm("Arkadaşlığı / bekleyen isteği kaldırmak istiyor musun? Sohbet geçmişin korunacak.")) return;
-    try { await api(`/api/friends/${button.dataset.friendRemove}`,{method:"DELETE"}); await loadFriends(); renderFriendsPage(); } catch(error) { notify(error.message,true); }
+  $$("[data-friend-remove]").forEach(button => button.addEventListener("click", () => {
+    const person=[...state.friends.friends,...state.friends.outgoing].find(person=>person.id===button.dataset.friendRemove);
+    if(person)openFriendActionDialog(person,'remove');
   }));
   $$("[data-friend-answer]").forEach(button => button.addEventListener("click", async () => {
     try { await answerFriendRequest(button.dataset.friendAnswer,button.dataset.answer); renderFriendsPage(); } catch(error) { notify(error.message,true); }
@@ -620,6 +655,7 @@ async function showDmPage(tab = "friends", preselectedFriend = null) {
     state.activeDm = null;
   }
   state.conversations = (await api("/api/dms")).conversations || [];
+  if(state.activeDm){state.activeDm={...state.activeDm,...state.friends.friends.find(person=>person.id===state.activeDm.id),...state.conversations.find(person=>person.id===state.activeDm.id)};}
   if (tab === "friends" && !preselectedFriend) return showWorkspacePage("nav-friends-button", renderFriendsPage);
   showWorkspacePage("nav-dms-button", renderDmPage);
 }
