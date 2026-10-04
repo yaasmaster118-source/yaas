@@ -1,4 +1,14 @@
 "use strict";
+const MAX_DM_SECONDS=120;
+function validDmDuration(seconds){return Number.isFinite(seconds)&&seconds>0&&seconds<=MAX_DM_SECONDS;}
+function readDmDuration(file){return new Promise((resolve,reject)=>{
+  const element=document.createElement(file.type.startsWith('audio/')?'audio':'video'),url=URL.createObjectURL(file);
+  let timer;
+  const finish=(duration,error)=>{clearTimeout(timer);element.onloadedmetadata=null;element.ontimeupdate=null;element.onerror=null;element.removeAttribute('src');element.load();URL.revokeObjectURL(url);error?reject(error):resolve(duration);};
+  timer=setTimeout(()=>finish(null,new Error('Dosyanın süresi okunamadı. Başka bir ses veya video seç.')),8000);
+  element.preload='metadata';element.onloadedmetadata=()=>{if(Number.isFinite(element.duration))return finish(element.duration);element.ontimeupdate=()=>{const duration=Number.isFinite(element.duration)?element.duration:element.currentTime;if(Number.isFinite(duration)&&duration>0&&duration<1e9)finish(duration);};element.currentTime=1e10;};
+  element.onerror=()=>finish(null,new Error('Ses veya video dosyası açılamadı.'));element.src=url;
+});}
 function dmIcon(name){const paths={gallery:'M3 3h18v18H3z M4 17l6-6 4 4 3-3 4 5 M8 7h.01',camera:'M3 7h4l2-3h6l2 3h4v14H3z M16 13a4 4 0 1 1-8 0a4 4 0 0 1 8 0',mic:'M9 3h6v12H9z M5 11v2a7 7 0 0 0 14 0v-2 M12 20v3 M8 23h8',emoji:'M21 12a9 9 0 1 1-18 0a9 9 0 0 1 18 0 M8 9h.01 M16 9h.01 M8 14q4 5 8 0',send:'M3 3l18 9-18 9 4-9z M7 12h14',file:'M5 2h10l4 4v16H5z M14 2v6h5 M8 12h8 M8 16h8',plus:'M12 4v16 M4 12h16'};return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${paths[name]||paths.file}"/></svg>`;}
 if(typeof window!=='undefined')window.dmComposerMarkup=()=>`<form class="dm-rich-composer dm-reference-composer" id="dm-page-message-form">
  <div data-preview class="dm-pending-media" hidden></div>
@@ -34,13 +44,13 @@ class DmCapture {
       onComplete(new Blob(chunks,{type}));
     };
     recorder.start(250);onTick(0);
-    this.timer=setInterval(()=>{onTick(++seconds);if(seconds>=(kind==='audio'?120:20))this.stop();},1000);
+    this.timer=setInterval(()=>{onTick(++seconds);if(seconds>=MAX_DM_SECONDS)this.stop();},1000);
   }
   stop(){if(this.recorder?.state==='recording')this.recorder.stop();}
   release(){this.streams.splice(0).forEach(stream=>stream.getTracks().forEach(track=>track.stop()));}
   cancel(){this.version++;clearInterval(this.timer);this.stop();this.release();}
 }
-if(typeof module!=='undefined')module.exports={DmCapture};
+if(typeof module!=='undefined')module.exports={DmCapture,MAX_DM_SECONDS,validDmDuration};
 if(typeof window!=='undefined')window.mountDmComposer=function(form,{send,draft,onDraft,devices=navigator.mediaDevices,Recorder=window.MediaRecorder}){
   const input=form.querySelector('textarea'), status=form.querySelector('[data-status]'), preview=form.querySelector('[data-preview]');
   const sendButton=form.querySelector('[data-send]'), capture=new DmCapture(devices,Recorder);
@@ -81,12 +91,12 @@ if(typeof window!=='undefined')window.mountDmComposer=function(form,{send,draft,
     try{
       let facing='user',stream=await capture.acquire({video:{width:{ideal:1280},height:{ideal:720},facingMode:{ideal:facing}},audio:false});if(disposed||dialog!==current)return capture.cancel();
       const video=current.querySelector('video');video.srcObject=stream;await video.play();
-      const photo=current.querySelector('[data-photo]'), record=current.querySelector('[data-video]');photo.disabled=false;record.disabled=false;current.querySelector('[data-camera-status]').textContent='Fotoğraf çek veya en fazla 20 saniyelik video kaydet.';
+      const photo=current.querySelector('[data-photo]'), record=current.querySelector('[data-video]');photo.disabled=false;record.disabled=false;current.querySelector('[data-camera-status]').textContent='Fotoğraf çek veya en fazla 2 dakikalık video kaydet.';
       const flip=current.querySelector('[data-camera-flip]');flip.disabled=false;flip.onclick=async()=>{flip.disabled=true;photo.disabled=true;record.disabled=true;capture.cancel();facing=facing==='user'?'environment':'user';try{stream=await capture.acquire({video:{width:{ideal:1280},height:{ideal:720},facingMode:{ideal:facing}},audio:false});if(dialog!==current)return;video.srcObject=stream;await video.play();photo.disabled=false;record.disabled=false;flip.disabled=false;}catch(error){if(dialog===current)fail(error);}};
       photo.onclick=()=>{const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;if(!canvas.width)return;canvas.getContext('2d').drawImage(video,0,0);canvas.toBlob(blob=>{if(dialog!==current||!blob)return;closeCamera();setFile(new File([blob],`foto-${Date.now()}.jpg`,{type:'image/jpeg'}));},'image/jpeg',0.85);};
       record.onclick=async()=>{
         record.disabled=true;photo.disabled=true;flip.disabled=true;
-        try{const mic=await capture.acquire({audio:true});if(dialog!==current)return;const combined=new MediaStream([...stream.getVideoTracks(),...mic.getAudioTracks()]);capture.record(combined,'video',recorded,fail,seconds=>{if(dialog===current)current.querySelector('[data-camera-status]').textContent=`Video kaydı · ${seconds}/20 saniye`;});current.querySelector('[data-video-stop]').hidden=false;current.querySelector('[data-video-stop]').onclick=()=>capture.stop();}
+        try{const mic=await capture.acquire({audio:true});if(dialog!==current)return;const combined=new MediaStream([...stream.getVideoTracks(),...mic.getAudioTracks()]);capture.record(combined,'video',recorded,fail,seconds=>{if(dialog===current)current.querySelector('[data-camera-status]').textContent=`Video kaydı · ${seconds}/120 saniye`;});current.querySelector('[data-video-stop]').hidden=false;current.querySelector('[data-video-stop]').onclick=()=>capture.stop();}
         catch(error){if(dialog===current){record.disabled=false;photo.disabled=false;flip.disabled=false;current.querySelector('[data-camera-status]').textContent='Video sesi için mikrofon izni gerekli. Tekrar deneyebilir veya fotoğraf çekebilirsin.';}}
       };
     }catch(error){if(dialog===current)fail(error);}
@@ -144,6 +154,7 @@ if(typeof window!=='undefined')window.mountDmComposer=function(form,{send,draft,
     const original=input.value,selectedFile=file;busy=true;sendButton.disabled=true;input.focus();message('Gönderiliyor…');
     try{
       let attachment;
+      if(selectedFile&&(selectedFile.type.startsWith('audio/')||selectedFile.type.startsWith('video/'))){const duration=await readDmDuration(selectedFile);if(!validDmDuration(duration))throw new Error('Ses ve videolar en fazla 2 dakika olabilir. Daha kısa bir dosya seç.');}
       if(selectedFile){const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Dosya okunamadı'));reader.readAsDataURL(selectedFile);});attachment={name:selectedFile.name,data};}
       await send({content:original.trim(),attachment});
       if(input.value===original){input.value='';onDraft('');}if(file===selectedFile)disposePreview();message('');

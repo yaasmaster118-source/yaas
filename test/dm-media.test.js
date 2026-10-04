@@ -1,9 +1,17 @@
 "use strict";
 const test=require('node:test'),assert=require('node:assert/strict');
 const {validateDmAttachment,mediaRange}=require('../src/dm-media');
-const {DmCapture}=require('../dm-composer');
+const {DmCapture,MAX_DM_SECONDS,validDmDuration}=require('../dm-composer');
 const {DM_EMOJIS,DM_GIFS,DM_STICKERS,dmCatalogSearch}=require('../dm-catalog');
 const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jk1sAAAAASUVORK5CYII=';
+test('audio and video stop automatically at two minutes',()=>{
+  const originalSet=global.setInterval,originalClear=global.clearInterval;let tick;
+  global.setInterval=callback=>{tick=callback;return 1;};global.clearInterval=()=>{};
+  try{for(const kind of ['audio','video']){let stops=0;class Recorder{static isTypeSupported(){return true;}constructor(){this.state='inactive';}start(){this.state='recording';}stop(){this.state='inactive';stops++;}}
+    const capture=new DmCapture({},Recorder);capture.record({},kind,()=>{},()=>{},()=>{});for(let i=0;i<119;i++)tick();assert.equal(stops,0);tick();assert.equal(stops,1);capture.cancel();
+  }}finally{global.setInterval=originalSet;global.clearInterval=originalClear;}
+  assert.equal(MAX_DM_SECONDS,120);assert.equal(validDmDuration(120),true);assert.equal(validDmDuration(120.01),false);assert.equal(validDmDuration(Infinity),false);
+});
 test('media validates signatures and range requests',()=>{
   assert.equal(validateDmAttachment({name:'photo.png',data:'data:image/png;base64,'+png}).mime,'image/png');
   assert.throws(()=>validateDmAttachment({data:'data:image/jpeg;base64,'+png}));
