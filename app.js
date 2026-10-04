@@ -3876,7 +3876,19 @@ setInterval(async()=>{
         await api(`/api/contacts/${id}`,{method:'PATCH',body:JSON.stringify({read:true})});
       }
     }
-    state.conversations.forEach(person=>{const button=$('[data-inbox-person="'+person.id+'"]');if(button){const preview=$('small',button);if(preview)preview.textContent=person.last_message||'Henüz mesaj yok';}});
+    const conversationList=$('#inbox-conversations');
+    if(conversationList && state.activeDmTab!=='requests'){
+      conversationList.querySelector('.empty-list')?.remove();
+      state.conversations.forEach(person=>{
+        let button=$('[data-inbox-person="'+person.id+'"]');
+        if(!button){button=document.createElement('button');button.className='dm-list-row';button.dataset.inboxPerson=person.id;button.onclick=()=>{state.activeDm=(state.conversations||[]).find(item=>item.id===person.id);renderDmPage();};}
+        button.dataset.search=`${contactName(person)} ${person.handle}`.toLocaleLowerCase('tr-TR');
+        button.innerHTML=`${avatarContent(person)}<div><strong>${person.pinned?'★ ':''}${escapeHtml(contactName(person))}</strong><small>${escapeHtml(person.last_message||'Henüz mesaj yok')}</small></div>${Number(person.unread_count)?`<b class="notification-badge">${Number(person.unread_count)}</b>`:''}`;
+        button.classList.toggle('active',state.activeDm?.id===person.id);
+        button.hidden=!button.dataset.search.includes(($('#inbox-search')?.value||'').toLocaleLowerCase('tr-TR'));
+        conversationList.append(button);
+      });
+    }
   }catch{}finally{socialRefreshBusy=false;}
 },10000);
 
