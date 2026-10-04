@@ -1563,3 +1563,29 @@
     min-width: max-content;
   }
 }
+
+/* Separate friends directory, persistent inbox, and compact notifications. */
+.friend-directory { padding: 24px; max-width: 1120px; margin: 20px auto; }
+.friend-directory h2 { font-size: 16px; margin: 28px 0 12px; }
+.friend-card { display:flex; align-items:center; gap:14px; padding:16px; border-bottom:1px solid #353029; }
+.friend-card > div:first-of-type { flex:1; min-width:0; }
+.friend-card small { display:block; color:#ada698; margin-top:5px; }
+.friend-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.inbox-layout { grid-template-columns:300px minmax(0,1fr); }
+.inbox-search { display:block; padding:16px; color:#aaa; font-size:12px; }
+.inbox-search input { display:block; width:100%; margin-top:8px; }
+.inbox-layout .dm-list-row { width:100%; text-align:left; }
+.inbox-layout .dm-list-row > div { min-width:0; flex:1; }
+.inbox-layout .dm-list-row small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; max-width:180px; }
+.inbox-layout .dm-workspace-chat { min-width:0; min-height:520px; }
+.inbox-layout .dm-workspace-chat header > div { flex:1; }
+.notification-popover { position:fixed; z-index:1100; top:78px; right:24px; width:350px; max-height:min(550px,75vh); background:#1c201e; border:1px solid #49473a; border-radius:16px; box-shadow:0 18px 60px #0008; color:#eee; overflow:hidden; }
+.notification-popover[hidden] { display:none; }
+.notification-popover header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid #34382f; }
+.notification-popover-list { max-height:440px; overflow:auto; padding:10px; }
+.notification-popover .notification-item { display:block; width:100%; text-align:left; padding:14px; background:transparent; color:inherit; border:0; border-radius:8px; }
+.notification-popover .notification-item:hover { background:#30382b; }
+.notification-popover small { display:block; color:#aeb5a3; margin-top:6px; overflow-wrap:anywhere; }
+@media(max-width:760px) { .inbox-layout { grid-template-columns:1fr; } .inbox-layout .dm-workspace-sidebar { max-height:280px; overflow:auto; } .friend-card { flex-wrap:wrap; } .friend-actions { width:100%; } .notification-popover { right:12px; top:64px; width:min(350px,calc(100vw - 24px)); } .inbox-layout .dm-workspace-chat header { flex-wrap:wrap; } }
+.inbox-search input,.friend-directory input { background:#12151a; color:#eee; border:1px solid #393b42; padding:12px; border-radius:10px; }
+.inbox-layout .dm-list-row[hidden] { display:none; }

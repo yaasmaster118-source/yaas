@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const TABLES = ["users", "sessions", "servers", "roles", "memberships", "member_roles", "channel_categories", "channels", "messages", "invites", "security_events", "admin_audit_logs", "oauth_accounts", "friendships", "direct_messages", "message_requests", "stream_sessions", "stream_viewers"];
+const TABLES = ["users", "sessions", "servers", "roles", "memberships", "member_roles", "channel_categories", "channels", "messages", "invites", "security_events", "admin_audit_logs", "oauth_accounts", "friendships", "direct_messages", "contact_preferences", "message_requests", "stream_sessions", "stream_viewers"];
 function readSnapshot(filename, { allowEmpty = false } = {}) {
   const source = new DatabaseSync(filename, { readOnly: true });
   try {

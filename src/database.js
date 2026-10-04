@@ -17,6 +17,14 @@ function getLocalDatabase() {
   localDatabase = new DatabaseSync(configuredPath || path.join(dataDirectory, "yaas.sqlite"));
   localDatabase.exec(`
     PRAGMA foreign_keys = ON;
+    CREATE TABLE IF NOT EXISTS contact_preferences (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      contact_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      nickname TEXT NOT NULL DEFAULT '',
+      pinned INTEGER NOT NULL DEFAULT 0,
+      read_at TEXT,
+      PRIMARY KEY(user_id, contact_id)
+    );
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,

@@ -493,10 +493,11 @@ async function handleApi(request, response, helpers) {
     if (method === "GET" && url.pathname === "/api/friends") {
       const [friends, incoming, outgoing] = await Promise.all([
         query(
-          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner, cp.nickname
              FROM friendships f
              JOIN users u ON u.id = CASE
                WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
+             LEFT JOIN contact_preferences cp ON cp.user_id = $1 AND cp.contact_id = u.id
             WHERE f.status = 'accepted' AND (f.requester_id = $1 OR f.addressee_id = $1)
             ORDER BY u.display_name`,
           [user.id]
@@ -608,23 +609,48 @@ async function handleApi(request, response, helpers) {
       return sendJson(response, 200, { ok: true });
     }
 
+    if (method === "GET" && url.pathname === "/api/dms") {
+      const result = await query(`SELECT u.id, u.display_name, u.handle, u.avatar_url, u.avatar_frame,
+        cp.nickname, cp.pinned,
+        (SELECT MAX(dm.created_at) FROM direct_messages dm WHERE (dm.sender_id=$1 AND dm.recipient_id=u.id) OR (dm.sender_id=u.id AND dm.recipient_id=$1)) AS last_message_at,
+        (SELECT dm.content FROM direct_messages dm WHERE (dm.sender_id=$1 AND dm.recipient_id=u.id) OR (dm.sender_id=u.id AND dm.recipient_id=$1) ORDER BY dm.created_at DESC, dm.id DESC LIMIT 1) AS last_message,
+        (SELECT COUNT(*) FROM direct_messages dm WHERE dm.sender_id=u.id AND dm.recipient_id=$1 AND (cp.read_at IS NULL OR dm.created_at > cp.read_at)) AS unread_count
+        FROM users u LEFT JOIN contact_preferences cp ON cp.user_id=$1 AND cp.contact_id=u.id
+        WHERE u.id <> $1 AND (EXISTS (SELECT 1 FROM direct_messages dm WHERE (dm.sender_id=$1 AND dm.recipient_id=u.id) OR (dm.sender_id=u.id AND dm.recipient_id=$1)) OR cp.pinned = $2)
+        ORDER BY COALESCE(cp.pinned,$3) DESC, last_message_at DESC, u.display_name`, [user.id, true, false]);
+      return sendJson(response, 200, { conversations: result.rows });
+    }
+    const contactRoute = url.pathname.match(/^\/api\/contacts\/([0-9a-f-]+)$/i);
+    if (method === "PATCH" && contactRoute) {
+      const contactId = contactRoute[1];
+      const history = await query("SELECT id FROM direct_messages WHERE (sender_id=$1 AND recipient_id=$2) OR (sender_id=$2 AND recipient_id=$1) LIMIT 1", [user.id, contactId]);
+      if (!(await areFriends(user.id, contactId)) && !history.rowCount) return sendJson(response, 403, { error: "Kişiye erişim yok" });
+      const body = await readJson(request);
+      await query("INSERT INTO contact_preferences (user_id,contact_id) VALUES ($1,$2) ON CONFLICT(user_id,contact_id) DO NOTHING", [user.id, contactId]);
+      if (Object.hasOwn(body, "nickname")) await query("UPDATE contact_preferences SET nickname=$3 WHERE user_id=$1 AND contact_id=$2", [user.id, contactId, text(body.nickname, 60)]);
+      if (typeof body.pinned === "boolean") await query("UPDATE contact_preferences SET pinned=$3 WHERE user_id=$1 AND contact_id=$2", [user.id, contactId, body.pinned]);
+      if (body.read === true) await query("UPDATE contact_preferences SET read_at=NOW() WHERE user_id=$1 AND contact_id=$2", [user.id, contactId]);
+      return sendJson(response, 200, { ok: true });
+    }
     const dmRoute = url.pathname.match(/^\/api\/dms\/([0-9a-f-]+)$/i);
     if (dmRoute && ["GET", "POST"].includes(method)) {
       const friendId = dmRoute[1];
       if (!(await areFriends(user.id, friendId))) {
-        return sendJson(response, 403, { error: "Özel mesaj için önce arkadaş olmalısınız" });
+        const history = method === "GET" && await query("SELECT id FROM direct_messages WHERE (sender_id=$1 AND recipient_id=$2) OR (sender_id=$2 AND recipient_id=$1) LIMIT 1", [user.id, friendId]);
+        if (!history || !history.rowCount) return sendJson(response, 403, { error: "Yeni mesaj için önce arkadaş olmalısınız" });
       }
       if (method === "GET") {
         const result = await query(
           `SELECT dm.id, dm.sender_id, dm.recipient_id, dm.content, dm.created_at,
                   u.display_name AS sender_name, u.handle AS sender_handle
              FROM direct_messages dm JOIN users u ON u.id = dm.sender_id
-            WHERE (dm.sender_id = $1 AND dm.recipient_id = $2)
-               OR (dm.sender_id = $2 AND dm.recipient_id = $1)
-            ORDER BY dm.created_at DESC LIMIT 100`,
-          [user.id, friendId]
+            WHERE ((dm.sender_id = $1 AND dm.recipient_id = $2)
+               OR (dm.sender_id = $2 AND dm.recipient_id = $1))
+              AND (dm.created_at < COALESCE($3,dm.created_at) OR ($3 IS NULL) OR (dm.created_at = $3 AND dm.id < $4))
+            ORDER BY dm.created_at DESC, dm.id DESC LIMIT 101`,
+          [user.id, friendId, url.searchParams.get("before") || null, url.searchParams.get("beforeId") || null]
         );
-        return sendJson(response, 200, { messages: result.rows.reverse() });
+        return sendJson(response, 200, { messages: result.rows.slice(0,100).reverse(), hasMore: result.rows.length > 100 });
       }
       const body = await readJson(request);
       const content = text(body.content, 4000);

@@ -101,7 +101,8 @@
         <div class="server-actions">
           <button class="primary" data-open-modal="create-server-modal" type="button">＋ Sunucu oluştur</button>
           <button class="secondary" data-open-modal="join-server-modal" type="button">Davetle katıl</button>
-          <button class="secondary friends-button" id="friends-button" type="button">Arkadaşlar ve DM <span class="notification-badge hidden" id="friends-notification-badge">0</span></button>
+          <button class="secondary friends-button" id="friends-button" type="button">DM kutusu</button>
+          <button class="secondary" id="notifications-button" type="button" aria-expanded="false" aria-controls="notification-popover">♧ Bildirimler <span class="notification-badge hidden" id="friends-notification-badge">0</span></button>
         </div>
         <p class="section-label">SUNUCULARIN</p>
         <nav class="server-list" id="server-list"></nav>
@@ -134,7 +135,7 @@
                 <input placeholder="Ara..." autocomplete="off">
               </label>
               <div class="home-top-actions" aria-label="Bildirimler">
-                <button class="icon-button" type="button" title="Bildirimler">♧</button>
+                <button class="icon-button" id="home-notifications-button" type="button" title="Bildirimler" aria-controls="notification-popover">♧</button>
                 <button class="icon-button" id="home-open-friends" type="button" title="Mesajlar">✉</button>
               </div>
             </header>

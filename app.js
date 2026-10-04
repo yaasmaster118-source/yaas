@@ -416,7 +416,7 @@ function bindWorkspaceTopbarActions() {
     showDmPage("notifications").catch((error) => notify(error.message, true));
   }));
   $$("[data-page-action='messages']").forEach((button) => button.addEventListener("click", () => {
-    showDmPage("friends").catch((error) => notify(error.message, true));
+    showDmPage("conversations").catch((error) => notify(error.message, true));
   }));
 }
 
@@ -494,140 +494,103 @@ function dmNotificationItems() {
   return items;
 }
 
-function renderDmPage() {
-  const shell = $("#workspace-page-shell");
-  const tabLabels = {
-    friends: "Arkadaslar",
-    requests: "Mesaj istekleri",
-    notifications: "Bildirimler"
-  };
-  const friends = state.friends.friends || [];
-  const requests = state.messageRequests || [];
-  const notifications = dmNotificationItems();
-  const rows = state.activeDmTab === "requests"
-    ? (requests.length ? requests.map((request) => `
-      <article class="dm-list-row message-request-row">
-        ${avatarContent({ display_name: request.sender_name, avatar_url: request.avatar_url, avatar_frame: request.avatar_frame })}
-        <div><strong>${escapeHtml(request.sender_name)}</strong><small>@${escapeHtml(request.sender_handle)}</small><p>${escapeHtml(request.content)}</p></div>
-        <span class="friend-actions">
-          <button class="primary" data-dm-page-accept-request="${request.id}" type="button">Kabul</button>
-          <button class="secondary" data-dm-page-reject-request="${request.id}" type="button">Sil</button>
-        </span>
-      </article>`).join("") : '<small class="empty-list">Mesaj isteği yok</small>')
-    : state.activeDmTab === "notifications"
-      ? (notifications.length ? notifications.map((item, index) => `
-        <button class="dm-list-row dm-notification-row" data-dm-page-notification="${index}" type="button">
-          <span class="avatar">!</span>
-          <div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></div>
-        </button>`).join("") : '<small class="empty-list">Yeni bildirim yok</small>')
-      : (friends.length ? friends.map((friend) => `
-        <button class="dm-list-row ${state.activeDm?.id === friend.id ? "active" : ""}" data-dm-page-user="${friend.id}" type="button">
-          ${avatarContent(friend)}
-          <div><strong>${escapeHtml(friend.display_name)}</strong><small>@${escapeHtml(friend.handle)}</small></div>
-          <span class="presence-dot"></span>
-        </button>`).join("") : '<small class="empty-list">Henüz arkadaşın yok</small>');
+function contactName(person) { return person.nickname || person.display_name; }
 
-  const activeFriend = state.activeDm && friends.find((friend) => friend.id === state.activeDm.id);
-  const chatPanel = activeFriend ? `
-    <section class="dm-workspace-chat">
-      <header>
-        ${avatarContent(activeFriend)}
-        <div><strong>${escapeHtml(activeFriend.display_name)}</strong><small>@${escapeHtml(activeFriend.handle)}</small></div>
-        <button class="secondary" data-dm-page-profile="${activeFriend.id}" type="button">Profil</button>
-      </header>
-      <div class="dm-message-list" id="dm-page-message-list"><div class="dm-empty inline-empty">Mesajlar yükleniyor...</div></div>
-      <form class="message-form" id="dm-page-message-form">
-        <input id="dm-page-message-input" maxlength="4000" placeholder="Mesajını yaz..." autocomplete="off">
-        <button class="primary" type="submit">Gönder</button>
-      </form>
-    </section>
-    <aside class="dm-info-panel">
-      ${avatarContent(activeFriend, "large")}
-      <strong>${escapeHtml(activeFriend.display_name)}</strong>
-      <small>@${escapeHtml(activeFriend.handle)}</small>
-      <p>Arkadaş profilini açabilir, konuşmaya devam edebilir veya sunucu içinde ortak alanları görebilirsin.</p>
-      <button class="secondary wide" data-dm-page-profile="${activeFriend.id}" type="button">Profili görüntüle</button>
-    </aside>`
-    : `<section class="dm-workspace-chat empty">
-        <span>✉</span>
-        <strong>${escapeHtml(tabLabels[state.activeDmTab] || "DM")}</strong>
-        <small>Sol taraftan bir kişi, istek veya bildirim seçince detay burada açılır.</small>
-      </section>
-      <aside class="dm-info-panel muted">
-        <strong>Bilgi paneli</strong>
-        <p>Bir konuşma seçildiğinde profil, kullanıcı adı ve hızlı işlemler burada görünür.</p>
-      </aside>`;
-
-  shell.innerHTML = `
-    ${workspaceTopbar("DM'ler", "Arkadaşlar, mesaj istekleri ve bildirimler tek düzenli alanda.", "")}
-    <div class="workspace-card dm-workspace-layout">
-      <aside class="dm-workspace-sidebar">
-        <div class="messenger-quick-tabs">
-          <button class="${state.activeDmTab === "friends" ? "active" : ""}" data-dm-page-tab="friends" type="button"><span>DM</span>Arkadaşlar</button>
-          <button class="${state.activeDmTab === "requests" ? "active" : ""}" data-dm-page-tab="requests" type="button"><span>Mail</span>Mesaj İstekleri ${requests.length ? `<i>${requests.length}</i>` : ""}</button>
-          <button class="${state.activeDmTab === "notifications" ? "active" : ""}" data-dm-page-tab="notifications" type="button"><span>Bell</span>Bildirimler</button>
-        </div>
-        <form class="dm-request-card" id="dm-page-friend-request-form">
-          <label>Kullanıcı adı<input id="dm-page-friend-handle-input" placeholder="@kullanici" required></label>
-          <button class="primary wide" type="submit">Arkadaşlık isteği gönder</button>
-          <p class="form-error"></p>
-        </form>
-        <div class="dm-list">${rows}</div>
-      </aside>
-      ${chatPanel}
-    </div>`;
-  bindWorkspaceTopbarActions();
-  bindDmPageActions();
-  if (activeFriend) loadDmPageMessages();
+async function updateContact(id, values) {
+  await api(`/api/contacts/${id}`, { method: "PATCH", body: JSON.stringify(values) });
+  await loadFriends();
+  state.conversations = (await api("/api/dms")).conversations || [];
 }
 
-function bindDmPageActions() {
-  $$("[data-dm-page-tab]").forEach((button) => button.addEventListener("click", () => {
-    state.activeDmTab = button.dataset.dmPageTab;
-    state.activeDm = null;
-    renderDmPage();
-  }));
-  $$("[data-dm-page-user]").forEach((button) => button.addEventListener("click", () => {
-    state.activeDm = state.friends.friends.find((friend) => friend.id === button.dataset.dmPageUser);
-    renderDmPage();
-  }));
-  $$("[data-dm-page-profile]").forEach((button) => button.addEventListener("click", () => openUserProfile(button.dataset.dmPageProfile)));
-  $$("[data-dm-page-accept-request]").forEach((button) => button.addEventListener("click", () =>
-    answerMessageRequestFromPage(button.dataset.dmPageAcceptRequest, "accept")));
-  $$("[data-dm-page-reject-request]").forEach((button) => button.addEventListener("click", () =>
-    answerMessageRequestFromPage(button.dataset.dmPageRejectRequest, "reject")));
-  $$("[data-dm-page-notification]").forEach((button) => button.addEventListener("click", () => {
-    const item = dmNotificationItems()[Number(button.dataset.dmPageNotification)];
-    if (!item) return;
-    const panel = $(".dm-workspace-chat");
-    if (panel) {
-      panel.classList.add("empty");
-      panel.innerHTML = `<span>!</span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small>`;
-    }
-  }));
-  $("#dm-page-friend-request-form")?.addEventListener("submit", async (event) => {
+function renderFriendsPage() {
+  const rows = state.friends.friends.map(person => `<article class="friend-card">
+    ${avatarContent(person)}<div><strong>${escapeHtml(contactName(person))}</strong><small>@${escapeHtml(person.handle)}</small></div>
+    <div class="friend-actions"><button class="primary" data-friend-message="${person.id}">Mesaj yaz</button>
+    <button class="secondary" data-friend-name="${person.id}">Takma ad</button>
+    <button class="secondary" data-friend-remove="${person.id}">Arkadaşlıktan çıkar</button></div></article>`).join("");
+  $("#workspace-page-shell").innerHTML = `${workspaceTopbar("Arkadaşlar", `${state.friends.friends.length} arkadaş · Kişilerini yönet, birini seçip mesaj yaz.`)}
+    <section class="workspace-card friend-directory"><form id="friends-page-add" class="message-form"><input name="handle" placeholder="@kullanıcı adı" required maxlength="30"><button class="primary">Arkadaş ekle</button></form>
+    <h2>Arkadaşların</h2><div id="friends-directory-list">${rows || '<p class="empty-list">Henüz arkadaşın yok. Kullanıcı adıyla bir istek gönder.</p>'}</div>
+    <h2>Gelen istekler</h2>${state.friends.incoming.map(person => `<article class="friend-card">${avatarContent(person)}<div><strong>${escapeHtml(person.display_name)}</strong><small>@${escapeHtml(person.handle)}</small></div><div class="friend-actions"><button class="primary" data-friend-answer="${person.id}" data-answer="accept">Kabul et</button><button class="secondary" data-friend-answer="${person.id}" data-answer="reject">Reddet</button></div></article>`).join("") || '<p class="empty-list">Bekleyen istek yok.</p>'}
+    <h2>Gönderilen istekler</h2>${state.friends.outgoing.map(person => `<article class="friend-card">${avatarContent(person)}<div><strong>${escapeHtml(person.display_name)}</strong><small>@${escapeHtml(person.handle)} · Bekliyor</small></div><button class="secondary" data-friend-remove="${person.id}">İsteği iptal et</button></article>`).join("") || '<p class="empty-list">Gönderilen istek yok.</p>'}</section>`;
+  bindWorkspaceTopbarActions();
+  $("#friends-page-add").addEventListener("submit", async event => {
     event.preventDefault();
-    const input = $("#dm-page-friend-handle-input");
-    try {
-      await sendFriendRequest(input.value);
-      input.value = "";
-      await showDmPage("friends");
-    } catch (error) {
-      $(".form-error", event.currentTarget).textContent = error.message;
-    }
+    try { await sendFriendRequest(event.currentTarget.elements.handle.value); renderFriendsPage(); } catch (error) { notify(error.message, true); }
   });
-  $("#dm-page-message-form")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const input = $("#dm-page-message-input");
-    const content = input.value.trim();
-    if (!state.activeDm || !content) return;
-    await api(`/api/dms/${state.activeDm.id}`, {
-      method: "POST",
-      body: JSON.stringify({ content })
-    });
-    input.value = "";
-    await loadDmPageMessages();
+  $$("[data-friend-message]").forEach(button => button.addEventListener("click", () => showDmPage("conversations", state.friends.friends.find(person => person.id === button.dataset.friendMessage)).catch(error => notify(error.message,true))));
+  $$("[data-friend-name]").forEach(button => button.addEventListener("click", async () => {
+    const person = state.friends.friends.find(person => person.id === button.dataset.friendName);
+    const nickname = window.prompt("Sadece senin göreceğin takma ad (boş bırakırsan kaldırılır):", person.nickname || "");
+    if (nickname === null) return;
+    try { await updateContact(person.id,{nickname}); renderFriendsPage(); } catch(error) { notify(error.message,true); }
+  }));
+  $$("[data-friend-remove]").forEach(button => button.addEventListener("click", async () => {
+    if (!window.confirm("Arkadaşlığı / bekleyen isteği kaldırmak istiyor musun? Sohbet geçmişin korunacak.")) return;
+    try { await api(`/api/friends/${button.dataset.friendRemove}`,{method:"DELETE"}); await loadFriends(); renderFriendsPage(); } catch(error) { notify(error.message,true); }
+  }));
+  $$("[data-friend-answer]").forEach(button => button.addEventListener("click", async () => {
+    try { await answerFriendRequest(button.dataset.friendAnswer,button.dataset.answer); renderFriendsPage(); } catch(error) { notify(error.message,true); }
+  }));
+}
+
+function renderDmPage() {
+  const conversations = state.conversations || [];
+  const selected = state.activeDm;
+  const isFriend = selected && state.friends.friends.some(person => person.id === selected.id);
+  $("#workspace-page-shell").innerHTML = `${workspaceTopbar("DM kutusu", "Sohbetlerin, sabitlenen kişiler ve mesaj geçmişin.")}
+    <div class="workspace-card dm-workspace-layout inbox-layout"><aside class="dm-workspace-sidebar">
+    <div class="messenger-quick-tabs"><button data-inbox-tab="conversations" class="${state.activeDmTab !== 'requests' ? 'active' : ''}">Sohbetler</button><button data-inbox-tab="requests" class="${state.activeDmTab === 'requests' ? 'active' : ''}">İstekler (${state.messageRequests.length})</button></div>
+    <label class="inbox-search">Sohbet ara<input id="inbox-search" placeholder="İsim veya kullanıcı adı"></label><div class="dm-list" id="inbox-conversations">${state.activeDmTab === 'requests' ? state.messageRequests.map(request => `<article class="dm-list-row"><div><strong>${escapeHtml(request.sender_name)}</strong><p>${escapeHtml(request.content)}</p><button class="primary" data-inbox-request="${request.id}" data-answer="accept">Kabul</button><button class="secondary" data-inbox-request="${request.id}" data-answer="reject">Reddet</button></div></article>`).join('') || '<p class="empty-list">Mesaj isteği yok.</p>' : conversations.map(person => `<button class="dm-list-row ${selected?.id === person.id ? 'active' : ''}" data-inbox-person="${person.id}" data-search="${escapeHtml(`${contactName(person)} ${person.handle}`.toLocaleLowerCase('tr-TR'))}">${avatarContent(person)}<div><strong>${person.pinned ? '★ ' : ''}${escapeHtml(contactName(person))}</strong><small>${escapeHtml(person.last_message || 'Henüz mesaj yok')}</small></div>${Number(person.unread_count) ? `<b class="notification-badge">${Number(person.unread_count)}</b>` : ''}</button>`).join('') || '<p class="empty-list">Bir arkadaşından sohbet başlat. Mesajların burada kalır.</p>'}</div>
+    <button class="secondary wide" id="inbox-open-friends">Arkadaş listesini aç</button></aside>
+    ${selected ? `<section class="dm-workspace-chat"><header>${avatarContent(selected)}<div><strong>${escapeHtml(contactName(selected))}</strong><small>@${escapeHtml(selected.handle)}</small></div><button class="secondary" id="inbox-pin">${selected.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle'}</button><button class="secondary" id="inbox-profile">Profil</button></header>
+    <button class="secondary hidden" id="inbox-older">Eski mesajları yükle</button><div class="dm-message-list" id="dm-page-message-list" aria-live="polite"></div>
+    ${isFriend ? '<form class="message-form" id="dm-page-message-form"><input id="dm-page-message-input" maxlength="4000" placeholder="Mesajını yaz..." required autocomplete="off"><button class="primary">Gönder</button></form>' : '<p class="empty-list">Sohbet geçmişin korunuyor. Yeni mesaj için yeniden arkadaş olmalısınız.</p>'}</section>` : '<section class="dm-workspace-chat empty"><span>✉</span><strong>Mesajların burada</strong><small>Soldan bir sohbet seç veya arkadaş listenden mesaj başlat.</small></section>'}</div>`;
+  bindWorkspaceTopbarActions();
+  $("#inbox-open-friends").onclick = () => showDmPage("friends").catch(error => notify(error.message,true));
+  $$("[data-inbox-tab]").forEach(button => button.onclick = () => { state.activeDmTab=button.dataset.inboxTab; renderDmPage(); });
+  $$("[data-inbox-person]").forEach(button => button.onclick = () => { state.activeDm=conversations.find(person => person.id===button.dataset.inboxPerson); renderDmPage(); });
+  $("#inbox-search").oninput = event => $$("[data-inbox-person]").forEach(button => { button.hidden = !button.dataset.search.includes(event.target.value.toLocaleLowerCase('tr-TR')); });
+  $$("[data-inbox-request]").forEach(button => button.onclick = () => answerMessageRequestFromPage(button.dataset.inboxRequest,button.dataset.answer).catch(error => notify(error.message,true)));
+  $("#inbox-profile")?.addEventListener("click",()=>openUserProfile(selected.id));
+  $("#inbox-pin")?.addEventListener("click",async()=>{ try { await updateContact(selected.id,{pinned:!selected.pinned}); state.activeDm={...selected,pinned:!selected.pinned}; renderDmPage(); } catch(error) { notify(error.message,true); } });
+  $("#inbox-older")?.addEventListener("click",()=>loadInboxMessages(true));
+  $("#dm-page-message-form")?.addEventListener("submit",async event=>{
+    event.preventDefault(); const input=$("#dm-page-message-input"), button=event.currentTarget.querySelector('button'); const content=input.value.trim(); if(!content)return; button.disabled=true;
+    try { await api(`/api/dms/${selected.id}`,{method:'POST',body:JSON.stringify({content})}); input.value=''; state.conversations=(await api('/api/dms')).conversations; if(state.activeDm?.id===selected.id && state.activeWorkspacePage==='dms')renderDmPage(); }
+    catch(error){notify(error.message,true);} finally{button.disabled=false;}
   });
+  if(selected) loadInboxMessages();
+}
+
+async function loadInboxMessages(older=false) {
+  const id=state.activeDm?.id; if(!id)return;
+  const first=state.inboxMessages?.[0];
+  const cursor=older && first ? `?before=${encodeURIComponent(first.created_at)}&beforeId=${encodeURIComponent(first.id)}` : '';
+  try {
+    const data=await api(`/api/dms/${id}${cursor}`);
+    if(state.activeDm?.id!==id || !$('#dm-page-message-list'))return;
+    const list=$('#dm-page-message-list'), oldHeight=list.scrollHeight;
+    state.inboxMessages=older ? [...data.messages,...state.inboxMessages] : data.messages;
+    renderDmPageMessages(state.inboxMessages);
+    if(older)list.scrollTop=list.scrollHeight-oldHeight;
+    $('#inbox-older')?.classList.toggle('hidden',!data.hasMore);
+    if(!older){await api(`/api/contacts/${id}`,{method:'PATCH',body:JSON.stringify({read:true})});const conversation=(state.conversations||[]).find(person=>person.id===id);if(conversation)conversation.unread_count=0;$('[data-inbox-person="'+id+'"] .notification-badge')?.remove();}
+  }catch(error){notify(error.message,true);}
+}
+
+async function toggleNotificationPanel() {
+  let panel=$('#notification-popover');
+  if(panel && !panel.hidden){panel.hidden=true; $('#notifications-button')?.setAttribute('aria-expanded','false');return;}
+  await loadFriends(); await loadMessageRequests(); state.conversations=(await api('/api/dms')).conversations || [];
+  if(!panel){panel=document.createElement('aside');panel.id='notification-popover';panel.className='notification-popover';panel.setAttribute('aria-label','Bildirimler');document.body.append(panel);}
+  const unread=state.conversations.filter(person=>Number(person.unread_count)>0);
+  panel.innerHTML=`<header><strong>Bildirimler</strong><button class="icon-button" id="notification-close" aria-label="Bildirimleri kapat">×</button></header><div class="notification-popover-list">${dmNotificationItems().map(item=>`<button class="notification-item" data-notice-page="${item.type==='friend'?'friends':'requests'}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></button>`).join('')}${unread.map(person=>`<button class="notification-item" data-notice-contact="${person.id}"><strong>${escapeHtml(contactName(person))} · ${Number(person.unread_count)} yeni mesaj</strong><small>${escapeHtml(person.last_message)}</small></button>`).join('') || ''}${!dmNotificationItems().length && !unread.length?'<p class="empty-list">Yeni bildirim yok.</p>':''}</div>`;
+  panel.hidden=false; $('#notifications-button')?.setAttribute('aria-expanded','true');
+  $('#notification-close').onclick=()=>{panel.hidden=true;$('#notifications-button')?.setAttribute('aria-expanded','false');};
+  $$('[data-notice-page]').forEach(button=>button.onclick=()=>{panel.hidden=true;showDmPage(button.dataset.noticePage).catch(error=>notify(error.message,true));});
+  $$('[data-notice-contact]').forEach(button=>button.onclick=()=>{panel.hidden=true;showDmPage('conversations',state.conversations.find(person=>person.id===button.dataset.noticeContact)).catch(error=>notify(error.message,true));});
+  $('#notification-close').focus();
 }
 
 async function answerMessageRequestFromPage(requestId, action) {
@@ -646,6 +609,7 @@ async function answerMessageRequestFromPage(requestId, action) {
 }
 
 async function showDmPage(tab = "friends", preselectedFriend = null) {
+  if (tab === "notifications") return toggleNotificationPanel();
   state.activeDmTab = tab;
   await loadFriends();
   await loadMessageRequests();
@@ -655,7 +619,9 @@ async function showDmPage(tab = "friends", preselectedFriend = null) {
   } else if (tab !== "friends") {
     state.activeDm = null;
   }
-  showWorkspacePage(tab === "friends" ? "nav-friends-button" : "nav-dms-button", renderDmPage);
+  state.conversations = (await api("/api/dms")).conversations || [];
+  if (tab === "friends" && !preselectedFriend) return showWorkspacePage("nav-friends-button", renderFriendsPage);
+  showWorkspacePage("nav-dms-button", renderDmPage);
 }
 
 function streamPageCard(stream) {
@@ -2112,7 +2078,7 @@ async function answerMessageRequest(requestId, action) {
 }
 
 async function openMessengerPage(preselectedFriend = null) {
-  await showDmPage("friends", preselectedFriend);
+  await showDmPage("conversations", preselectedFriend);
 }
 
 async function loadFriends() {
@@ -3134,7 +3100,7 @@ $("#home-profile-shortcut")?.addEventListener("click", () => {
   openModal("profile-settings-modal");
 });
 $("#home-open-friends")?.addEventListener("click", async () => {
-  await showDmPage("friends");
+  await showDmPage("conversations");
 });
 $("#nav-home-button")?.addEventListener("click", showHomeView);
 $("#nav-friends-button")?.addEventListener("click", async () => {
@@ -3146,7 +3112,7 @@ $("#nav-friends-button")?.addEventListener("click", async () => {
 });
 $("#nav-dms-button")?.addEventListener("click", async () => {
   try {
-    await showDmPage("requests");
+    await showDmPage("conversations");
   } catch (error) {
     notify(error.message, true);
   }
@@ -3357,7 +3323,7 @@ $("#logout-button").addEventListener("click", async () => {
 
 $("#friends-button").addEventListener("click", async () => {
   try {
-    await showDmPage("friends");
+    await showDmPage("conversations");
   } catch (error) {
     notify(error.message, true);
   }
@@ -3365,7 +3331,7 @@ $("#friends-button").addEventListener("click", async () => {
 
 $("#mobile-friends-button").addEventListener("click", async () => {
   try {
-    await showDmPage("friends");
+    await showDmPage("conversations");
   } catch (error) {
     notify(error.message, true);
   }
@@ -3885,6 +3851,34 @@ if (savedVoiceOutputValue !== null && Number.isFinite(savedVoiceOutputVolume)
   $("#voice-output-volume").value = String(savedVoiceOutputVolume);
   state.voice.outputVolume = savedVoiceOutputVolume / 100;
 }
+
+$('#notifications-button')?.addEventListener('click',()=>toggleNotificationPanel().catch(error=>notify(error.message,true)));
+$('#home-notifications-button')?.addEventListener('click',()=>toggleNotificationPanel().catch(error=>notify(error.message,true)));
+document.addEventListener('keydown',event=>{if(event.key==='Escape' && $('#notification-popover') && !$('#notification-popover').hidden){$('#notification-popover').hidden=true;$('#notifications-button')?.setAttribute('aria-expanded','false');$('#notifications-button')?.focus();}});
+document.addEventListener('click',event=>{const panel=$('#notification-popover');if(panel && !panel.hidden && !panel.contains(event.target) && !event.target.closest('#notifications-button,#home-notifications-button,[data-page-action="notifications"]')){panel.hidden=true;$('#notifications-button')?.setAttribute('aria-expanded','false');}});
+let socialRefreshBusy=false;
+setInterval(async()=>{
+  if(!state.user || document.hidden || socialRefreshBusy)return;
+  socialRefreshBusy=true;
+  try{
+    await loadFriends(); await loadMessageRequests();
+    state.conversations=(await api('/api/dms')).conversations || [];
+    updateNotificationBadges(state.friends.incoming.length+state.messageRequests.length+state.conversations.reduce((total,person)=>total+Number(person.unread_count||0),0));
+    const id=state.activeDm?.id, list=$('#dm-page-message-list');
+    if(state.activeWorkspacePage==='dms' && id && list){
+      const data=await api(`/api/dms/${id}`);
+      if(state.activeDm?.id===id && $('#dm-page-message-list')===list){
+        const nearBottom=list.scrollHeight-list.scrollTop-list.clientHeight<100, oldTop=list.scrollTop;
+        const merged=new Map((state.inboxMessages||[]).map(message=>[message.id,message]));
+        data.messages.forEach(message=>merged.set(message.id,message));
+        state.inboxMessages=[...merged.values()].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)||a.id.localeCompare(b.id));
+        renderDmPageMessages(state.inboxMessages);if(!nearBottom)list.scrollTop=oldTop;
+        await api(`/api/contacts/${id}`,{method:'PATCH',body:JSON.stringify({read:true})});
+      }
+    }
+    state.conversations.forEach(person=>{const button=$('[data-inbox-person="'+person.id+'"]');if(button){const preview=$('small',button);if(preview)preview.textContent=person.last_message||'Henüz mesaj yok';}});
+  }catch{}finally{socialRefreshBusy=false;}
+},10000);
 
 start().catch((error) => {
   console.error(error);
