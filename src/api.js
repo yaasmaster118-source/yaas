@@ -2,6 +2,8 @@
 
 const crypto = require("crypto");
 const { validateDmAttachment, mediaRange } = require("./dm-media");
+const { enforceMediaDuration } = require("./media-duration");
+const {emailReady,issueToken,consumeToken,isBlocked}=require('./account-security');
 const { query, transaction } = require("./database");
 const {
   createSession,
@@ -365,6 +367,20 @@ async function handleApi(request, response, helpers) {
       });
     }
 
+    if(method==='POST' && url.pathname==='/api/auth/reset-request'){
+      const body=await readJson(request);
+      if(!emailReady())return sendJson(response,503,{error:'E-posta hizmeti henüz hazır değil. Daha sonra tekrar dene.'});
+      const result=await query('SELECT id,email FROM users WHERE email=$1',[normalizeEmail(body.email)]);
+      if(result.rowCount)await issueToken(result.rows[0],'reset');
+      return sendJson(response,200,{message:'Bu adres kayıtlıysa şifre yenileme bağlantısı gönderildi.'});
+    }
+    if(method==='POST' && ['/api/auth/reset-complete','/api/auth/verify-complete'].includes(url.pathname)){
+      const body=await readJson(request), purpose=url.pathname.includes('reset')?'reset':'verify';
+      if(purpose==='reset'&&(!strongPassword(body.password)||String(body.password).length>1024))return sendJson(response,400,{error:'Şifre en az 8 karakter, harf ve rakam içermeli.'});
+      const ok=await consumeToken(body.token,purpose,String(body.password||''));
+      return sendJson(response,ok?200:400,ok?{ok:true}:{error:'Bağlantı geçersiz veya süresi dolmuş.'});
+    }
+
     if (method === "POST" && url.pathname === "/api/auth/login") {
       const body = await readJson(request);
       if (String(body.password || "").length > 1024) return sendJson(response, 400, { error: "Geçersiz istek" });
@@ -410,6 +426,40 @@ async function handleApi(request, response, helpers) {
       if(now>presenceCleanupAt){for(const [id,seen] of activeUsers)if(now-seen>60000)activeUsers.delete(id);presenceCleanupAt=now+60000;}
     }
     if (!user) return;
+    if(method==='GET'&&url.pathname==='/api/account/security'){
+      const current=await query('SELECT email_verified FROM users WHERE id=$1',[user.id]);
+      const blocks=await query('SELECT u.id,u.display_name,u.handle FROM user_blocks b JOIN users u ON u.id=b.blocked_id WHERE b.user_id=$1',[user.id]);
+      return sendJson(response,200,{emailVerified:Boolean(current.rows[0].email_verified),emailReady:emailReady(),blocks:blocks.rows});
+    }
+    if(method==='POST'&&url.pathname==='/api/account/verify-request'){
+      await issueToken(user,'verify');return sendJson(response,200,{ok:true});
+    }
+    const blockRoute=url.pathname.match(/^\/api\/blocks\/([0-9a-f-]+)$/i);
+    if(blockRoute&&['POST','DELETE'].includes(method)){
+      const target=blockRoute[1];
+      if(target===user.id||!(await query('SELECT id FROM users WHERE id=$1',[target])).rowCount)return sendJson(response,400,{error:'Geçersiz kullanıcı'});
+      if(method==='POST')await query('INSERT INTO user_blocks(user_id,blocked_id) VALUES ($1,$2) ON CONFLICT(user_id,blocked_id) DO NOTHING',[user.id,target]);
+      else await query('DELETE FROM user_blocks WHERE user_id=$1 AND blocked_id=$2',[user.id,target]);
+      return sendJson(response,200,{ok:true});
+    }
+    if(method==='POST'&&url.pathname==='/api/reports'){
+      const body=await readJson(request),reason=text(body.reason,1000);
+      if(reason.length<5||body.targetId===user.id||!(await query('SELECT id FROM users WHERE id=$1',[body.targetId])).rowCount)return sendJson(response,400,{error:'Geçerli kullanıcı ve en az 5 karakter açıklama gerekli.'});
+      const id=crypto.randomUUID();await query('INSERT INTO user_reports(id,reporter_id,target_id,reason) VALUES ($1,$2,$3,$4)',[id,user.id,body.targetId,reason]);
+      await recordSecurityEvent({request,userId:user.id,eventType:'user_report',severity:'high',metadata:{reportId:id}});
+      return sendJson(response,201,{ok:true});
+    }
+    if(method==='GET'&&url.pathname==='/api/admin/reports'){
+      if(!user.is_site_owner)return sendJson(response,403,{error:'Yetki gerekli'});
+      const result=await query('SELECT r.*,u.handle AS target_handle FROM user_reports r JOIN users u ON u.id=r.target_id ORDER BY r.created_at DESC LIMIT 100');
+      return sendJson(response,200,{reports:result.rows});
+    }
+    const reportRoute=url.pathname.match(/^\/api\/admin\/reports\/([0-9a-f-]+)$/i);
+    if(method==='PATCH'&&reportRoute){
+      if(!user.is_site_owner)return sendJson(response,403,{error:'Yetki gerekli'});
+      const body=await readJson(request);if(!['open','closed'].includes(body.status))return sendJson(response,400,{error:'Geçersiz durum'});
+      await query('UPDATE user_reports SET status=$2 WHERE id=$1',[reportRoute[1],body.status]);return sendJson(response,200,{ok:true});
+    }
 
     if (method === "GET" && url.pathname === "/api/admin/security/summary") {
       if (!user.is_site_owner) {
@@ -553,6 +603,7 @@ async function handleApi(request, response, helpers) {
       const target = targetResult.rows[0];
       if (!target) return sendJson(response, 404, { error: "Kullanıcı bulunamadı" });
       if (target.id === user.id) return sendJson(response, 400, { error: "Kendine arkadaşlık isteği gönderemezsin" });
+      if(await isBlocked(user.id,target.id))return sendJson(response,403,{error:'Bu kullanıcıyla iletişim engellendi.'});
       const existing = await query(
         `SELECT requester_id, addressee_id, status FROM friendships
           WHERE (requester_id = $1 AND addressee_id = $2)
@@ -585,6 +636,7 @@ async function handleApi(request, response, helpers) {
     if (method === "PATCH" && friendRequestRoute) {
       const body = await readJson(request);
       const requesterId = friendRequestRoute[1];
+      if(body.action==='accept'&&await isBlocked(user.id,requesterId))return sendJson(response,403,{error:'Bu kullanıcıyla iletişim engellendi.'});
       if (body.action === "accept") {
         const result = await query(
           `UPDATE friendships SET status = 'accepted', updated_at = NOW()
@@ -657,6 +709,7 @@ async function handleApi(request, response, helpers) {
     const dmRoute = url.pathname.match(/^\/api\/dms\/([0-9a-f-]+)$/i);
     if (dmRoute && ["GET", "POST"].includes(method)) {
       const friendId = dmRoute[1];
+      if(method==='POST'&&await isBlocked(user.id,friendId))return sendJson(response,403,{error:'Bu kullanıcıyla iletişim engellendi.'});
       if (!(await areFriends(user.id, friendId))) {
         const history = method === "GET" && await query("SELECT id FROM direct_messages WHERE (sender_id=$1 AND recipient_id=$2) OR (sender_id=$2 AND recipient_id=$1) LIMIT 1", [user.id, friendId]);
         if (!history || !history.rowCount) return sendJson(response, 403, { error: "Yeni mesaj için önce arkadaş olmalısınız" });
@@ -678,7 +731,7 @@ async function handleApi(request, response, helpers) {
       }
       const body = await readJson(request,12*1024*1024);
       let attachment;
-      try { attachment=validateDmAttachment(body.attachment); } catch(error) { return sendJson(response,400,{error:error.message}); }
+      try { attachment=validateDmAttachment(body.attachment); await enforceMediaDuration(attachment); } catch(error) { return sendJson(response,error.statusCode||400,{error:error.message}); }
       const content = text(body.content, 4000) || (attachment ? attachment.mime==='image/gif'?"[GIF]":attachment.mime.startsWith("image/")?"[Fotoğraf]":attachment.mime.startsWith("audio/")?"[Ses kaydı]":attachment.mime.startsWith('video/')?"[Video]":"[Dosya]" : "");
       if (!content) return sendJson(response, 400, { error: "Mesaj boş olamaz" });
       const message = { id: crypto.randomUUID(), content };
@@ -733,6 +786,7 @@ async function handleApi(request, response, helpers) {
       );
       const target = targetResult.rows[0];
       if (!target || target.id === user.id) return sendJson(response, 404, { error: "Kullanici bulunamadi" });
+      if(await isBlocked(user.id,target.id))return sendJson(response,403,{error:'Bu kullanıcıyla iletişim engellendi.'});
       if (await areFriends(user.id, target.id)) {
         return sendJson(response, 409, { error: "Bu kisi zaten arkadasin. DM kullan." });
       }
@@ -753,6 +807,7 @@ async function handleApi(request, response, helpers) {
       );
       const messageRequest = requestResult.rows[0];
       if (!messageRequest) return sendJson(response, 404, { error: "Mesaj istegi bulunamadi" });
+      if(body.action==='accept'&&await isBlocked(user.id,messageRequest.sender_id))return sendJson(response,403,{error:'Bu kullanıcıyla iletişim engellendi.'});
       if (body.action === "reject") {
         await query(
           "UPDATE message_requests SET status = 'rejected', updated_at = NOW() WHERE id = $1",
@@ -1384,6 +1439,7 @@ async function handleApi(request, response, helpers) {
 
     sendJson(response, 404, { error: "API yolu bulunamadı" });
   } catch (error) {
+    if(error.statusCode===503)return sendJson(response,503,{error:error.message});
     if (error.statusCode === 413) {
       return sendJson(response, 413, { error: "Istek cok buyuk" });
     }

@@ -22,6 +22,7 @@
     <script src="dm-catalog.js?v=1.1.34" defer></script>
     <script src="dm-composer.js?v=1.1.34" defer></script>
     <script src="app.js?v=1.1.34" defer></script>
+    <script src="account-ui.js?v=1.1.35" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -54,6 +55,7 @@
           <h2 id="auth-title">Tekrar hoş geldin</h2>
           <p class="auth-subtitle" id="auth-subtitle">Sunucularına kaldığın yerden devam et.</p>
           <form class="auth-form active" id="login-form">
+            <button class="auth-inline-link" id="forgot-password-button" type="button">Şifremi unuttum</button>
             <label>E-posta<input id="login-email" type="email" autocomplete="email" required></label>
             <label>Şifre<input id="login-password" type="password" autocomplete="current-password" required></label>
             <p class="form-error" id="login-error"></p>

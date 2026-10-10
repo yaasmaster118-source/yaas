@@ -2,6 +2,12 @@
 
 ## Scope and targets
 
+## Implemented encrypted snapshot command (2026-10-10)
+
+`scripts/backup.js create /private/location/yaas.enc` exports a consistent PostgreSQL snapshot (read-only repeatable-read transaction) or an integrity-checked SQLite snapshot and encrypts it with AES-256-GCM. Supply `YAAS_BACKUP_KEY` as a private 64-character hexadecimal key and `DATABASE_URL` or `LOCAL_DATABASE_PATH` through the process environment. The key must be preserved separately and never included in reports, source control, or email. Output files cannot overwrite existing backups. Output logs contain row counts and a checksum only.
+
+`scripts/backup.js restore-test /private/location/yaas.enc /private/location/new.sqlite` restores into a new isolated SQLite database, checks all table counts, foreign keys and database integrity. It refuses an existing target and refuses a configured production database URL. Tests restore actual accounts, message history and binary attachments and reject incorrect encryption keys. No scheduled production backup or independent remote storage is configured by this command alone. PostgreSQL disaster recovery still requires an isolated PostgreSQL restore drill before claiming production recovery is verified.
+
 Back up PostgreSQL, the deployed Git commit, and a production configuration inventory containing variable names and owners but no plaintext values. Suggested targets are RPO 24 hours and RTO 4 hours. Use paid Render Postgres point-in-time recovery for tighter targets.
 
 ## Schedule and retention

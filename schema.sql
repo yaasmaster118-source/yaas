@@ -231,3 +231,18 @@ CREATE TABLE IF NOT EXISTS stream_viewers (
 CREATE INDEX IF NOT EXISTS stream_sessions_status_idx ON stream_sessions(status, visibility, started_at DESC);
 CREATE INDEX IF NOT EXISTS stream_sessions_server_idx ON stream_sessions(server_id, status, started_at DESC);
 CREATE INDEX IF NOT EXISTS stream_viewers_stream_idx ON stream_viewers(stream_id, last_seen DESC);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS account_tokens (
+ id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ purpose TEXT NOT NULL CHECK(purpose IN ('reset','verify')), token_hash TEXT NOT NULL UNIQUE,
+ expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_blocks (
+ user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ blocked_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ PRIMARY KEY(user_id,blocked_id), CHECK(user_id<>blocked_id)
+);
+CREATE TABLE IF NOT EXISTS user_reports (
+ id UUID PRIMARY KEY, reporter_id UUID NOT NULL REFERENCES users(id), target_id UUID NOT NULL REFERENCES users(id),
+ reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

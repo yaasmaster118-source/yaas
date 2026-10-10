@@ -243,6 +243,10 @@ function getLocalDatabase() {
     localDatabase.exec("ALTER TABLE roles ADD COLUMN role_hoist INTEGER NOT NULL DEFAULT 0");
   }
   const userColumns = localDatabase.prepare("PRAGMA table_info(users)").all();
+  if (!userColumns.some(column=>column.name==='email_verified')) localDatabase.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
+  localDatabase.exec(`CREATE TABLE IF NOT EXISTS account_tokens(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,purpose TEXT NOT NULL CHECK(purpose IN ('reset','verify')),token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS user_blocks(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,blocked_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(user_id,blocked_id),CHECK(user_id<>blocked_id));
+    CREATE TABLE IF NOT EXISTS user_reports(id TEXT PRIMARY KEY,reporter_id TEXT NOT NULL REFERENCES users(id),target_id TEXT NOT NULL REFERENCES users(id),reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
   if (!userColumns.some((column) => column.name === "bio")) {
     localDatabase.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
   }
@@ -283,7 +287,7 @@ function localQuery(text, values = []) {
   const database = getLocalDatabase();
   const prepared = toSqliteQuery(text, values);
   const statement = database.prepare(prepared.sql);
-  const isSelect = /^\s*(SELECT|WITH|PRAGMA)\b/i.test(prepared.sql);
+  const isSelect = /^\s*(SELECT|WITH|PRAGMA)\b/i.test(prepared.sql) || /\bRETURNING\b/i.test(prepared.sql);
   if (isSelect) {
     const rows = statement.all(...prepared.values);
     return Promise.resolve({ rows, rowCount: rows.length });
