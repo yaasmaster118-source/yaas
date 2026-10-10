@@ -210,6 +210,7 @@ async function loginOAuthUser(provider, identity, response) {
     await query("UPDATE users SET is_site_owner = $1 WHERE id = $2", [true, userId]);
   }
   await createSession(userId, response);
+  await query('UPDATE users SET email_verified=$2 WHERE id=$1',[userId,true]);
 }
 
 async function finishOAuth(provider, request, response, origin, callbackValues) {

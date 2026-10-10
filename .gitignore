@@ -5,3 +5,6 @@ node_modules/
 npm-debug.log*
 .npm-cache/
 *.local-backup.*
+reports/
+*.enc
+*.dpapi

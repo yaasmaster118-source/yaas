@@ -1431,12 +1431,14 @@ function settingsPagePanel(tab) {
       ${(security.recentEvents || []).slice(0, 10).map((event) => `<article class="settings-info-row"><span><strong>${escapeHtml(labels[event.event_type] || event.event_type)}</strong><small>${escapeHtml(new Date(event.created_at).toLocaleString("tr-TR"))}</small></span>${statusBadge(event.severity)}</article>`).join("") || "<p>Henüz olay yok.</p>"}
       <button class="secondary" id="security-dashboard-refresh" type="button">Yenile</button>
       <h4>Yönetici işlem geçmişi</h4>
+      <div id="user-reports-panel"></div>
       ${(security.auditLogs || []).slice(0, 10).map(event => `<article class="settings-info-row"><strong>${escapeHtml(event.action)}</strong><small>${escapeHtml(new Date(event.created_at).toLocaleString("tr-TR"))}</small></article>`).join("") || "<p>Henüz işlem yok.</p>"}
     </section>`;
   }
   if (tab === "account") {
     return `<section class="settings-page-panel">
       <h3>Hesabım</h3>
+      <div id="account-security-panel"></div>
       <p>Profil bilgilerin, görünen ismin ve notun burada yönetilir.</p>
       <article class="profile-mini-card">
         ${avatarContent(state.user, "large")}
@@ -1539,6 +1541,8 @@ function renderSettingsPage() {
   });
   $("#security-dashboard-refresh")?.addEventListener("click", () => loadSecurityDashboard());
   if (state.settingsPageTab === "security" && !state.securityDashboard) loadSecurityDashboard();
+  if(state.settingsPageTab==='account')window.mountAccountSecurity?.();
+  if(state.settingsPageTab==='security')window.mountUserReports?.();
 }
 
 async function loadSecurityDashboard() {
@@ -2274,6 +2278,11 @@ async function openUserProfile(userId) {
     $("#profile-card-message-button").classList.toggle("hidden", profile.id === state.user.id || profile.friendship !== "accepted");
     $("#profile-card-message-button").dataset.userId = profile.id;
     renderProfileRoleTools(profile);
+    let safety=document.querySelector('#profile-safety-actions');
+    if(!safety){safety=document.createElement('div');safety.id='profile-safety-actions';safety.className='friend-actions';$('#profile-card-message-button').parentElement.append(safety);}
+    safety.innerHTML=profile.id===state.user.id?'':'<button class="secondary" id="profile-block-user">Engelle</button><button class="secondary" id="profile-report-user">Bildir</button>';
+    safety.querySelector('#profile-block-user')?.addEventListener('click',()=>window.openBlockDialog(profile));
+    safety.querySelector('#profile-report-user')?.addEventListener('click',()=>window.openReportDialog(profile));
     openModal("user-profile-modal");
   } catch (error) {
     notify(error.message, true);
