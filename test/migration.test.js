@@ -52,4 +52,5 @@ test("migration enforces TLS and preserves booleans, JSON and UTC timestamps", (
   assert.throws(() => convert(2, "boolean"));
   assert.equal(convert('["role"]', "jsonb"), '["role"]');
   assert.equal(convert("2026-10-04 01:02:03", "timestamp with time zone"), "2026-10-04T01:02:03Z");
+  assert.deepEqual(convert(new Uint8Array([137,80,78,71]), "bytea"), Buffer.from([137,80,78,71]));
 });

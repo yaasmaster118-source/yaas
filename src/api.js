@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("crypto");
+const { validateDmAttachment, mediaRange } = require("./dm-media");
 const { query, transaction } = require("./database");
 const {
   createSession,
@@ -14,6 +15,8 @@ const { ALL_PERMISSIONS, ROLE_TEMPLATES, validPermissions } = require("./permiss
 const { finishOAuth, publicProviders, startOAuth } = require("./oauth");
 const { clientIp, consumeRateLimit, recordAdminAudit, recordSecurityEvent, validateImageValue } = require("./security");
 const DUMMY_PASSWORD_HASH = `scrypt:${"0".repeat(32)}:${"0".repeat(128)}`;
+const activeUsers = new Map();
+let presenceCleanupAt=0;
 
 function text(value, max) {
   return String(value || "").trim().slice(0, max);
@@ -402,6 +405,10 @@ async function handleApi(request, response, helpers) {
     }
 
     const user = await requireUser(request, response, sendJson);
+    if(user){
+      const now=Date.now();activeUsers.set(user.id,now);
+      if(now>presenceCleanupAt){for(const [id,seen] of activeUsers)if(now-seen>60000)activeUsers.delete(id);presenceCleanupAt=now+60000;}
+    }
     if (!user) return;
 
     if (method === "GET" && url.pathname === "/api/admin/security/summary") {
@@ -493,10 +500,11 @@ async function handleApi(request, response, helpers) {
     if (method === "GET" && url.pathname === "/api/friends") {
       const [friends, incoming, outgoing] = await Promise.all([
         query(
-          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner
+          `SELECT u.id, u.display_name, u.handle, u.bio, u.avatar_url, u.avatar_frame, u.is_site_owner, cp.nickname
              FROM friendships f
              JOIN users u ON u.id = CASE
                WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END
+             LEFT JOIN contact_preferences cp ON cp.user_id = $1 AND cp.contact_id = u.id
             WHERE f.status = 'accepted' AND (f.requester_id = $1 OR f.addressee_id = $1)
             ORDER BY u.display_name`,
           [user.id]
@@ -608,32 +616,88 @@ async function handleApi(request, response, helpers) {
       return sendJson(response, 200, { ok: true });
     }
 
+    if (method === "GET" && url.pathname === "/api/dms") {
+      const result = await query(`SELECT u.id, u.display_name, u.handle, u.avatar_url, u.avatar_frame,
+        cp.nickname, cp.pinned,
+        (SELECT MAX(dm.created_at) FROM direct_messages dm WHERE (dm.sender_id=$1 AND dm.recipient_id=u.id) OR (dm.sender_id=u.id AND dm.recipient_id=$1)) AS last_message_at,
+        (SELECT dm.content FROM direct_messages dm WHERE (dm.sender_id=$1 AND dm.recipient_id=u.id) OR (dm.sender_id=u.id AND dm.recipient_id=$1) ORDER BY dm.created_at DESC, dm.id DESC LIMIT 1) AS last_message,
+        (SELECT COUNT(*) FROM direct_messages dm WHERE dm.sender_id=u.id AND dm.recipient_id=$1 AND (cp.read_at IS NULL OR dm.created_at > cp.read_at)) AS unread_count
+        FROM users u LEFT JOIN contact_preferences cp ON cp.user_id=$1 AND cp.contact_id=u.id
+        WHERE u.id <> $1 AND (EXISTS (SELECT 1 FROM direct_messages dm WHERE (dm.sender_id=$1 AND dm.recipient_id=u.id) OR (dm.sender_id=u.id AND dm.recipient_id=$1)) OR cp.pinned = $2)
+        ORDER BY COALESCE(cp.pinned,$3) DESC, last_message_at DESC, u.display_name`, [user.id, true, false]);
+      return sendJson(response, 200, { conversations: result.rows });
+    }
+    const contactRoute = url.pathname.match(/^\/api\/contacts\/([0-9a-f-]+)$/i);
+    if (method === "PATCH" && contactRoute) {
+      const contactId = contactRoute[1];
+      const history = await query("SELECT id FROM direct_messages WHERE (sender_id=$1 AND recipient_id=$2) OR (sender_id=$2 AND recipient_id=$1) LIMIT 1", [user.id, contactId]);
+      if (!(await areFriends(user.id, contactId)) && !history.rowCount) return sendJson(response, 403, { error: "Kişiye erişim yok" });
+      const body = await readJson(request);
+      await query("INSERT INTO contact_preferences (user_id,contact_id) VALUES ($1,$2) ON CONFLICT(user_id,contact_id) DO NOTHING", [user.id, contactId]);
+      if (Object.hasOwn(body, "nickname")) await query("UPDATE contact_preferences SET nickname=$3 WHERE user_id=$1 AND contact_id=$2", [user.id, contactId, text(body.nickname, 60)]);
+      if (typeof body.pinned === "boolean") await query("UPDATE contact_preferences SET pinned=$3 WHERE user_id=$1 AND contact_id=$2", [user.id, contactId, body.pinned]);
+      if (body.read === true) await query("UPDATE contact_preferences SET read_at=NOW() WHERE user_id=$1 AND contact_id=$2", [user.id, contactId]);
+      return sendJson(response, 200, { ok: true });
+    }
+    const mediaRoute = url.pathname.match(/^\/api\/dm-attachments\/([0-9a-f-]+)$/i);
+    if (mediaRoute && ["GET", "HEAD"].includes(method)) {
+      const result = await query(`SELECT a.* FROM dm_attachments a JOIN direct_messages dm ON dm.id=a.message_id WHERE a.id=$1 AND (dm.sender_id=$2 OR dm.recipient_id=$2)`, [mediaRoute[1], user.id]);
+      if (!result.rowCount) return sendJson(response,404,{error:"Dosya bulunamadı"});
+      const attachment=result.rows[0], bytes=Buffer.from(attachment.data), range=mediaRange(request.headers.range,bytes.length);
+      response.setHeader("Cache-Control","private, no-store");
+      response.setHeader("Accept-Ranges","bytes");
+      if(!range){response.writeHead(416,{"Content-Range":`bytes */${bytes.length}`});return response.end();}
+      response.setHeader("Content-Type",attachment.mime_type);
+      response.setHeader("Content-Disposition",`${attachment.mime_type.startsWith('application/')||attachment.mime_type==='text/plain'?'attachment':'inline'}; filename*=UTF-8''${encodeURIComponent(attachment.name).replace(/'/g,"%27")}`);
+      response.setHeader("Content-Length",range.end-range.start+1);
+      if(range.partial)response.setHeader("Content-Range",`bytes ${range.start}-${range.end}/${bytes.length}`);
+      response.writeHead(range.partial?206:200);
+      return response.end(method==="HEAD"?undefined:bytes.subarray(range.start,range.end+1));
+    }
     const dmRoute = url.pathname.match(/^\/api\/dms\/([0-9a-f-]+)$/i);
     if (dmRoute && ["GET", "POST"].includes(method)) {
       const friendId = dmRoute[1];
       if (!(await areFriends(user.id, friendId))) {
-        return sendJson(response, 403, { error: "Özel mesaj için önce arkadaş olmalısınız" });
+        const history = method === "GET" && await query("SELECT id FROM direct_messages WHERE (sender_id=$1 AND recipient_id=$2) OR (sender_id=$2 AND recipient_id=$1) LIMIT 1", [user.id, friendId]);
+        if (!history || !history.rowCount) return sendJson(response, 403, { error: "Yeni mesaj için önce arkadaş olmalısınız" });
       }
       if (method === "GET") {
         const result = await query(
           `SELECT dm.id, dm.sender_id, dm.recipient_id, dm.content, dm.created_at,
-                  u.display_name AS sender_name, u.handle AS sender_handle
-             FROM direct_messages dm JOIN users u ON u.id = dm.sender_id
-            WHERE (dm.sender_id = $1 AND dm.recipient_id = $2)
-               OR (dm.sender_id = $2 AND dm.recipient_id = $1)
-            ORDER BY dm.created_at DESC LIMIT 100`,
-          [user.id, friendId]
+                  u.display_name AS sender_name, u.handle AS sender_handle,
+                  a.id AS attachment_id, a.name AS attachment_name, a.mime_type AS attachment_mime, a.size_bytes AS attachment_size
+             FROM direct_messages dm JOIN users u ON u.id = dm.sender_id LEFT JOIN dm_attachments a ON a.message_id=dm.id
+            WHERE ((dm.sender_id = $1 AND dm.recipient_id = $2)
+               OR (dm.sender_id = $2 AND dm.recipient_id = $1))
+              AND (dm.created_at < COALESCE($3,dm.created_at) OR ($3 IS NULL) OR (dm.created_at = $3 AND dm.id < $4))
+            ORDER BY dm.created_at DESC, dm.id DESC LIMIT 101`,
+          [user.id, friendId, url.searchParams.get("before") || null, url.searchParams.get("beforeId") || null]
         );
-        return sendJson(response, 200, { messages: result.rows.reverse() });
+        const receipt=await query("SELECT read_at FROM contact_preferences WHERE user_id=$1 AND contact_id=$2",[friendId,user.id]);
+        return sendJson(response, 200, { messages: result.rows.slice(0,100).reverse(), hasMore: result.rows.length > 100, peerOnline:Date.now()-(activeUsers.get(friendId)||0)<40000, peerReadAt:receipt.rows[0]?.read_at||null });
       }
-      const body = await readJson(request);
-      const content = text(body.content, 4000);
+      const body = await readJson(request,12*1024*1024);
+      let attachment;
+      try { attachment=validateDmAttachment(body.attachment); } catch(error) { return sendJson(response,400,{error:error.message}); }
+      const content = text(body.content, 4000) || (attachment ? attachment.mime==='image/gif'?"[GIF]":attachment.mime.startsWith("image/")?"[Fotoğraf]":attachment.mime.startsWith("audio/")?"[Ses kaydı]":attachment.mime.startsWith('video/')?"[Video]":"[Dosya]" : "");
       if (!content) return sendJson(response, 400, { error: "Mesaj boş olamaz" });
       const message = { id: crypto.randomUUID(), content };
-      await query(
+      await transaction(async client=>{
+        if(attachment){
+          if(process.env.DATABASE_URL)await client.query("SELECT pg_advisory_xact_lock(794112119)");
+          const quota=await client.query("SELECT COALESCE(SUM(size_bytes),0) AS total, COALESCE(SUM(CASE WHEN owner_id=$1 THEN size_bytes ELSE 0 END),0) AS personal FROM dm_attachments",[user.id]);
+          if(Number(quota.rows[0].total)+attachment.size>128*1024*1024 || Number(quota.rows[0].personal)+attachment.size>32*1024*1024)throw Object.assign(new Error("Media quota exceeded"),{statusCode:400,publicMessage:"Medya depolama sınırına ulaşıldı. Yazılı mesaj gönderebilirsin."});
+        }
+        await client.query(
         "INSERT INTO direct_messages (id, sender_id, recipient_id, content) VALUES ($1, $2, $3, $4)",
         [message.id, user.id, friendId, content]
-      );
+        );
+        if(attachment){
+          const id=crypto.randomUUID();
+          await client.query("INSERT INTO dm_attachments (id,message_id,owner_id,name,mime_type,size_bytes,data) VALUES ($1,$2,$3,$4,$5,$6,$7)",[id,message.id,user.id,attachment.name,attachment.mime,attachment.size,attachment.bytes]);
+          Object.assign(message,{attachment_id:id,attachment_name:attachment.name,attachment_mime:attachment.mime,attachment_size:attachment.size});
+        }
+      });
       return sendJson(response, 201, {
         message: {
           ...message,
@@ -1324,7 +1388,7 @@ async function handleApi(request, response, helpers) {
       return sendJson(response, 413, { error: "Istek cok buyuk" });
     }
     if (error.statusCode === 400) {
-      return sendJson(response, 400, { error: "Gecersiz istek" });
+      return sendJson(response, 400, { error: error.publicMessage || "Gecersiz istek" });
     }
     if (error.code === "23505" || /UNIQUE constraint failed/i.test(error.message)) {
       return sendJson(response, 409, { error: "Bu kayıt zaten mevcut" });

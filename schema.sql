@@ -174,6 +174,18 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS dm_attachments (
+  id UUID PRIMARY KEY,
+  message_id UUID NOT NULL UNIQUE REFERENCES direct_messages(id) ON DELETE CASCADE,
+  owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK(size_bytes BETWEEN 1 AND 8388608),
+  data BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS dm_attachments_owner_idx ON dm_attachments(owner_id);
+
 CREATE TABLE IF NOT EXISTS message_requests (
   id UUID PRIMARY KEY,
   sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -186,6 +198,14 @@ CREATE TABLE IF NOT EXISTS message_requests (
 
 CREATE INDEX IF NOT EXISTS friendships_addressee_idx ON friendships(addressee_id, status);
 CREATE INDEX IF NOT EXISTS direct_messages_pair_idx ON direct_messages(sender_id, recipient_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS contact_preferences (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  contact_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  nickname TEXT NOT NULL DEFAULT '',
+  pinned BOOLEAN NOT NULL DEFAULT FALSE,
+  read_at TIMESTAMPTZ,
+  PRIMARY KEY(user_id, contact_id)
+);
 CREATE INDEX IF NOT EXISTS message_requests_recipient_idx ON message_requests(recipient_id, status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS stream_sessions (

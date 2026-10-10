@@ -24,6 +24,7 @@ const contentTypes = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
   ".webm": "video/webm",
+  ".gif": "image/gif",
   ".webmanifest": "application/manifest+json; charset=utf-8",
   ".ico": "image/x-icon"
 };
@@ -103,7 +104,7 @@ const server = http.createServer((request, response) => {
   }
   const filePath = path.resolve(root, `.${decodedPath}`);
   const relativePath = path.relative(root, filePath);
-  const publicFiles = new Set(["index.html", "app.js", "styles.css", "clean.css", "auth-entrance.css", "auth-entrance.js", "studio.js", "studio-window.js", "studio.css", "icon.svg", "social-card.svg", "manifest.webmanifest", "googled68ecb0ee296f9ef.html"]);
+  const publicFiles = new Set(["index.html", "app.js", "dm-composer.js", "dm-catalog.js", "styles.css", "clean.css", "auth-entrance.css", "auth-entrance.js", "studio.js", "studio-window.js", "studio.css", "icon.svg", "social-card.svg", "manifest.webmanifest", "googled68ecb0ee296f9ef.html"]);
   const assetPath = relativePath.replace(/\\/g, "/");
   const publicAsset = assetPath.startsWith("assets/") && !assetPath.split("/").some(part => part.startsWith(".")) && !assetPath.includes("local-backup") && Object.hasOwn(contentTypes, path.extname(filePath).toLowerCase());
   if (!publicFiles.has(assetPath) && !publicAsset) {
@@ -148,7 +149,7 @@ function applySecurityHeaders(response) {
   response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
   response.setHeader("Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' blob: data:; connect-src 'self' https://accounts.google.com https://appleid.apple.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://appleid.apple.com"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https:; media-src 'self' blob: data:; connect-src 'self' https://accounts.google.com https://appleid.apple.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://appleid.apple.com"
   );
   if (process.env.NODE_ENV === "production") response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
 }
@@ -167,11 +168,11 @@ function isSameOrigin(request) {
   return !origin || origin === getOrigin(request);
 }
 
-function readJson(request) {
+function readJson(request, maxBytes = MAX_JSON_BYTES) {
   if (!String(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
     return Promise.reject(Object.assign(new Error("JSON required"), { statusCode: 400 }));
   }
-  return readBody(request, MAX_JSON_BYTES).then((body) => {
+  return readBody(request, maxBytes).then((body) => {
     try {
       const parsed = body ? JSON.parse(body) : {};
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Object required");

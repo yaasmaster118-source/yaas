@@ -13,13 +13,15 @@
     <link rel="icon" href="assets/yaas-main-logo.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="stylesheet" href="styles.css?v=1.1.23">
-    <link rel="stylesheet" href="clean.css?v=1.1.31">
+    <link rel="stylesheet" href="clean.css?v=1.1.34">
     <link rel="stylesheet" href="studio.css?v=1.1.31">
     <link rel="stylesheet" href="auth-entrance.css?v=1.1.32">
     <script src="auth-entrance.js?v=1.1.32" defer></script>
     <script src="studio.js?v=1.1.31" defer></script>
     <script src="studio-window.js?v=1.1.31" defer></script>
-    <script src="app.js?v=1.1.32" defer></script>
+    <script src="dm-catalog.js?v=1.1.34" defer></script>
+    <script src="dm-composer.js?v=1.1.34" defer></script>
+    <script src="app.js?v=1.1.34" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen">
@@ -101,7 +103,8 @@
         <div class="server-actions">
           <button class="primary" data-open-modal="create-server-modal" type="button">＋ Sunucu oluştur</button>
           <button class="secondary" data-open-modal="join-server-modal" type="button">Davetle katıl</button>
-          <button class="secondary friends-button" id="friends-button" type="button">Arkadaşlar ve DM <span class="notification-badge hidden" id="friends-notification-badge">0</span></button>
+          <button class="secondary friends-button" id="friends-button" type="button">DM kutusu</button>
+          <button class="secondary" id="notifications-button" type="button" aria-expanded="false" aria-controls="notification-popover">♧ Bildirimler <span class="notification-badge hidden" id="friends-notification-badge">0</span></button>
         </div>
         <p class="section-label">SUNUCULARIN</p>
         <nav class="server-list" id="server-list"></nav>
@@ -134,7 +137,7 @@
                 <input placeholder="Ara..." autocomplete="off">
               </label>
               <div class="home-top-actions" aria-label="Bildirimler">
-                <button class="icon-button" type="button" title="Bildirimler">♧</button>
+                <button class="icon-button" id="home-notifications-button" type="button" title="Bildirimler" aria-controls="notification-popover">♧</button>
                 <button class="icon-button" id="home-open-friends" type="button" title="Mesajlar">✉</button>
               </div>
             </header>
