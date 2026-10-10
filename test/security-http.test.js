@@ -30,7 +30,7 @@ test("production HTTP protects internal files, admin, private channels, sessions
     assert.equal(health.status, 200);
     const accountScript=await req('/account-ui.js?v=1.1.35');
     assert.equal(accountScript.status,200);
-    assert.match(await accountScript.text(),/function mountAccountSecurity/);
+    assert.match(accountScript.data,/function mountAccountSecurity/);
     assert.equal(health.headers.get("x-frame-options"), "DENY");
     assert.match(health.headers.get("strict-transport-security"), /max-age/);
     assert.match(health.headers.get("content-security-policy"), /frame-ancestors 'none'/);
