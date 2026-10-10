@@ -104,7 +104,7 @@ const server = http.createServer((request, response) => {
   }
   const filePath = path.resolve(root, `.${decodedPath}`);
   const relativePath = path.relative(root, filePath);
-  const publicFiles = new Set(["index.html", "app.js", "dm-composer.js", "dm-catalog.js", "styles.css", "clean.css", "auth-entrance.css", "auth-entrance.js", "studio.js", "studio-window.js", "studio.css", "icon.svg", "social-card.svg", "manifest.webmanifest", "googled68ecb0ee296f9ef.html"]);
+  const publicFiles = new Set(["index.html", "app.js", "account-ui.js", "dm-composer.js", "dm-catalog.js", "styles.css", "clean.css", "auth-entrance.css", "auth-entrance.js", "studio.js", "studio-window.js", "studio.css", "icon.svg", "social-card.svg", "manifest.webmanifest", "googled68ecb0ee296f9ef.html"]);
   const assetPath = relativePath.replace(/\\/g, "/");
   const publicAsset = assetPath.startsWith("assets/") && !assetPath.split("/").some(part => part.startsWith(".")) && !assetPath.includes("local-backup") && Object.hasOwn(contentTypes, path.extname(filePath).toLowerCase());
   if (!publicFiles.has(assetPath) && !publicAsset) {
