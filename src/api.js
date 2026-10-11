@@ -36,8 +36,8 @@ function profileImageValue(value) {
   return validateImageValue(value);
 }
 
-async function serverSummary(serverId) {
-  const result = await query(
+async function serverSummary(serverId, execute = query) {
+  const result = await execute(
     `SELECT s.id, s.name, s.description, s.icon_color, s.logo_url, s.owner_id, s.created_at,
             COUNT(m.user_id)::int AS member_count
        FROM servers s
@@ -296,7 +296,7 @@ async function createServer(client, user, body) {
       );
     }
   }
-  return await serverSummary(serverId);
+  return await serverSummary(serverId, client.query.bind(client));
 }
 
 async function handleApi(request, response, helpers) {

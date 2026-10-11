@@ -1373,7 +1373,7 @@ async function showEventsPage() {
   await loadEvents();if(state.activeWorkspacePage==='events'&&!state.eventCreatorOpen)renderEventsPage();
 }
 let eventsRefreshBusy=false;
-setInterval(async()=>{if(!state.user||document.hidden||isStudioWindow||eventsRefreshBusy||!['home','events'].includes(state.activeWorkspacePage))return;eventsRefreshBusy=true;try{await loadEvents();if(state.activeWorkspacePage==='events'&&!state.eventCreatorOpen)renderEventsPage();}finally{eventsRefreshBusy=false;}},30000);
+setInterval(async()=>{if(!state.user||document.hidden||isStudioWindow||eventsRefreshBusy||!['home','events'].includes(state.activeWorkspacePage))return;eventsRefreshBusy=true;try{await Promise.all([loadEvents(),state.activeWorkspacePage==='home'?loadStreams():Promise.resolve()]);if(state.activeWorkspacePage==='events'&&!state.eventCreatorOpen)renderEventsPage();}finally{eventsRefreshBusy=false;}},30000);
 
 function renderServersPage() {
   const shell = $("#workspace-page-shell");
@@ -1575,7 +1575,7 @@ function showHomeView() {
   setSideNavActive("nav-home-button");
   renderServers();
   renderStreams();
-  loadEvents();
+  Promise.all([loadEvents(),loadStreams()]);
 }
 
 async function loadNotificationSummary() {
