@@ -307,10 +307,11 @@
     </div>
 
     <div class="modal-layer" id="create-server-modal" hidden>
-      <form class="modal server-builder-modal" id="create-server-form">
-        <header><div><strong>Sunucunu oluştur</strong><small>Topluluğuna uygun bir başlangıç seç.</small></div><button class="icon-button modal-close" type="button">×</button></header>
+      <form class="modal server-builder-modal" id="create-server-form" role="dialog" aria-modal="true" aria-labelledby="server-builder-title">
+        <header><div><small>YAAS · TOPLULUĞUNUN BAŞLANGICI</small><strong id="server-builder-title">Bir araya geleceğiniz yer.</strong></div><button class="icon-button modal-close" type="button" aria-label="Sunucu oluşturmayı kapat">×</button></header>
+        <div class="builder-layout"><div class="builder-editor">
         <div class="server-builder-intro">
-          <h3>Nasıl bir alan kuruyorsun?</h3>
+          <h3>01 · Topluluğuna bir başlangıç seç</h3>
           <p>Şablon yalnızca başlangıç kanallarını hazırlar. Sonrasında her şeyi değiştirebilirsin.</p>
         </div>
         <input id="server-template-input" type="hidden" value="custom">
@@ -324,15 +325,15 @@
           <button class="template-card" data-server-template="local" type="button"><span>⌖</span><strong>Yerel topluluk</strong><small>Etkinlik ve buluşmalar</small></button>
         </div>
         <div class="server-builder-fields">
-          <label>Sunucu adı<input id="server-name-input" minlength="2" maxlength="40" placeholder="Yeni topluluğum" required></label>
-          <label>Açıklama<textarea id="server-description-input" maxlength="180" placeholder="Bu sunucu ne için kuruluyor?"></textarea></label>
+          <label>02 · Sunucu adı<input id="server-name-input" minlength="2" maxlength="40" placeholder="Örneğin: Gece Kuşları" required aria-describedby="builder-name-count"><small id="builder-name-count">0 / 40</small></label>
+          <label>Açıklama <small>İsteğe bağlı</small><textarea id="server-description-input" maxlength="180" placeholder="Burada kimler, ne için buluşacak?"></textarea><small id="builder-description-count">0 / 180</small></label>
         </div>
-        <label class="server-logo-field">Sunucu logosu baglantisi<input id="server-logo-url-input" maxlength="350000" placeholder="https://... veya bos birak"></label>
-        <input id="server-logo-file-input" type="file" accept="image/*" hidden>
-        <button class="secondary" id="server-logo-picker" type="button">Galeriden logo sec</button>
-        <p class="form-error"></p>
+        <section class="builder-brand"><h3>03 · Kendine ait bir görünüm</h3><div class="builder-logo-actions"><button class="secondary" id="server-logo-picker" type="button">Görsel yükle</button><button class="secondary" id="builder-remove-logo" type="button">Görseli kaldır</button><label>Vurgu rengi<input id="builder-color" type="color" value="#d6aa52"></label></div><small>PNG, JPG veya WebP · En fazla 10 MB · Görselin sunucu simgesine uyarlanır.</small><details><summary>Görsel bağlantısı kullan</summary><label>Logo bağlantısı<input id="server-logo-url-input" maxlength="350000" placeholder="https://..." aria-describedby="builder-logo-note"></label></details><small id="builder-logo-note">Görsel eklemezsen sunucu adının baş harfleri kullanılır.</small></section>
+        <input id="server-logo-file-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+        </div><aside class="builder-preview" aria-label="Sunucu önizlemesi"><span class="builder-eyebrow">SENİN ALANIN</span><div class="builder-preview-identity"><span id="builder-avatar" class="builder-avatar">YA</span><h3 id="builder-preview-name">Yeni topluluğun</h3><p id="builder-preview-description">Sohbetler, ortak anlar ve yeni fikirler için bir yer.</p></div><div class="builder-preview-channels"><strong>Başlangıç kanalları</strong><div id="builder-channel-preview" aria-live="polite"></div></div><p class="builder-access-note">◇ Üyeler davetle katılır. Kanalları ve rolleri oluşturduktan sonra yönetebilirsin.</p></aside></div>
+        <p class="form-error" role="alert"></p>
         <div class="builder-join-row"><span>Zaten davetin var mı?</span><button class="secondary" id="builder-open-join" type="button">Bir sunucuya katıl</button></div>
-        <footer><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Sunucuyu oluştur</button></footer>
+        <footer><small id="builder-submit-note">Hazır olduğunda topluluğunu oluştur.</small><button class="secondary modal-close" type="button">Vazgeç</button><button class="primary" type="submit">Sunucuyu oluştur →</button></footer>
       </form>
     </div>
 

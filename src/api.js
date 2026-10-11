@@ -983,6 +983,10 @@ async function handleApi(request, response, helpers) {
       return sendJson(response, 200, { servers: result.rows });
     }
 
+    if (method === "GET" && url.pathname === "/api/server-templates") {
+      return sendJson(response, 200, { templates: SERVER_TEMPLATES });
+    }
+
     if (method === "POST" && url.pathname === "/api/servers") {
       const body = await readJson(request);
       if (text(body.name, 40).length < 2) return sendJson(response, 400, { error: "Sunucu adı gerekli" });

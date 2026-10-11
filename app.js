@@ -221,8 +221,8 @@ function setAvatar(element, person) {
 
 function resizeAvatarFile(file) {
   return new Promise((resolve, reject) => {
-    if (!file || !file.type.startsWith("image/")) {
-      reject(new Error("Lutfen bir fotograf sec"));
+    if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) {
+      reject(new Error("10 MB altında PNG, JPG veya WebP görsel seç."));
       return;
     }
     const reader = new FileReader();
@@ -314,11 +314,50 @@ function roleIcon(role = {}) {
   return "◆";
 }
 
+let serverBuilderTemplates = null;
+let serverBuilderOpener = null;
+function updateServerBuilderPreview() {
+  const name = $('#server-name-input').value.trim();
+  const description = $('#server-description-input').value.trim();
+  $('#builder-preview-name').textContent = name || 'Yeni topluluğun';
+  $('#builder-preview-description').textContent = description || 'Sohbetler, ortak anlar ve yeni fikirler için bir yer.';
+  $('#builder-name-count').textContent = `${$('#server-name-input').value.length} / 40`;
+  $('#builder-description-count').textContent = `${$('#server-description-input').value.length} / 180`;
+  const avatar = $('#builder-avatar');
+  avatar.style.backgroundColor = $('#builder-color').value;
+  const logo = $('#server-logo-url-input').value.trim();
+  avatar.replaceChildren();
+  if (/^https:\/\//i.test(logo) || /^data:image\/(png|jpeg|webp);base64,/i.test(logo)) {
+    const image = document.createElement('img'); image.alt = 'Sunucu logosu'; image.src = logo;
+    image.onerror = () => { avatar.textContent = initials(name || 'YAAS'); };
+    avatar.append(image);
+  } else avatar.textContent = initials(name || 'YAAS');
+  const list = $('#builder-channel-preview'); list.replaceChildren();
+  const categories = serverBuilderTemplates?.[$('#server-template-input').value];
+  if (!categories) { list.textContent = 'Kanal önizlemesi yükleniyor…'; return; }
+  for (const category of categories) {
+    const heading = document.createElement('small'); heading.textContent = category.name; list.append(heading);
+    for (const channel of category.channels) {
+      const row = document.createElement('p'); row.textContent = `${channel.type === 'voice' ? '◖' : '#'}  ${channel.name}`; list.append(row);
+    }
+  }
+}
+
 function openModal(id) {
   $(`#${id}`).hidden = false;
+  if (id === 'create-server-modal') {
+    serverBuilderOpener = document.activeElement;
+    selectServerTemplate($('#server-template-input').value);
+    $('#server-name-input').focus();
+    if (!serverBuilderTemplates) api('/api/server-templates').then(data => { serverBuilderTemplates = data.templates; updateServerBuilderPreview(); }).catch(() => { $('#builder-channel-preview').textContent = 'Önizleme yüklenemedi. Pencereyi yeniden açarak tekrar deneyebilirsin.'; });
+  }
 }
 
 function closeModal(element) {
+  if (element.closest('#create-server-modal')) {
+    if ($('#create-server-form').dataset.submitting === 'true') return;
+    serverBuilderOpener?.focus();
+  }
   element.closest(".modal-layer").hidden = true;
 }
 
@@ -326,7 +365,9 @@ function selectServerTemplate(template) {
   $("#server-template-input").value = template;
   $$("[data-server-template]").forEach((button) => {
     button.classList.toggle("active", button.dataset.serverTemplate === template);
+    button.setAttribute('aria-pressed', String(button.dataset.serverTemplate === template));
   });
+  updateServerBuilderPreview();
 }
 
 function switchSettingsTab(tab) {
@@ -3151,7 +3192,7 @@ $("#channel-private-input").addEventListener("change", syncCreateRoleAccessVisib
 $("#channel-type-input").addEventListener("change", syncCreateVoiceSettings);
 $$(".modal-close").forEach((button) => button.addEventListener("click", () => closeModal(button)));
 $$(".modal-layer").forEach((layer) => layer.addEventListener("click", (event) => {
-  if (event.target === layer) layer.hidden = true;
+  if (event.target === layer) closeModal(layer);
 }));
 $$("[data-open-panel]").forEach((button) => button.addEventListener("click", () => $(`#${button.dataset.openPanel}`).classList.add("open")));
 $$("[data-close-panel]").forEach((button) => button.addEventListener("click", () => $(`#${button.dataset.closePanel}`).classList.remove("open")));
@@ -3261,6 +3302,7 @@ $("#server-logo-file-input").addEventListener("change", async (event) => {
   if (!file) return;
   try {
     $("#server-logo-url-input").value = await resizeServerLogoFile(file);
+    updateServerBuilderPreview();
     notify("Sunucu logosu hazir");
   } catch (error) {
     notify(error.message, true);
@@ -3463,13 +3505,22 @@ $$("[data-dm-emoji]").forEach((button) => button.addEventListener("click", () =>
 $("#create-server-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  if (form.dataset.submitting === 'true') return;
   const error = $(".form-error", form);
   error.textContent = "";
+  const name = $('#server-name-input').value.trim();
+  if (name.length < 2) { error.textContent = 'Sunucu adı en az 2 karakter olmalı.'; $('#server-name-input').focus(); return; }
+  form.dataset.submitting = 'true';
+  form.setAttribute('aria-busy', 'true');
+  const controls = [...form.querySelectorAll('button,input,textarea')].map(control => [control, control.disabled]);
+  controls.forEach(([control]) => { control.disabled = true; });
+  const submit = form.querySelector('[type="submit"]'); submit.textContent = 'Sunucun oluşturuluyor…';
   try {
     const data = await api("/api/servers", {
       method: "POST",
       body: JSON.stringify({
-        name: $("#server-name-input").value,
+        name,
+        iconColor: $('#builder-color').value,
         description: $("#server-description-input").value,
         logoUrl: $("#server-logo-url-input").value,
         template: $("#server-template-input").value
@@ -3477,12 +3528,31 @@ $("#create-server-form").addEventListener("submit", async (event) => {
     });
     form.reset();
     selectServerTemplate("custom");
+    delete form.dataset.submitting;
     closeModal(form);
     await loadServers(data.server.id);
     notify("Sunucu oluşturuldu");
   } catch (failure) {
     error.textContent = failure.message;
+  } finally {
+    delete form.dataset.submitting;
+    form.removeAttribute('aria-busy');
+    controls.forEach(([control, disabled]) => { control.disabled = disabled; });
+    submit.textContent = 'Sunucuyu oluştur →';
   }
+});
+
+for (const id of ['server-name-input', 'server-description-input', 'server-logo-url-input', 'builder-color']) {
+  $(`#${id}`).addEventListener('input', updateServerBuilderPreview);
+}
+$('#builder-remove-logo').addEventListener('click', () => { $('#server-logo-url-input').value = ''; $('#server-logo-file-input').value = ''; updateServerBuilderPreview(); });
+$('#create-server-modal').addEventListener('keydown', event => {
+  if (event.key === 'Escape') { event.preventDefault(); closeModal($('#create-server-form')); }
+  if (event.key !== 'Tab') return;
+  const controls = [...$('#create-server-form').querySelectorAll('button,input,textarea,summary')].filter(control => !control.disabled && control.getClientRects().length);
+  const first = controls[0], last = controls.at(-1);
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
 });
 
 $("#join-server-form").addEventListener("submit", async (event) => {
