@@ -41,3 +41,13 @@ test("reopening a named Studio does not reload or interrupt its broadcast", () =
   sandbox.openStudioWindow();
   assert.equal(replacements, 0);
 });
+
+test("Studio requires an audience choice and ignores a hidden server for public broadcasts", () => {
+  const {sandbox}=windowHarness();
+  const values={"#studio-broadcast-title":"Audience test","#studio-visibility":"","#studio-server":"private-server"};
+  const studio={host:{querySelector(selector){return {value:values[selector]};}}};
+  const settings=()=>sandbox.YaasStudio.prototype.broadcastSettings.call(studio);
+  assert.throws(settings,/kimlerin/);
+  values["#studio-visibility"]="server";assert.equal(settings().serverId,"private-server");
+  values["#studio-visibility"]="global";assert.equal(settings().serverId,null);assert.equal(settings().visibility,"global");
+});

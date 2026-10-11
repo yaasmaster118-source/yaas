@@ -579,6 +579,40 @@ async function handleApi(request, response, helpers) {
       });
     }
 
+    if (method === "GET" && url.pathname === "/api/events") {
+      const events = await query(
+        `SELECT e.*, s.name AS server_name, u.display_name AS creator_name,
+                (e.creator_id = $1 OR s.owner_id = $1) AS can_manage
+         FROM server_events e JOIN servers s ON s.id = e.server_id JOIN users u ON u.id = e.creator_id
+         WHERE e.status = 'active' AND e.starts_at > $2
+           AND EXISTS (SELECT 1 FROM memberships m WHERE m.server_id = e.server_id AND m.user_id = $1)
+         ORDER BY e.starts_at ASC, e.id ASC LIMIT 100`, [user.id, new Date().toISOString()]);
+      return sendJson(response, 200, { events: events.rows });
+    }
+    if (method === "POST" && url.pathname === "/api/events") {
+      const body = await readJson(request);
+      const serverId = text(body.serverId, 80), title = text(body.title, 80), starts = new Date(body.startsAt);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serverId) || !title || !Number.isFinite(starts.getTime()) || starts.getTime() <= Date.now()) {
+        return sendJson(response, 400, { error: "Sunucu, başlık ve gelecekte bir tarih/saat seç." });
+      }
+      if (!(await membership(serverId, user.id))) return sendJson(response, 404, { error: "Sunucu bulunamadı" });
+      const id = crypto.randomUUID();
+      const type = ["Turnuva", "Toplantı", "Özel Etkinlik", "Yayın"].includes(body.type) ? body.type : "Özel Etkinlik";
+      const location = text(body.location, 80) || "Online";
+      await query("INSERT INTO server_events(id,server_id,creator_id,title,type,location,description,starts_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+        [id, serverId, user.id, title, type, location, text(body.description, 180), starts.toISOString()]);
+      return sendJson(response, 201, { event: { id, server_id: serverId, title, starts_at: starts.toISOString() } });
+    }
+    const eventRoute = url.pathname.match(/^\/api\/events\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+    if (method === "DELETE" && eventRoute) {
+      const found = await query("SELECT e.creator_id,s.owner_id,e.server_id FROM server_events e JOIN servers s ON s.id=e.server_id WHERE e.id=$1 AND e.status='active'", [eventRoute[1]]);
+      const event = found.rows[0];
+      if (!event || !(await membership(event.server_id,user.id))) return sendJson(response,404,{error:"Etkinlik bulunamadı"});
+      if (event.creator_id !== user.id && event.owner_id !== user.id) return sendJson(response,403,{error:"Bu etkinliği yalnızca oluşturan kişi veya sunucu sahibi iptal edebilir."});
+      await query("UPDATE server_events SET status='cancelled' WHERE id=$1",[eventRoute[1]]);
+      return sendJson(response,200,{ok:true});
+    }
+
     if (method === "GET" && url.pathname === "/api/notifications/summary") {
       const [friends, requests, messages] = await Promise.all([
         query("SELECT COUNT(*)::int AS count FROM friendships WHERE addressee_id = $1 AND status = 'pending'", [user.id]),

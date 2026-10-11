@@ -218,6 +218,13 @@ function getLocalDatabase() {
     CREATE INDEX IF NOT EXISTS stream_sessions_server_idx ON stream_sessions(server_id, status, started_at DESC);
     CREATE INDEX IF NOT EXISTS stream_viewers_stream_idx ON stream_viewers(stream_id, last_seen DESC);
   `);
+  localDatabase.exec(`CREATE TABLE IF NOT EXISTS server_events (
+ id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+ creator_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL,
+ type TEXT NOT NULL, location TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', starts_at TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','cancelled')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS server_events_upcoming_idx ON server_events(server_id,status,starts_at);`);
   const channelColumns = localDatabase.prepare("PRAGMA table_info(channels)").all();
   if (!channelColumns.some((column) => column.name === "category_id")) {
     localDatabase.exec("ALTER TABLE channels ADD COLUMN category_id TEXT");

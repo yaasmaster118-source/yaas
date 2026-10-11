@@ -1320,63 +1320,60 @@ function renderStreamViewer(stream = {}) {
   syncStreamMediaElements();
 }
 
+function serverEventMarkup(event, controls = false) {
+  return `<article class="event-page-row"><b>▣</b><div><strong>${escapeHtml(event.title)}</strong><small>${escapeHtml(formatEventDate(event.starts_at))} · ${escapeHtml(event.server_name)} · ${escapeHtml(event.location)}</small><p>${escapeHtml(event.description || event.type)}</p></div>${controls && event.can_manage ? '<button class="secondary" data-cancel-event="'+event.id+'" type="button">İptal et</button>' : ''}</article>`;
+}
+function renderHomeEvents() {
+  const list = $('#home-event-list'); if(!list)return;
+  const markup = state.eventsError ? '<p role="status">Etkinlikler yüklenemedi. Etkinlikler sayfasından yeniden dene.</p>' : (state.events || []).slice(0,6).map(event=>serverEventMarkup(event)).join('') || '<p class="empty-list">Sunucularında yaklaşan etkinlik yok.</p>';
+  if(list.innerHTML!==markup)list.innerHTML=markup;
+}
+async function loadEvents() {
+  const userId = state.user?.id;if(!userId)return;
+  try { const data=await api('/api/events');if(state.user?.id!==userId)return;state.events=data.events||[];state.eventsError=''; }
+  catch(error){if(state.user?.id!==userId)return;state.eventsError=error.message;}
+  renderHomeEvents();
+}
 function renderEventsPage() {
-  const shell = $("#workspace-page-shell");
-  const events = loadLocalEvents();
-  shell.innerHTML = `
-    ${workspaceTopbar("Etkinlikler", "Kişisel planların bu hesap için yalnızca bu tarayıcıda saklanır; topluluğa yayımlanmaz.",
-      '<button class="primary" id="page-create-event-button" type="button">＋ Etkinlik oluştur</button>')}
-    <div class="workspace-stack">
-      <section class="workspace-card event-create-card ${state.eventCreatorOpen ? "" : "hidden"}">
-        <form id="page-event-form" class="event-form-grid">
-          <label>Başlık<input id="page-event-title-input" maxlength="80" required placeholder="Turnuva"></label>
-          <label>Tür<select id="page-event-type-input"><option>Turnuva</option><option>Toplantı</option><option>Özel Etkinlik</option><option>Yayın</option></select></label>
-          <label>Tarih ve saat<input id="page-event-date-input" type="datetime-local" required></label>
-          <label>Konum<select id="page-event-location-input"><option>Online</option><option>Sesli Kanal</option><option>Sunucu içi</option></select></label>
-          <label class="wide">Açıklama<textarea id="page-event-description-input" maxlength="180" placeholder="Kısa bilgi yaz."></textarea></label>
-          <button class="primary" type="submit">Oluştur</button>
-        </form>
-      </section>
-      <section class="event-page-list">
-        ${events.map((event) => `
-          <article class="event-page-row">
-            <b>${escapeHtml(formatEventDate(event.startsAt).split(" ")[0] || "YAAS")}</b>
-            <div>
-              <strong>${escapeHtml(event.title)}</strong>
-              <small>${escapeHtml(formatEventDate(event.startsAt))} · ${escapeHtml(event.location)} · ${escapeHtml(event.type)}</small>
-              <p>${escapeHtml(event.description || "Detay eklenmedi.")}</p>
-            </div>
-            <small>Kişisel plan</small>
-          </article>`).join("") || '<article class="stream-empty">Henüz kişisel planın yok. Etkinlik oluştur düğmesiyle ekleyebilirsin.</article>'}
-      </section>
+  const shell=$('#workspace-page-shell'), draft=state.eventDraft||{}, local=loadLocalEvents();
+  shell.innerHTML=`${workspaceTopbar('Etkinlikler','Sunucularının yaklaşan etkinlikleri. Paylaştığın etkinliği o sunucunun üyeleri ana sayfada görür.','<button class="primary" id="page-create-event-button" type="button">＋ Etkinlik oluştur</button><button class="secondary" id="refresh-events-button" type="button">Yenile</button>')}
+    <div class="workspace-stack"><section class="workspace-card event-create-card ${state.eventCreatorOpen?'':'hidden'}">
+      ${state.servers.length?'':'<p>Etkinlik paylaşmak için önce bir sunucu oluştur veya davetle katıl.</p>'}
+      <form id="page-event-form" class="event-form-grid">
+        <label>Sunucu<select id="page-event-server-input" required><option value="">Sunucu seç</option>${state.servers.map(server=>'<option value="'+server.id+'">'+escapeHtml(server.name)+'</option>').join('')}</select></label>
+        <label>Başlık<input id="page-event-title-input" maxlength="80" required placeholder="Etkinlik başlığı"></label>
+        <label>Tür<select id="page-event-type-input"><option>Turnuva</option><option>Toplantı</option><option>Özel Etkinlik</option><option>Yayın</option></select></label>
+        <label>Tarih ve saat<input id="page-event-date-input" type="datetime-local" required></label>
+        <label>Konum<select id="page-event-location-input"><option>Online</option><option>Sesli Kanal</option><option>Sunucu içi</option></select></label>
+        <label class="wide">Açıklama<textarea id="page-event-description-input" maxlength="180" placeholder="Kısa bilgi yaz."></textarea></label>
+        <small class="wide">Etkinlik seçtiğin sunucunun üyelerine görünür ve hesabına yeniden girdiğinde de kalır.</small>
+        <p id="event-form-error" role="alert" class="wide"></p><button class="primary" type="submit" ${state.servers.length?'':'disabled'}>Sunucuda paylaş</button>
+      </form></section><section class="event-page-list">${state.eventsError ? '<p role="status">'+escapeHtml(state.eventsError)+' — Yenile düğmesiyle tekrar dene.</p>' : (state.events||[]).map(event=>serverEventMarkup(event,true)).join('') || '<article class="stream-empty">Sunucularında yaklaşan etkinlik yok.</article>'}</section>
+      ${local.length ? '<section class="workspace-card"><h3>Önceki yerel planların</h3><p>Bu planlar henüz diğer üyelere görünmüyor. Bir sunucu seçerek paylaşabilirsin.</p>'+local.map(event=>'<article class="event-page-row"><div><strong>'+escapeHtml(event.title)+'</strong><small>'+escapeHtml(formatEventDate(event.startsAt))+'</small></div><button class="secondary" type="button" data-share-local-event="'+escapeHtml(event.id)+'">Sunucuda paylaş</button></article>').join('')+'</section>' : ''}
     </div>`;
   bindWorkspaceTopbarActions();
-  $("#page-create-event-button")?.addEventListener("click", () => {
-    state.eventCreatorOpen = !state.eventCreatorOpen;
-    renderEventsPage();
-  });
-  $("#page-event-form")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const title = $("#page-event-title-input").value.trim();
-    const startsAt = $("#page-event-date-input").value;
-    if (!title || Number.isNaN(new Date(startsAt).getTime()) || new Date(startsAt).getTime() <= Date.now()) return notify("Bir başlık ve gelecekteki tarih/saat seç.", true);
-    try { saveLocalEvent({
-      id: `local-${Date.now()}`,
-      title,
-      type: $("#page-event-type-input").value,
-      startsAt,
-      location: $("#page-event-location-input").value,
-      description: $("#page-event-description-input").value.trim()
-    }); } catch { return notify("Plan kaydedilemedi. Tarayıcı depolamasını kontrol et.", true); }
-    state.eventCreatorOpen = false;
-    renderEventsPage();
-    notify("Etkinlik oluşturuldu");
+  for(const [field,value] of Object.entries({server:draft.serverId||state.activeServer?.server?.id||'',title:draft.title||'',type:draft.type||'Turnuva',date:draft.startsAt||'',location:draft.location||'Online',description:draft.description||''}))$('#page-event-'+field+'-input').value=value;
+  $('#page-create-event-button').onclick=()=>{state.eventCreatorOpen=!state.eventCreatorOpen;renderEventsPage();};
+  $('#refresh-events-button').onclick=async()=>{await loadEvents();if(state.activeWorkspacePage==='events'&&!state.eventCreatorOpen)renderEventsPage();};
+  $$('[data-share-local-event]').forEach(button=>button.onclick=()=>{const event=local.find(item=>item.id===button.dataset.shareLocalEvent);state.eventDraft={...event,localId:event.id};state.eventCreatorOpen=true;renderEventsPage();$('#page-event-server-input').focus();});
+  $$('[data-cancel-event]').forEach(button=>button.onclick=async()=>{if(!await confirmInApp('Bu etkinliği iptal etmek istiyor musun? Üyelerin yaklaşan etkinlik listesinden kalkacak.'))return;try{await api('/api/events/'+button.dataset.cancelEvent,{method:'DELETE',body:'{}'});await loadEvents();if(state.activeWorkspacePage==='events')renderEventsPage();notify('Etkinlik iptal edildi');}catch(error){notify(error.message,true);}});
+  $('#page-event-form').addEventListener('submit',async event=>{
+    event.preventDefault();const button=event.currentTarget.querySelector('[type="submit"]'), error=$('#event-form-error');if(button.disabled)return;
+    const body={serverId:$('#page-event-server-input').value,title:$('#page-event-title-input').value.trim(),type:$('#page-event-type-input').value,startsAt:$('#page-event-date-input').value,location:$('#page-event-location-input').value,description:$('#page-event-description-input').value.trim()};
+    if(!body.title||!body.serverId||!Number.isFinite(new Date(body.startsAt).getTime())||new Date(body.startsAt).getTime()<=Date.now()){error.textContent='Sunucu, başlık ve gelecekte bir tarih/saat seç.';return;}
+    button.disabled=true;error.textContent='';
+    try{await api('/api/events',{method:'POST',body:JSON.stringify({...body,startsAt:new Date(body.startsAt).toISOString()})});
+      if(state.eventDraft?.localId){try{localStorage.setItem('yaas:local-events:'+state.user.id,JSON.stringify(loadLocalEvents().filter(item=>item.id!==state.eventDraft.localId)));}catch{notify('Etkinlik paylaşıldı; eski yerel plan tarayıcıdan kaldırılamadı.',true);}}
+      state.eventDraft=null;state.eventCreatorOpen=false;await loadEvents();if(state.activeWorkspacePage==='events')renderEventsPage();notify('Etkinlik sunucunda paylaşıldı; üyeler ana sayfada görebilir.');
+    }catch(failure){error.textContent=failure.message;}finally{button.disabled=false;}
   });
 }
-
-function showEventsPage() {
-  showWorkspacePage("nav-events-button", renderEventsPage);
+async function showEventsPage() {
+  showWorkspacePage('nav-events-button',renderEventsPage);
+  await loadEvents();if(state.activeWorkspacePage==='events'&&!state.eventCreatorOpen)renderEventsPage();
 }
+let eventsRefreshBusy=false;
+setInterval(async()=>{if(!state.user||document.hidden||isStudioWindow||eventsRefreshBusy||!['home','events'].includes(state.activeWorkspacePage))return;eventsRefreshBusy=true;try{await loadEvents();if(state.activeWorkspacePage==='events'&&!state.eventCreatorOpen)renderEventsPage();}finally{eventsRefreshBusy=false;}},30000);
 
 function renderServersPage() {
   const shell = $("#workspace-page-shell");
@@ -1578,6 +1575,7 @@ function showHomeView() {
   setSideNavActive("nav-home-button");
   renderServers();
   renderStreams();
+  loadEvents();
 }
 
 async function loadNotificationSummary() {
@@ -1610,6 +1608,7 @@ async function loadServers(selectId) {
   state.servers = data.servers;
   renderServers();
   populateStreamServerOptions();
+  await loadEvents();
   if (selectId) await openServer(selectId);
 }
 
@@ -3192,7 +3191,7 @@ $("#nav-streams-button")?.addEventListener("click", () => {
   showStreamsPage().catch((error) => notify(error.message, true));
 });
 $("#nav-events-button")?.addEventListener("click", () => {
-  showEventsPage();
+  showEventsPage().catch(error=>notify(error.message,true));
 });
 $("#nav-servers-button")?.addEventListener("click", () => {
   showServersPage();
@@ -3206,7 +3205,7 @@ $("#quick-start-stream")?.addEventListener("click", () => {
 });
 $("#quick-create-event")?.addEventListener("click", () => {
   state.eventCreatorOpen = true;
-  showEventsPage();
+  showEventsPage().catch(error=>notify(error.message,true));
 });
 $("#quick-open-servers")?.addEventListener("click", showServersPage);
 $("#start-stream-button")?.addEventListener("click", () => {
@@ -3383,6 +3382,8 @@ $("#logout-button").addEventListener("click", async () => {
   await leaveVoice();
   await api("/api/auth/logout", { method: "POST", body: "{}" });
   state.servers = [];
+  state.events = [];state.eventsError="";state.eventDraft=null;state.eventCreatorOpen=false;
+  renderHomeEvents();
   state.activeServer = null;
   state.friends = { friends: [], incoming: [], outgoing: [] };
   state.messageRequests = [];
@@ -3971,3 +3972,5 @@ start().catch((error) => {
   notify("1.1 veritabanı bağlantısı bekleniyor", true);
   showAuth();
 });
+
+$("#home-open-events")?.addEventListener("click",()=>showEventsPage().catch(error=>notify(error.message,true)));

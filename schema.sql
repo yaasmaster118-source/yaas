@@ -246,3 +246,11 @@ CREATE TABLE IF NOT EXISTS user_reports (
  id UUID PRIMARY KEY, reporter_id UUID NOT NULL REFERENCES users(id), target_id UUID NOT NULL REFERENCES users(id),
  reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS server_events (
+ id UUID PRIMARY KEY, server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+ creator_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL,
+ type TEXT NOT NULL, location TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', starts_at TIMESTAMPTZ NOT NULL,
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','cancelled')), created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS server_events_upcoming_idx ON server_events(server_id,status,starts_at);
