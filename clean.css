@@ -1,4 +1,28 @@
 /* YAAS clean layout pass: keeps features, makes the app easier to read. */
+/* Explicit preference overrides retain the existing gold accents. */
+html[data-theme="light"] { color-scheme: light; --bg:#f5f2eb; --panel:#fffdf8; --soft:#eee8dc; --line:#c9bea7; --text:#241f17; --muted:#625846; --accent:#916514; --gold:#916514; --gold-light:#735010; }
+html[data-theme="dark"] { color-scheme: dark; }
+html[data-theme="light"] body { color:#241f17; background:#f5f2eb !important; }
+html[data-theme="light"] :is(.app,.workspace,.welcome-view,.workspace-page,.workspace-page-shell,.server-panel,.channel-panel,.content-panel,.member-panel,.friends-sidebar,.dm-panel,.dm-view,.dm-message-list,.messenger-page,.voice-channel-view,.voice-room-header,.voice-dock) { color:#241f17 !important; background:#f5f2eb !important; border-color:#c9bea7 !important; }
+html[data-theme="light"] :is(.workspace-card,.settings-page-panel,.settings-page-nav,.settings-nav,.setting-switch,.profile-mini-card,.friend-row,.inbox-conversation,.account-bar,.modal,.modal>header,.notification-popover,.notification-item,.dm-composer,.dm-composer-shell,.dm-message:not(.mine),.message,.member-item,.server-panel>header,.channel-panel>header,.content-panel>header,.member-panel>header,.voice-personal-settings) { color:#241f17 !important; background:#fffdf8 !important; border-color:#c9bea7 !important; }
+html[data-theme="light"] :is(h1,h2,h3,h4,p,strong,label,small,.section-label,.workspace-topbar,.dm-empty,.settings-info-row,.channel-copy,.member-empty,.dm-contact-copy) { color:inherit; }
+html[data-theme="light"] :is(input,textarea,select,button:not(.primary):not(.danger-button),.secondary) { color:#302719 !important; background-color:#eee8dc !important; border-color:#b8a786 !important; }
+html[data-theme="light"] :is(button.active,.side-nav-button.active,[aria-pressed="true"],.channel-item.active,.server-item.active) { color:#382900 !important; background:#ead49e !important; border-color:#916514 !important; }
+html[data-theme="light"] .dm-message.mine { color:#241900 !important; }
+html[data-theme="light"] :is(.modal-layer,.messenger-layer) { background:#332b1c88 !important; }
+html[data-theme="light"] :is(.auth-panel,.auth-box) { color:#241f17 !important; background:#fffdf8 !important; border-color:#c9bea7 !important; }
+html[data-animations="false"] *,html[data-animations="false"] *::before,html[data-animations="false"] *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+html[data-effects="false"] :is(body,.app,.workspace,.welcome-view,.workspace-page-shell,.workspace-card,.dm-panel,.dm-view,.dm-message-list,.dm-composer,.auth-screen,.auth-brand,.auth-panel) { background-image:none !important; }
+html[data-effects="false"] :is(.auth-scene-video,.auth-scene-glow,.auth-scene-overlay) { visibility:hidden !important; }
+html[data-effects="false"] .auth-scene,html[data-effects="false"] .auth-scene-shade { visibility:hidden !important; }
+html[data-theme="light"] #auth-screen :is(.auth-panel,.auth-box,.auth-scene-header) { color:#241f17 !important; background:#fffdf8 !important; }
+html[data-theme="light"] #auth-screen :is(h2,p,label,.auth-subtitle,.auth-scene-header strong) { color:#241f17 !important; }
+html[data-effects="false"] :is(.workspace,.welcome-view,.dm-view,.auth-brand)::before,html[data-effects="false"] :is(.workspace,.welcome-view,.dm-view,.auth-brand)::after { display:none !important; }
+html[data-compact="true"] :is(.friend-row,.member-item,.server-item,.inbox-conversation) { min-height:40px !important; padding:6px 9px !important; }
+html[data-compact="true"] :is(.workspace-card,.settings-page-panel,.friend-section,.channel-list) { padding:12px !important; gap:8px !important; }
+html[data-compact="true"] :is(.message-list,.dm-message-list) { padding:12px !important; gap:6px !important; }
+html[data-compact="true"] .setting-switch { padding:10px !important; min-height:48px !important; }
+html[data-compact="true"] .channel-template-item { height:34px !important; }
 .app {
   grid-template-columns: 272px minmax(0, 1fr) 0 !important;
   background: #050506;
