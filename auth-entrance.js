@@ -14,7 +14,7 @@ class YaasEntrance {
     this.updateMotion();
   }
   updateMotion() {
-    if (this.paused || this.root.classList.contains("hidden") || document.hidden) this.video.pause();
+    if (this.paused || document.documentElement.dataset.animations === "false" || document.documentElement.dataset.effects === "false" || this.root.classList.contains("hidden") || document.hidden) this.video.pause();
     else this.video.play().catch(() => {});
     this.button.textContent = this.paused ? "Arka planı oynat" : "Hareketi durdur";
     this.button.setAttribute("aria-pressed", String(this.paused));
@@ -28,7 +28,7 @@ class YaasEntrance {
     this.root.querySelector(".auth-entry-status").textContent = "YAAS’a giriliyor…";
     this.root.classList.add("auth-entering");
     try {
-      await new Promise(resolve => setTimeout(resolve, this.reduced.matches ? 140 : 1850));
+      await new Promise(resolve => setTimeout(resolve, this.reduced.matches || document.documentElement.dataset.animations === "false" ? 0 : 1850));
       reveal();
       document.getElementById("app").classList.add("auth-arrived");
       setTimeout(() => document.getElementById("app").classList.remove("auth-arrived"), 650);

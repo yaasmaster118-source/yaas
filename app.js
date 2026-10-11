@@ -11,6 +11,36 @@ const isStudioWindow = new URLSearchParams(location.search).get("studio") === "1
 let studioWindowRef = null;
 let activeStudio = null;
 
+// Appearance preferences are shared by the main app and its studio window.
+const appearanceSystem = window.matchMedia("(prefers-color-scheme: light)");
+const appearanceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+function appearancePreferences() {
+  const mode = localStorage.getItem("yaas:appearance-mode");
+  return {
+    mode: ["dark", "light", "system"].includes(mode) ? mode : "dark",
+    animations: localStorage.getItem("yaas:appearance-animations") !== "false",
+    compact: localStorage.getItem("yaas:appearance-compact") === "true",
+    effects: localStorage.getItem("yaas:appearance-effects") !== "false"
+  };
+}
+function applyAppearance() {
+  const prefs = appearancePreferences();
+  document.documentElement.dataset.theme = prefs.mode === "system" ? (appearanceSystem.matches ? "light" : "dark") : prefs.mode;
+  document.documentElement.dataset.animations = String(prefs.animations && !appearanceMotion.matches);
+  document.documentElement.dataset.compact = String(prefs.compact);
+  document.documentElement.dataset.effects = String(prefs.effects);
+  window.yaasEntrance?.updateMotion();
+}
+appearanceSystem.addEventListener("change", applyAppearance);
+appearanceMotion.addEventListener("change", applyAppearance);
+window.addEventListener("storage", (event) => {
+  if (event.key?.startsWith("yaas:appearance-")) {
+    applyAppearance();
+    if (state.activeWorkspacePage === "settings" && state.settingsPageTab === "appearance") renderSettingsPage();
+  }
+});
+applyAppearance();
+
 if (localStorage.getItem("yaas:ui-version") !== UI_VERSION) {
   localStorage.setItem("yaas:ui-version", UI_VERSION);
   localStorage.setItem("yaas:show-all-channels-setting", "true");
@@ -1487,17 +1517,17 @@ function settingsPagePanel(tab) {
   }
   return `<section class="settings-page-panel">
     <h3>Görünüm</h3>
-    <p>Mevcut koyu premium tasarım korunur; burada sadece tercih seviyesi ayarlanır.</p>
+    <p>Tercihlerin anında uygulanır ve bu tarayıcıda kaydedilir. Sistem seçeneği cihazının temasını izler.</p>
     <div class="appearance-grid">
       ${["system", "dark", "light"].map((mode) => `
-        <button class="${appearance === mode ? "active" : ""}" data-appearance-mode="${mode}" type="button">
+        <button class="${appearance === mode ? "active" : ""}" aria-pressed="${appearance === mode}" data-appearance-mode="${mode}" type="button">
           <span>${mode === "system" ? "▣" : mode === "dark" ? "◉" : "✦"}</span>
           <strong>${mode === "system" ? "Sistem" : mode === "dark" ? "Karanlık" : "Aydınlık"}</strong>
         </button>`).join("")}
     </div>
-    <label class="setting-switch"><span><strong>Animasyonlar</strong><small>Işık ve geçiş efektleri açık kalsın.</small></span><input type="checkbox" checked></label>
-    <label class="setting-switch"><span><strong>Kompakt görünüm</strong><small>Kartları daha sıkı göster.</small></span><input type="checkbox"></label>
-    <label class="setting-switch"><span><strong>Arka plan efektleri</strong><small>Lacivert/mor ışık efektleri açık kalsın.</small></span><input type="checkbox" checked></label>
+    <label class="setting-switch"><span><strong>Animasyonlar</strong><small>Geçiş ve hareket efektleri. Cihazın azaltılmış hareket tercihi önceliklidir.</small></span><input data-appearance-preference="animations" type="checkbox" ${appearancePreferences().animations ? "checked" : ""}></label>
+    <label class="setting-switch"><span><strong>Kompakt görünüm</strong><small>Kartları ve listeleri daha sıkı göster.</small></span><input data-appearance-preference="compact" type="checkbox" ${appearancePreferences().compact ? "checked" : ""}></label>
+    <label class="setting-switch"><span><strong>Arka plan efektleri</strong><small>Dekoratif ışıkları ve giriş arka planını göster.</small></span><input data-appearance-preference="effects" type="checkbox" ${appearancePreferences().effects ? "checked" : ""}></label>
   </section>`;
 }
 
@@ -1528,7 +1558,12 @@ function renderSettingsPage() {
   }));
   $$("[data-appearance-mode]").forEach((button) => button.addEventListener("click", () => {
     localStorage.setItem("yaas:appearance-mode", button.dataset.appearanceMode);
+    applyAppearance();
     renderSettingsPage();
+  }));
+  $$("[data-appearance-preference]").forEach((input) => input.addEventListener("change", () => {
+    localStorage.setItem(`yaas:appearance-${input.dataset.appearancePreference}`, String(input.checked));
+    applyAppearance();
   }));
   $("#settings-page-profile-edit")?.addEventListener("click", () => {
     fillProfileSettings();
