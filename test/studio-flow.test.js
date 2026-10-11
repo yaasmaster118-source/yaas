@@ -51,3 +51,22 @@ test("Studio requires an audience choice and ignores a hidden server for public 
   values["#studio-visibility"]="server";assert.equal(settings().serverId,"private-server");
   values["#studio-visibility"]="global";assert.equal(settings().serverId,null);assert.equal(settings().visibility,"global");
 });
+
+test("ending a broadcast releases composed tracks even when the server cannot be reached", async () => {
+  let stopped = 0;
+  const { sandbox, studio, state } = windowHarness({
+    api: async () => { throw new Error("offline"); }
+  });
+  state.activeStream = { id: "created" };
+  studio.output = { getTracks: () => [{ stop() { stopped++; } }, { stop() { stopped++; } }] };
+  studio.live = true;
+  studio.sync = () => {};
+  studio.host = { querySelector: () => ({ textContent: "" }) };
+  await sandbox.stopStandaloneBroadcast();
+  assert.equal(stopped, 2);
+  assert.equal(studio.output, null);
+  assert.equal(studio.live, false);
+  assert.equal(state.activeStream, null);
+  await sandbox.stopStandaloneBroadcast();
+  assert.equal(stopped, 2);
+});
