@@ -419,6 +419,25 @@ function bindWorkspaceTopbarActions() {
   }));
 }
 
+function confirmInApp(message) {
+  if ($('#action-confirm-layer')) return Promise.resolve(false);
+  const previous = document.activeElement;
+  return new Promise(resolve => {
+    const layer = document.createElement('div');
+    layer.id = 'action-confirm-layer'; layer.className = 'modal-layer';
+    layer.innerHTML = '<section class="modal friend-action-dialog" role="dialog" aria-modal="true" aria-labelledby="action-confirm-title"><h2 id="action-confirm-title">İşlemi onayla</h2><p></p><div class="friend-actions"><button type="button" class="secondary" data-confirm-cancel>Vazgeç</button><button type="button" class="primary" data-confirm-accept>Onayla</button></div></section>';
+    layer.querySelector('p').textContent = message;
+    const finish = accepted => { document.removeEventListener('keydown', keys, true); layer.remove(); previous?.focus(); resolve(accepted); };
+    const keys = event => {
+      if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();finish(false);}
+      if(event.key==='Tab'){event.preventDefault();const cancel=layer.querySelector('[data-confirm-cancel]'),accept=layer.querySelector('[data-confirm-accept]');(document.activeElement===cancel?accept:cancel).focus();}
+    };
+    layer.querySelector('[data-confirm-cancel]').onclick = () => finish(false);
+    layer.querySelector('[data-confirm-accept]').onclick = () => finish(true);
+    document.addEventListener('keydown', keys, true);document.body.append(layer);layer.querySelector('[data-confirm-cancel]').focus();
+  });
+}
+
 function loadLocalEvents() {
   try {
     const saved = JSON.parse(localStorage.getItem(`yaas:local-events:${state.user?.id}`) || "[]");
@@ -2132,7 +2151,7 @@ async function loadFriends() {
   state.notifications = {
     ...state.notifications,
     friendRequests: state.friends.incoming.length,
-    total: state.friends.incoming.length
+    total: state.friends.incoming.length + Number(state.notifications.messageRequests || 0) + Number(state.notifications.unreadMessages || 0)
   };
   updateNotificationBadges(state.notifications.total);
   $("#incoming-friend-list").innerHTML = state.friends.incoming.length
@@ -3566,7 +3585,7 @@ $("#delete-channel-button").addEventListener("click", async () => {
   const channelId = $("#channel-settings-id").value;
   const channelName = $("#channel-settings-name").value;
   const serverId = state.activeServer.server.id;
-  if (!confirm(`"${channelName}" kanalını silmek istediğine emin misin?`)) return;
+  if (!await confirmInApp(`"${channelName}" kanalını silmek istediğine emin misin?`)) return;
   try {
     await api(`/api/servers/${serverId}/channels/${channelId}`, { method: "DELETE", body: "{}" });
     closeModal($("#delete-channel-button"));
@@ -3701,7 +3720,7 @@ $("#server-settings-form").addEventListener("submit", async (event) => {
 $("#delete-server-button").addEventListener("click", async () => {
   if (!state.activeServer) return;
   const serverName = state.activeServer.server.name;
-  if (!confirm(`"${serverName}" sunucusunu kalıcı olarak silmek istediğine emin misin?`)) return;
+  if (!await confirmInApp(`"${serverName}" sunucusunu kalıcı olarak silmek istediğine emin misin?`)) return;
   try {
     await api(`/api/servers/${state.activeServer.server.id}`, { method: "DELETE", body: "{}" });
     closeModal($("#delete-server-button"));
@@ -3722,7 +3741,7 @@ $("#transfer-owner-button").addEventListener("click", async () => {
   if (!newOwnerId) return notify("Yeni sahibi sec", true);
   const member = state.activeServer.members.find((item) => item.id === newOwnerId);
   if (!member) return notify("Uye bulunamadi", true);
-  if (!confirm(`"${state.activeServer.server.name}" sunucusunun sahipligini ${member.display_name} kisisine devretmek istiyor musun?`)) return;
+  if (!await confirmInApp(`"${state.activeServer.server.name}" sunucusunun sahipligini ${member.display_name} kisisine devretmek istiyor musun?`)) return;
   try {
     await api(`/api/servers/${state.activeServer.server.id}/transfer-owner`, {
       method: "POST",
@@ -3739,7 +3758,7 @@ $("#transfer-owner-button").addEventListener("click", async () => {
 $("#leave-server-button").addEventListener("click", async () => {
   if (!state.activeServer) return;
   const serverName = state.activeServer.server.name;
-  if (!confirm(`"${serverName}" sunucusundan ayrılmak istediğine emin misin?`)) return;
+  if (!await confirmInApp(`"${serverName}" sunucusundan ayrılmak istediğine emin misin?`)) return;
   try {
     await api(`/api/servers/${state.activeServer.server.id}/members/me`, { method: "DELETE", body: "{}" });
     closeModal($("#leave-server-button"));
@@ -3932,12 +3951,13 @@ setInterval(async()=>{
     }
     const conversationList=$('#inbox-conversations');
     if(conversationList && state.activeDmTab!=='requests'){
-      conversationList.querySelector('.empty-list')?.remove();
+      if(state.conversations.length)conversationList.querySelector('.empty-list')?.remove();
       state.conversations.forEach(person=>{
         let button=$('[data-inbox-person="'+person.id+'"]');
         if(!button){button=document.createElement('button');button.className='dm-list-row';button.dataset.inboxPerson=person.id;button.onclick=()=>{state.activeDm=(state.conversations||[]).find(item=>item.id===person.id);renderDmPage();};}
         button.dataset.search=`${contactName(person)} ${person.handle}`.toLocaleLowerCase('tr-TR');
-        button.innerHTML=`${avatarContent(person)}<div><strong>${person.pinned?'★ ':''}${escapeHtml(contactName(person))}</strong><small>${escapeHtml(person.last_message||'Henüz mesaj yok')}</small></div>${Number(person.unread_count)?`<b class="notification-badge">${Number(person.unread_count)}</b>`:''}`;
+        const markup=`${avatarContent(person)}<div><strong>${person.pinned?'★ ':''}${escapeHtml(contactName(person))}</strong><small>${escapeHtml(person.last_message||'Henüz mesaj yok')}</small></div>${Number(person.unread_count)?`<b class="notification-badge">${Number(person.unread_count)}</b>`:''}`;
+        if(button.innerHTML!==markup)button.innerHTML=markup;
         button.classList.toggle('active',state.activeDm?.id===person.id);
         button.hidden=!button.dataset.search.includes(($('#inbox-search')?.value||'').toLocaleLowerCase('tr-TR'));
         conversationList.append(button);
