@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 function harness(){
  let layer,keydown,focus;
- const previous={focus(){focus=previous;}};
+ const previous={focus(){focus=previous;doc.activeElement=previous;}};
  const doc={activeElement:previous,body:{append(item){layer=item;}},createElement(){const nodes={p:{},'[data-confirm-cancel]':{focus(){focus=this;doc.activeElement=this;}},'[data-confirm-accept]':{focus(){focus=this;doc.activeElement=this;}}};return{querySelector:key=>nodes[key],remove(){layer=null;}};},addEventListener(_,fn){keydown=fn;},removeEventListener(){keydown=null;}};
  const source=fs.readFileSync(path.join(__dirname,'../app.js'),'utf8');
  const context={document:doc,$:()=>layer};vm.createContext(context);vm.runInContext(source.slice(source.indexOf('function confirmInApp('),source.indexOf('function loadLocalEvents(')),context);
