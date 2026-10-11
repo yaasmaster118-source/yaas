@@ -17,7 +17,8 @@ html[data-theme="light"] .dm-message.mine { color:#241900 !important; }
 html[data-theme="light"] :is(.modal-layer,.messenger-layer) { background:#332b1c88 !important; }
 html[data-theme="light"] :is(.auth-panel,.auth-box) { color:#241f17 !important; background:#fffdf8 !important; border-color:#c9bea7 !important; }
 html[data-animations="false"] *,html[data-animations="false"] *::before,html[data-animations="false"] *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
-html[data-effects="false"] :is(body,.app,.workspace,.welcome-view,.workspace-page-shell,.workspace-card,.dm-panel,.dm-view,.dm-message-list,.dm-composer,.auth-screen,.auth-brand,.auth-panel) { background-image:none !important; }
+html[data-effects="false"] :is(body,.app,.workspace,.welcome-view,.workspace-page,.workspace-page-shell,.workspace-card,.home-hero,.quick-card,.dm-panel,.dm-view,.dm-message-list,.dm-composer,.auth-screen,.auth-brand,.auth-panel) { background-image:none !important; }
+html[data-effects="false"] .home-hero::before,html[data-effects="false"] .home-hero::after { display:none !important; }
 html[data-effects="false"] :is(.auth-scene-video,.auth-scene-glow,.auth-scene-overlay) { visibility:hidden !important; }
 html[data-effects="false"] .auth-scene,html[data-effects="false"] .auth-scene-shade { visibility:hidden !important; }
 html[data-theme="light"] #auth-screen :is(.auth-panel,.auth-box,.auth-scene-header) { color:#241f17 !important; background:#fffdf8 !important; }
