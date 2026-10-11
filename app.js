@@ -348,7 +348,7 @@ function openModal(id) {
   if (id === 'create-server-modal') {
     serverBuilderOpener = document.activeElement;
     selectServerTemplate($('#server-template-input').value);
-    $('#server-name-input').focus();
+    $('#create-server-form [data-server-template].active').focus();
     if (!serverBuilderTemplates) api('/api/server-templates').then(data => { serverBuilderTemplates = data.templates; updateServerBuilderPreview(); }).catch(() => { $('#builder-channel-preview').textContent = 'Önizleme yüklenemedi. Pencereyi yeniden açarak tekrar deneyebilirsin.'; });
   }
 }
@@ -3300,6 +3300,9 @@ $("#server-logo-picker").addEventListener("click", () => $("#server-logo-file-in
 $("#server-logo-file-input").addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
+  const form = $('#create-server-form');
+  form.dataset.logoLoading = 'true';
+  const submit = form.querySelector('[type="submit"]'); submit.disabled = true;
   try {
     $("#server-logo-url-input").value = await resizeServerLogoFile(file);
     updateServerBuilderPreview();
@@ -3307,6 +3310,8 @@ $("#server-logo-file-input").addEventListener("change", async (event) => {
   } catch (error) {
     notify(error.message, true);
   } finally {
+    delete form.dataset.logoLoading;
+    if (form.dataset.submitting !== 'true') submit.disabled = false;
     event.target.value = "";
   }
 });
@@ -3506,6 +3511,7 @@ $("#create-server-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   if (form.dataset.submitting === 'true') return;
+  if (form.dataset.logoLoading === 'true') { $('.form-error', form).textContent = 'Görsel hazırlanıyor. Biraz bekle.'; return; }
   const error = $(".form-error", form);
   error.textContent = "";
   const name = $('#server-name-input').value.trim();
