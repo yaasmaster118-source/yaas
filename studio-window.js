@@ -148,7 +148,9 @@ YaasStudio.prototype.receiveParticipants = function(participants) {
 
 YaasStudio.prototype.broadcastSettings = function() {
   const q = selector => this.host.querySelector(selector).value;
-  return { title: q("#studio-broadcast-title").trim(), visibility: q("#studio-visibility"), serverId: q("#studio-server") || null };
+  const visibility = q("#studio-visibility");
+  if (!["global", "server", "friends"].includes(visibility)) throw new Error("Yayını kimlerin göreceğini seç.");
+  return { title: q("#studio-broadcast-title").trim(), visibility, serverId: visibility === "server" ? q("#studio-server") || null : null };
 };
 YaasStudio.prototype.setSettingsEnabled = function(enabled) {
   this.host.querySelectorAll(".studio-broadcast-settings input,.studio-broadcast-settings select").forEach(input => { input.disabled = !enabled; });
@@ -157,12 +159,15 @@ YaasStudio.prototype.setSettingsEnabled = function(enabled) {
 YaasStudio.prototype.addPreparationControls = function(servers) {
   const params = new URLSearchParams(location.search);
   const settings = document.createElement("section"); settings.className = "studio-panel studio-broadcast-settings";
-  settings.innerHTML = `<label>Yayın başlığı<input id="studio-broadcast-title" maxlength="80" placeholder="Bugün ne yayınlıyorsun?"></label><label>Kimler izleyebilir?<select id="studio-visibility"><option value="global">Herkese açık</option><option value="friends">Arkadaşlar</option><option value="server">Sunucu</option></select></label><label>Sunucu<select id="studio-server"><option value="">Sunucu seç</option></select></label>`;
+  settings.innerHTML = `<label>Yayın başlığı<input id="studio-broadcast-title" maxlength="80" placeholder="Bugün ne yayınlıyorsun?"></label><label>Kimler izleyebilir?<select id="studio-visibility"><option value="" disabled>Kimlerin göreceğini seç</option><option value="server">Sadece seçtiğim sunucunun üyeleri</option><option value="global">Herkes (tüm YAAS kullanıcıları)</option><option value="friends">Sadece arkadaşlarım</option></select></label><label id="studio-server-label">Sunucu<select id="studio-server"><option value="">Sunucu seç</option></select></label>`;
   this.host.querySelector(".studio-header").after(settings);
   settings.querySelector("#studio-broadcast-title").value = params.get("title") || "";
-  settings.querySelector("#studio-visibility").value = ["server", "friends", "global"].includes(params.get("visibility")) ? params.get("visibility") : "global";
+  settings.querySelector("#studio-visibility").value = ["server", "friends", "global"].includes(params.get("visibility")) ? params.get("visibility") : "";
   for (const server of servers) { const option = new Option(server.name, server.id); settings.querySelector("#studio-server").add(option); }
   settings.querySelector("#studio-server").value = params.get("serverId") || "";
+  const visibilitySelect=settings.querySelector('#studio-visibility'), serverSelect=settings.querySelector('#studio-server');
+  const updateAudience=()=>{const privateServer=visibilitySelect.value==='server';serverSelect.disabled=!privateServer;settings.querySelector('#studio-server-label').hidden=!privateServer;};
+  visibilitySelect.addEventListener('change',updateAudience);updateAudience();
   this.host.querySelector('[data-studio="exit"]').textContent = "Studio’yu kapat";
   this.host.querySelector(".studio-hint").textContent = "Hazırlık ve testler yalnızca sende görünür. Ana YAAS penceresini kapatsan da Studio açıkken yayın sürer.";
   const devices = document.createElement("div"); devices.className = "studio-device-selectors";
