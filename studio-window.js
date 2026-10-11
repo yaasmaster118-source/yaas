@@ -79,6 +79,8 @@ async function stopStandaloneBroadcast() {
   await leaveStreamRtc(true, true);
   state.activeStream = null;
   if (activeStudio) {
+    activeStudio.output?.getTracks().forEach(track => track.stop());
+    activeStudio.output = null;
     activeStudio.live = false;
     activeStudio.participantIds = new Set();
     activeStudio.setSettingsEnabled(true);
