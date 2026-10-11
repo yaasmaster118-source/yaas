@@ -580,17 +580,15 @@ async function handleApi(request, response, helpers) {
     }
 
     if (method === "GET" && url.pathname === "/api/notifications/summary") {
-      const friendRequests = await query(
-        "SELECT COUNT(*)::int AS count FROM friendships WHERE addressee_id = $1 AND status = 'pending'",
-        [user.id]
-      );
-      const total = Number(friendRequests.rows[0]?.count || 0);
-      return sendJson(response, 200, {
-        notifications: {
-          friendRequests: total,
-          total
-        }
-      });
+      const [friends, requests, messages] = await Promise.all([
+        query("SELECT COUNT(*)::int AS count FROM friendships WHERE addressee_id = $1 AND status = 'pending'", [user.id]),
+        query("SELECT COUNT(*)::int AS count FROM message_requests WHERE recipient_id = $1 AND status = 'pending'", [user.id]),
+        query("SELECT COUNT(*)::int AS count FROM direct_messages dm LEFT JOIN contact_preferences cp ON cp.user_id = dm.recipient_id AND cp.contact_id = dm.sender_id WHERE dm.recipient_id = $1 AND (cp.read_at IS NULL OR dm.created_at > cp.read_at)", [user.id])
+      ]);
+      const friendRequests = Number(friends.rows[0]?.count || 0);
+      const messageRequests = Number(requests.rows[0]?.count || 0);
+      const unreadMessages = Number(messages.rows[0]?.count || 0);
+      return sendJson(response, 200, { notifications: { friendRequests, messageRequests, unreadMessages, total: friendRequests + messageRequests + unreadMessages } });
     }
 
     if (method === "POST" && url.pathname === "/api/friends/requests") {

@@ -1667,3 +1667,7 @@ html[data-compact="true"] .channel-template-item { height:34px !important; }
 .dm-reference-composer [data-send]{background:linear-gradient(130deg,#ffe741,#ffc51e)!important;color:#191306!important}
 .dm-record-panel{display:flex;align-items:center;gap:12px;padding:12px 10px;margin-top:10px;border:1px solid #e3577166;border-radius:14px;background:#8c153622}.dm-record-symbol{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#f3345b;color:white}.dm-record-bars{display:flex;align-items:center;height:44px;gap:3px;flex:1}.dm-record-bars i{display:block;flex:1;max-width:8px;height:5px;background:#ec4567;border-radius:5px;transition:height .08s}.dm-record-panel strong{color:#ffadc3;font-variant-numeric:tabular-nums}
 .inbox-layout .dm-message-list{background:transparent!important}
+
+.yaas-home{grid-template-columns:minmax(0,1fr)!important}
+.home-topbar{justify-content:flex-end}
+.workspace-page-topbar{grid-template-columns:minmax(0,1fr) auto}

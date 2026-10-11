@@ -61,9 +61,11 @@ test("production HTTP protects internal files, admin, private channels, sessions
     const inbox=await req('/api/dms',a.cookie);
     assert.equal(inbox.data.conversations[0].nickname,'My friend');
     assert.equal(Number(inbox.data.conversations[0].unread_count),105);
+    assert.equal((await req('/api/notifications/summary',a.cookie)).data.notifications.unreadMessages,105);
     assert.equal((await req('/api/dms',b.cookie)).data.conversations[0].nickname,null);
     await req(`/api/contacts/${b.data.user.id}`,a.cookie,{read:true},'PATCH');
     assert.equal(Number((await req('/api/dms',a.cookie)).data.conversations[0].unread_count),0);
+    assert.equal((await req('/api/notifications/summary',a.cookie)).data.notifications.unreadMessages,0);
     await req(`/api/friends/${b.data.user.id}`,a.cookie,undefined,'DELETE');
     assert.equal((await req(`/api/dms/${b.data.user.id}`,a.cookie)).status,200);
     assert.equal((await req(`/api/dms/${b.data.user.id}`,a.cookie,{content:'No longer friends'})).status,403);

@@ -16,7 +16,7 @@ class YaasStudio {
     this.canvas.height = 720;
     this.context = this.canvas.getContext("2d");
     this.draw();
-    this.timer = setInterval(() => this.draw(), 1000 / 30);
+    this.timer = setInterval(() => { if (this.live || !document.hidden) this.draw(); }, 1000 / 30);
   }
 
   mount(host, title, viewers) {

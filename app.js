@@ -128,33 +128,6 @@ const state = {
   }
 };
 
-const DEFAULT_EVENTS = [
-  {
-    id: "yaas-turnuva",
-    title: "YAAS PUBG Turnuvasi",
-    type: "Turnuva",
-    startsAt: "2026-09-15T20:00",
-    location: "Online",
-    description: "Topluluk turnuvasi ve canli yayin duyurusu."
-  },
-  {
-    id: "topluluk-toplantisi",
-    title: "Topluluk Toplantisi",
-    type: "Toplanti",
-    startsAt: "2026-09-16T19:00",
-    location: "Sesli Kanal",
-    description: "Sunucu kurallari, roller ve yeni etkinlikler konusulacak."
-  },
-  {
-    id: "soru-cevap",
-    title: "Soru - Cevap Etkinligi",
-    type: "Ozel Etkinlik",
-    startsAt: "2026-09-18T21:00",
-    location: "Online",
-    description: "Uyeler soru sorar, yonetim cevaplar."
-  }
-];
-
 const RTC_CONFIGURATION = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
@@ -374,7 +347,7 @@ function showApp(user) {
   window.yaasEntrance?.hide();
   $("#app").classList.remove("hidden");
   $("#account-name").textContent = user.display_name || user.displayName;
-  $("#home-display-name").textContent = user.display_name || user.displayName || "KSTROY";
+  $("#home-display-name").textContent = user.display_name || user.displayName || "Kullanıcı";
   $("#account-handle").textContent = `@${user.handle}`;
   setAvatar($("#account-avatar"), user);
   $("#account-owner-badge").classList.toggle("hidden", !user.is_site_owner);
@@ -429,10 +402,6 @@ function workspaceTopbar(title, subtitle, actions = "") {
       <strong>${escapeHtml(title)}</strong>
       <small>${escapeHtml(subtitle)}</small>
     </div>
-    <label class="home-search workspace-search">
-      <span>⌕</span>
-      <input placeholder="Ara..." autocomplete="off">
-    </label>
     <div class="home-top-actions">
       ${actions}
       <button class="icon-button" data-page-action="notifications" type="button" title="Bildirimler">♧</button>
@@ -452,18 +421,18 @@ function bindWorkspaceTopbarActions() {
 
 function loadLocalEvents() {
   try {
-    const saved = JSON.parse(localStorage.getItem("yaas:local-events") || "[]");
-    return [...DEFAULT_EVENTS, ...saved].sort((first, second) =>
+    const saved = JSON.parse(localStorage.getItem(`yaas:local-events:${state.user?.id}`) || "[]");
+    return (Array.isArray(saved) ? saved : []).filter(event => event && typeof event.title === 'string' && !Number.isNaN(new Date(event.startsAt).getTime())).sort((first, second) =>
       new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime());
   } catch {
-    return DEFAULT_EVENTS;
+    return [];
   }
 }
 
 function saveLocalEvent(event) {
-  const saved = JSON.parse(localStorage.getItem("yaas:local-events") || "[]");
+  const saved = loadLocalEvents();
   saved.unshift(event);
-  localStorage.setItem("yaas:local-events", JSON.stringify(saved.slice(0, 25)));
+  localStorage.setItem(`yaas:local-events:${state.user.id}`, JSON.stringify(saved.slice(0, 25)));
 }
 
 function formatEventDate(value) {
@@ -1336,7 +1305,7 @@ function renderEventsPage() {
   const shell = $("#workspace-page-shell");
   const events = loadLocalEvents();
   shell.innerHTML = `
-    ${workspaceTopbar("Etkinlikler", "Turnuva, toplantı ve özel yayınlarını düzenli takip et.",
+    ${workspaceTopbar("Etkinlikler", "Kişisel planların bu hesap için yalnızca bu tarayıcıda saklanır; topluluğa yayımlanmaz.",
       '<button class="primary" id="page-create-event-button" type="button">＋ Etkinlik oluştur</button>')}
     <div class="workspace-stack">
       <section class="workspace-card event-create-card ${state.eventCreatorOpen ? "" : "hidden"}">
@@ -1358,8 +1327,8 @@ function renderEventsPage() {
               <small>${escapeHtml(formatEventDate(event.startsAt))} · ${escapeHtml(event.location)} · ${escapeHtml(event.type)}</small>
               <p>${escapeHtml(event.description || "Detay eklenmedi.")}</p>
             </div>
-            <button class="secondary" type="button">Katıl</button>
-          </article>`).join("")}
+            <small>Kişisel plan</small>
+          </article>`).join("") || '<article class="stream-empty">Henüz kişisel planın yok. Etkinlik oluştur düğmesiyle ekleyebilirsin.</article>'}
       </section>
     </div>`;
   bindWorkspaceTopbarActions();
@@ -1369,14 +1338,17 @@ function renderEventsPage() {
   });
   $("#page-event-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    saveLocalEvent({
+    const title = $("#page-event-title-input").value.trim();
+    const startsAt = $("#page-event-date-input").value;
+    if (!title || Number.isNaN(new Date(startsAt).getTime()) || new Date(startsAt).getTime() <= Date.now()) return notify("Bir başlık ve gelecekteki tarih/saat seç.", true);
+    try { saveLocalEvent({
       id: `local-${Date.now()}`,
-      title: $("#page-event-title-input").value.trim(),
+      title,
       type: $("#page-event-type-input").value,
-      startsAt: $("#page-event-date-input").value,
+      startsAt,
       location: $("#page-event-location-input").value,
       description: $("#page-event-description-input").value.trim()
-    });
+    }); } catch { return notify("Plan kaydedilemedi. Tarayıcı depolamasını kontrol et.", true); }
     state.eventCreatorOpen = false;
     renderEventsPage();
     notify("Etkinlik oluşturuldu");
@@ -1390,35 +1362,16 @@ function showEventsPage() {
 function renderServersPage() {
   const shell = $("#workspace-page-shell");
   const mine = state.servers || [];
-  const discover = [
-    { name: "YAAS Official", type: "Topluluk", members: "1,2K üye" },
-    { name: "PUBG Mobile TR", type: "Oyun", members: "856 üye" },
-    { name: "Sohbet Alanı", type: "Sohbet", members: "423 üye" },
-    { name: "Espor Türkiye", type: "Espor", members: "1,1K üye" }
-  ];
-  const rows = state.serversPageTab === "mine"
-    ? (mine.length ? mine.map((server) => `
+  const rows = mine.length ? mine.map((server) => `
       <article class="server-directory-row">
         ${serverIconMarkup(server)}
         <div><strong>${escapeHtml(server.name)}</strong><small>${escapeHtml(server.description || `${server.member_count} üye`)}</small></div>
         <button class="primary" data-open-server-page="${server.id}" type="button">Aç</button>
-      </article>`).join("") : '<article class="stream-empty">Henüz sunucun yok. Sunucu oluştur veya davetle katıl.</article>')
-    : discover.map((server) => `
-      <article class="server-directory-row">
-        <span class="server-icon">${escapeHtml(server.name.slice(0, 1))}</span>
-        <div><strong>${escapeHtml(server.name)}</strong><small>${escapeHtml(server.type)} · ${escapeHtml(server.members)}</small></div>
-        <button class="secondary" data-open-modal="join-server-modal" type="button">Davet kodu kullan</button>
-      </article>`).join("");
+      </article>`).join("") : '<article class="stream-empty">Henüz sunucun yok. Sunucu oluştur veya davetle katıl.</article>';
   shell.innerHTML = `
-    ${workspaceTopbar("Sunucular", "Topluluklarını yönet, keşfet ve davet koduyla katıl.",
+    ${workspaceTopbar("Sunucular", "Üyesi olduğun gerçek sunucular. Yeni bir topluluğa davet koduyla katılabilirsin.",
       '<button class="primary" data-open-modal="create-server-modal" type="button">＋ Sunucu oluştur</button><button class="secondary" data-open-modal="join-server-modal" type="button">Davetle katıl</button>')}
     <div class="workspace-stack">
-      <section class="workspace-card">
-        <div class="stream-tabs page-tabs">
-          <button class="${state.serversPageTab === "mine" ? "active" : ""}" data-server-page-tab="mine" type="button">Senin Sunucuların</button>
-          <button class="${state.serversPageTab === "discover" ? "active" : ""}" data-server-page-tab="discover" type="button">Keşfet</button>
-        </div>
-      </section>
       <section class="server-directory-list">${rows}</section>
     </div>`;
   bindWorkspaceTopbarActions();
@@ -1490,15 +1443,14 @@ function settingsPagePanel(tab) {
       <h3>Gizlilik</h3>
       <p>Sunucu ve kanal görünürlüğü tercihlerini buradan yönet.</p>
       <label class="setting-switch"><span><strong>Tüm kanalları göster</strong><small>Boş kategoriler dahil kanal düzenini gör.</small></span><input id="settings-page-show-all-channels" type="checkbox" ${showAllChannels ? "checked" : ""}></label>
-      <label class="setting-switch"><span><strong>DM isteklerine izin ver</strong><small>Arkadaş olmayan kişiler mesaj isteği gönderebilir.</small></span><input type="checkbox" checked></label>
     </section>`;
   }
   if (tab === "connections") {
     return `<section class="settings-page-panel">
       <h3>Bağlantılar</h3>
-      <p>Google ve Apple girişleri ortam bilgileri tamamlandığında burada aktif görünür.</p>
-      <article class="settings-info-row"><strong>Google</strong>${statusBadge("Kurulum bekliyor")}</article>
-      <article class="settings-info-row"><strong>Apple</strong>${statusBadge("Kurulum bekliyor")}</article>
+      <p>Giriş hizmetlerinin sunucudaki güncel durumu. Bu liste hesabının bir hizmete bağlı olduğunu belirtmez.</p>
+      <article class="settings-info-row"><strong>Google</strong>${statusBadge(state.authProviders?.google ? "Giriş kullanılabilir" : "Kurulum bekliyor")}</article>
+      <article class="settings-info-row"><strong>Apple</strong>${statusBadge(state.authProviders?.apple ? "Giriş kullanılabilir" : "Kurulum bekliyor")}</article>
     </section>`;
   }
   if (tab === "language") {
@@ -3130,6 +3082,7 @@ async function start() {
   const socialAuthError = authErrorFromLocation();
   const providers = await api("/api/auth/providers");
   const enabledProviders = providers.providers || {};
+  state.authProviders = enabledProviders;
   $$("[data-provider]").forEach((button) => {
     button.disabled = !enabledProviders[button.dataset.provider];
   });
@@ -3957,9 +3910,10 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape' && $('#notif
 document.addEventListener('click',event=>{const panel=$('#notification-popover');if(panel && !panel.hidden && !panel.contains(event.target) && !event.target.closest('#notifications-button,#home-notifications-button,[data-page-action="notifications"]')){panel.hidden=true;$('#notifications-button')?.setAttribute('aria-expanded','false');}});
 let socialRefreshBusy=false;
 setInterval(async()=>{
-  if(!state.user || document.hidden || socialRefreshBusy)return;
+  if(!state.user || document.hidden || isStudioWindow || socialRefreshBusy)return;
   socialRefreshBusy=true;
   try{
+    if(state.activeWorkspacePage!=='dms' && state.activeWorkspacePage!=='friends' && $('#notification-popover')?.hidden!==false){await loadNotificationSummary();return;}
     await loadFriends(); await loadMessageRequests();
     state.conversations=(await api('/api/dms')).conversations || [];
     updateNotificationBadges(state.friends.incoming.length+state.messageRequests.length+state.conversations.reduce((total,person)=>total+Number(person.unread_count||0),0));
