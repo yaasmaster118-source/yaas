@@ -3,7 +3,7 @@
 const crypto = require("crypto");
 const { validateDmAttachment, mediaRange } = require("./dm-media");
 const { enforceMediaDuration } = require("./media-duration");
-const {emailReady,issueToken,consumeToken,isBlocked}=require('./account-security');
+const {emailReady,issueToken,consumeToken,consumeResetCode,isBlocked}=require('./account-security');
 const { query, transaction } = require("./database");
 const {
   createSession,
@@ -371,14 +371,14 @@ async function handleApi(request, response, helpers) {
       const body=await readJson(request);
       if(!emailReady())return sendJson(response,503,{error:'E-posta hizmeti henüz hazır değil. Daha sonra tekrar dene.'});
       const result=await query('SELECT id,email FROM users WHERE email=$1',[normalizeEmail(body.email)]);
-      if(result.rowCount)await issueToken(result.rows[0],'reset');
-      return sendJson(response,200,{message:'Bu adres kayıtlıysa şifre yenileme bağlantısı gönderildi.'});
+      if(result.rowCount)await issueToken(result.rows[0],'reset',true);
+      return sendJson(response,200,{message:'Bu adres kayıtlıysa 8 haneli şifre yenileme kodu gönderildi.'});
     }
     if(method==='POST' && ['/api/auth/reset-complete','/api/auth/verify-complete'].includes(url.pathname)){
       const body=await readJson(request), purpose=url.pathname.includes('reset')?'reset':'verify';
       if(purpose==='reset'&&(!strongPassword(body.password)||String(body.password).length>1024))return sendJson(response,400,{error:'Şifre en az 8 karakter, harf ve rakam içermeli.'});
-      const ok=await consumeToken(body.token,purpose,String(body.password||''));
-      return sendJson(response,ok?200:400,ok?{ok:true}:{error:'Bağlantı geçersiz veya süresi dolmuş.'});
+      const ok=purpose==='reset' && Object.hasOwn(body,'code') ? await consumeResetCode(body.email,body.code,String(body.password||'')) : await consumeToken(body.token,purpose,String(body.password||''));
+      return sendJson(response,ok?200:400,ok?{ok:true}:{error:'Kod veya bağlantı geçersiz, süresi dolmuş ya da deneme sınırına ulaşılmış. Yeni kod iste.'});
     }
 
     if (method === "POST" && url.pathname === "/api/auth/login") {

@@ -237,6 +237,10 @@ CREATE TABLE IF NOT EXISTS account_tokens (
  purpose TEXT NOT NULL CHECK(purpose IN ('reset','verify')), token_hash TEXT NOT NULL UNIQUE,
  expires_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS password_reset_attempts (
+ user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+ attempts INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS user_blocks (
  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  blocked_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

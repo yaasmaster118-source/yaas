@@ -252,6 +252,7 @@ CREATE INDEX IF NOT EXISTS server_events_upcoming_idx ON server_events(server_id
   const userColumns = localDatabase.prepare("PRAGMA table_info(users)").all();
   if (!userColumns.some(column=>column.name==='email_verified')) localDatabase.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
   localDatabase.exec(`CREATE TABLE IF NOT EXISTS account_tokens(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,purpose TEXT NOT NULL CHECK(purpose IN ('reset','verify')),token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS password_reset_attempts(user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,attempts INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS user_blocks(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,blocked_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(user_id,blocked_id),CHECK(user_id<>blocked_id));
     CREATE TABLE IF NOT EXISTS user_reports(id TEXT PRIMARY KEY,reporter_id TEXT NOT NULL REFERENCES users(id),target_id TEXT NOT NULL REFERENCES users(id),reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
   if (!userColumns.some((column) => column.name === "bio")) {
