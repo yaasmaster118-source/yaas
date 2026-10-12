@@ -1466,20 +1466,21 @@ async function handleApi(request, response, helpers) {
 
     const messageRoute = url.pathname.match(/^\/api\/channels\/([0-9a-f-]+)\/messages$/i);
     if (messageRoute) {
-      const channelResult = await query("SELECT id, server_id, type, is_private, allowed_role_ids FROM channels WHERE id = $1", [messageRoute[1]]);
+      const channelResult = await query("SELECT c.id, c.server_id, c.type, c.is_private, c.allowed_role_ids, s.owner_id FROM channels c JOIN servers s ON s.id=c.server_id JOIN memberships m ON m.server_id=s.id AND m.user_id=$2 WHERE c.id = $1", [messageRoute[1], user.id]);
       const channel = channelResult.rows[0];
-      if (!channel || !(await membership(channel.server_id, user.id))) return sendJson(response, 404, { error: "Kanal bulunamadı" });
+      if (!channel) return sendJson(response, 404, { error: "Kanal bulunamadı" });
+      const isOwner = channel.owner_id === user.id;
+      const memberRoles = isOwner ? {rows:[]} : await query("SELECT mr.role_id, r.permissions FROM member_roles mr JOIN roles r ON r.id=mr.role_id WHERE mr.server_id=$1 AND mr.user_id=$2", [channel.server_id,user.id]);
+      const granted = isOwner ? new Set(ALL_PERMISSIONS) : new Set(memberRoles.rows.flatMap(role=>jsonArray(role.permissions)));
       if (channel.is_private) {
-        const serverOwner = await query("SELECT owner_id FROM servers WHERE id = $1", [channel.server_id]);
-        if (serverOwner.rows[0]?.owner_id !== user.id) {
-          const memberRoles = await query("SELECT role_id FROM member_roles WHERE server_id = $1 AND user_id = $2", [channel.server_id, user.id]);
+        if (!isOwner) {
           const allowedRoles = new Set(jsonArray(channel.allowed_role_ids));
           if (!memberRoles.rows.some(role => allowedRoles.has(role.role_id))) return sendJson(response, 404, { error: "Kanal bulunamadı" });
         }
       }
       if (channel.type !== "text") return sendJson(response, 400, { error: "Bu bir yazı kanalı değil" });
       if (method === "GET") {
-        if (!(await requirePermission(response, sendJson, channel.server_id, user.id, "channel.view"))) return;
+        if (!granted.has("channel.view")) return sendJson(response,403,{error:"Bu işlem için iznin yok"});
         const result = await query(
           `SELECT m.id, m.content, m.created_at, m.edited_at, u.id AS author_id,
                   u.display_name AS author_name, u.handle AS author_handle, u.avatar_url, u.avatar_frame
@@ -1490,7 +1491,7 @@ async function handleApi(request, response, helpers) {
         return sendJson(response, 200, { messages: result.rows.reverse() });
       }
       if (method === "POST") {
-        if (!(await requirePermission(response, sendJson, channel.server_id, user.id, "messages.send"))) return;
+        if (!granted.has("messages.send")) return sendJson(response,403,{error:"Bu işlem için iznin yok"});
         const body = await readJson(request);
         const content = text(body.content, 4000);
         if (!content) return sendJson(response, 400, { error: "Mesaj boş olamaz" });
