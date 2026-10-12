@@ -2407,7 +2407,7 @@ function renderChannels() {
     </section>`).join("")
     + (uncategorized.length ? `<section class="channel-category channel-template-category"><div class="channel-category-header template-category-header"><span>star</span><strong>Main</strong><small>${uncategorized.length}</small></div>${channelButtons(uncategorized)}</section>` : "");
   bindChannelManagement();
-  $(".channel-item").forEach((button) => button.addEventListener("click", () => {
+  $$(".channel-item").forEach((button) => button.addEventListener("click", () => {
     if (button.dataset.suppressClick) { delete button.dataset.suppressClick; return; }
     const channel = state.activeServer.channels.find((item) => item.id === button.dataset.channelId);
     openChannel(channel);
