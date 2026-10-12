@@ -2635,14 +2635,16 @@ function syncVoiceConnectionBar() {
 
 function syncVoiceRoomControls() {
   const viewingConnectedRoom = state.activeChannel?.id === state.voice.roomId;
-  $("#join-voice-button").classList.toggle("hidden", Boolean(state.voice.roomId));
+  $("#join-voice-button").classList.toggle("hidden", viewingConnectedRoom);
+  $("#join-voice-button").disabled = Boolean(state.voice.joining);
+  $("#join-voice-button").textContent = state.voice.roomId && !viewingConnectedRoom ? "Bu odaya geç" : "Ses kanalına katıl";
   $("#mute-voice-button").classList.toggle("hidden", !viewingConnectedRoom || !state.voice.canSpeak);
   $("#deafen-voice-button").classList.toggle("hidden", !viewingConnectedRoom);
   $("#camera-voice-button").classList.toggle("hidden", !viewingConnectedRoom);
   $("#screen-voice-button").classList.toggle("hidden", !viewingConnectedRoom);
   $("#leave-voice-button").classList.toggle("hidden", !viewingConnectedRoom);
   if (state.activeChannel?.type === "voice") {
-    $("#voice-status").textContent = viewingConnectedRoom ? voiceConnectionStatus() : "Başka bir ses kanalına bağlısın";
+    $("#voice-status").textContent = viewingConnectedRoom ? voiceConnectionStatus() : state.voice.roomId ? "Başka bir ses kanalına bağlısın · Bu odaya geçebilirsin" : "Bağlı değil · Katılmak için düğmeye bas";
   }
   syncVoiceConnectionBar();
 }
@@ -2887,11 +2889,15 @@ async function pollVoice() {
 }
 
 async function joinVoice() {
-  if (!state.activeChannel || state.activeChannel.type !== "voice" || state.voice.roomId) return;
+  if (!state.activeChannel || state.activeChannel.type !== "voice" || state.voice.roomId === state.activeChannel.id || state.voice.joining) return;
   if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
     return notify("Bu tarayıcı sesli görüşmeyi desteklemiyor", true);
   }
+  const target = {...state.activeChannel}, serverId = state.activeServer.server.id;
+  state.voice.joining = true;
+  syncVoiceRoomControls();
   try {
+    if(state.voice.roomId) await leaveVoice();
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -2902,9 +2908,10 @@ async function joinVoice() {
       },
       video: false
     });
-    state.voice.roomId = state.activeChannel.id;
-    state.voice.roomName = state.activeChannel.name;
-    state.voice.serverId = state.activeServer.server.id;
+    if(state.activeChannel?.id !== target.id || state.activeServer?.server.id !== serverId){stream.getTracks().forEach(track=>track.stop());return;}
+    state.voice.roomId = target.id;
+    state.voice.roomName = target.name;
+    state.voice.serverId = serverId;
     state.voice.clientId = crypto.randomUUID();
     state.voice.stream = stream;
     state.voice.pollFailures = 0;
@@ -2961,6 +2968,9 @@ async function joinVoice() {
     state.voice.stream?.getTracks().forEach((track) => track.stop());
     Object.assign(state.voice, { roomId: null, clientId: null, stream: null });
     notify(error.name === "NotAllowedError" ? "Mikrofon izni verilmedi" : error.message, true);
+  } finally {
+    state.voice.joining = false;
+    syncVoiceRoomControls();
   }
 }
 
