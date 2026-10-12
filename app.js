@@ -1862,6 +1862,8 @@ function renderChannels() {
 
 function renderMembers() {
   const members = state.activeServer.members || [];
+  const canManage = state.activeServer.permissions.includes("members.manage");
+  const activeId = state.activeChannel?.id;
   const showContactActions = true;
   $("#member-empty").classList.toggle("hidden", members.length > 0);
   const memberCard = (member) => `
@@ -1869,24 +1871,25 @@ function renderMembers() {
       ${avatarContent(member)}
       <div><span class="member-name-row"><strong>${escapeHtml(member.nickname || member.display_name)}</strong>
       ${member.is_site_owner ? '<i class="site-owner-badge">YAAS SAHİBİ</i>' : ""}</span><small>@${escapeHtml(member.handle)}</small>
-      <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}"><span>${escapeHtml(roleIcon(role))}</span>${escapeHtml(role.name)}</i>`).join("")}</span>
+      <span>${member.roles.map((role) => `<i class="role-chip" style="color:${escapeHtml(role.color)}"><span>${escapeHtml(roleIcon(role))}</span>${escapeHtml(role.name)}${canManage && role.name !== "Owner" ? `<button type="button" data-sidebar-remove-role="${role.id}" data-member-id="${member.id}" aria-label="Rolü kaldır">×</button>` : ""}</i>`).join("")}</span>
       ${showContactActions && member.id !== state.user.id ? `<span class="member-actions"><button class="secondary add-friend-button" data-handle="${escapeHtml(member.handle)}" type="button">Arkadaş ekle</button></span>` : ""}
       </div>
     </article>`;
+  const accessible = activeId && !state.showAllServerMembers ? members.filter(member => member.visible_channel_ids?.includes(activeId)) : members;
+  const online = accessible.filter(member => member.online);
+  const offline = accessible.filter(member => !member.online);
+  const sortedRoles = [...new Map(members.flatMap(member=>member.roles).map(role=>[role.id,role])).values()].filter(role=>role.role_hoist).sort((a,b)=>b.position-a.position);
   const shown = new Set();
-  const hoistedSections = (state.activeServer.roles || []).filter((role) => role.role_hoist).map((role) => {
-    const roleMembers = members.filter((member) => member.roles.some((item) => item.id === role.id));
-    roleMembers.forEach((member) => shown.add(member.id));
-    return roleMembers.length ? `<section class="member-role-section">
-      <strong style="color:${escapeHtml(role.color)}"><span>${escapeHtml(roleIcon(role))}</span>${escapeHtml(role.name)} · ${roleMembers.length}</strong>
-      ${roleMembers.map(memberCard).join("")}
-    </section>` : "";
-  }).join("");
-  const normalMembers = members.filter((member) => !shown.has(member.id));
-  $("#member-list").innerHTML = hoistedSections + (normalMembers.length ? `<section class="member-role-section">
-    <strong>Uyeler · ${normalMembers.length}</strong>
-    ${normalMembers.map(memberCard).join("")}
-  </section>` : "");
+  const sections = sortedRoles.map(role=>{
+    const group = online.filter(member=>!shown.has(member.id) && member.roles.some(item=>item.id===role.id));
+    group.forEach(member=>shown.add(member.id));
+    return group.length ? '<section class="member-role-section"><strong style="color:'+escapeHtml(role.color)+'">'+escapeHtml(role.name)+' · '+group.length+'</strong>'+group.map(memberCard).join('')+'</section>' : '';
+  }).join('');
+  const rest = online.filter(member=>!shown.has(member.id));
+  const section = (label,group) => group.length ? '<section class="member-role-section"><strong>'+label+' · '+group.length+'</strong>'+group.map(memberCard).join('')+'</section>' : '';
+  $('#member-list').innerHTML = '<button type="button" id="member-scope-toggle" class="secondary">'+(state.showAllServerMembers?'Bu kanalı görebilenler':'Tüm sunucu üyeleri')+'</button><small class="member-access-note">'+(activeId && !state.showAllServerMembers ? 'Bu kanalı görebilen üyeler' : 'Sunucu üyeleri')+' · '+accessible.length+'</small>'+sections+section('Çevrimiçi',rest)+section('Çevrimdışı',offline);
+  $('#member-scope-toggle').onclick=()=>{state.showAllServerMembers=!state.showAllServerMembers;renderMembers();};
+  $('[data-sidebar-remove-role]', $('#member-list')).forEach(button=>button.onclick=()=>removeMemberRole(button.dataset.memberId,button.dataset.sidebarRemoveRole));
   $$("[data-profile-id]", $("#member-list")).forEach((item) => {
     item.addEventListener("click", (event) => {
       if (event.target.closest("button")) return;
@@ -2438,6 +2441,7 @@ function showNoChannel() {
 
 async function openChannel(channel) {
   state.activeChannel = channel;
+  renderMembers();
   $$(".channel-item").forEach((button) => button.classList.toggle("active", button.dataset.channelId === channel.id));
   $("#active-channel-name").textContent = channel.name;
   $("#channel-symbol").textContent = channel.type === "voice" ? "◖" : "#";
@@ -3106,7 +3110,7 @@ async function leaveVoice(notifyServer = true) {
 
 function messageTemplate(message) {
   const date = new Date(message.created_at || message.createdAt);
-  return `<article class="message"><span class="avatar">${escapeHtml(initials(message.author_name || message.authorName))}</span>
+  return `<article class="message">${avatarContent({...message,display_name:message.author_name || message.authorName})}
     <div class="message-body"><div class="message-meta"><strong>${escapeHtml(message.author_name || message.authorName)}</strong><small>${date.toLocaleString("tr-TR")}</small></div>
     <p>${formatMessageContent(message.content)}</p></div></article>`;
 }
@@ -3122,6 +3126,7 @@ function editRole(role) {
   $("#role-color-input").value = role.color;
   $("#role-icon-input").value = role.role_icon || roleIcon(role);
   $("#role-hoist-input").checked = Boolean(role.role_hoist);
+  $("#role-position-input").value = role.position;
   buildPermissionGrid(role.permissions || []);
 }
 
@@ -3618,7 +3623,7 @@ $("#message-form").addEventListener("submit", async (event) => {
   const list = $("#message-list");
   list.querySelector('.empty-channel')?.remove();
   const pending = document.createElement('div');
-  pending.innerHTML = messageTemplate({content,authorName:state.user.display_name,createdAt:new Date().toISOString()});
+  pending.innerHTML = messageTemplate({content,authorName:state.user.display_name,avatar_url:state.user.avatar_url,avatar_frame:state.user.avatar_frame,createdAt:new Date().toISOString()});
   pending.className = 'message-pending';
   const status = document.createElement('small');status.textContent = 'Gönderiliyor…';pending.append(status);
   list.append(pending);list.scrollTop=list.scrollHeight;
@@ -3898,6 +3903,7 @@ $("#role-form").addEventListener("submit", async (event) => {
     color: $("#role-color-input").value,
     roleIcon: $("#role-icon-input").value,
     roleHoist: $("#role-hoist-input").checked,
+    position: Number($("#role-position-input").value),
     permissions: $$("input[name=permission]:checked").map((input) => input.value)
   };
   try {
@@ -4136,3 +4142,10 @@ $('#category-settings-form').addEventListener('submit', async event => {
     closeModal(form);await openServer(serverId);notify('Kategori kaydedildi');
   } catch(e) {error.textContent=e.message;} finally {delete form.dataset.saving;submit.disabled=false;}
 });
+let memberPresenceRefreshing=false;
+setInterval(async()=>{
+  if(!state.user || document.hidden || !state.activeServer || $('#server-view').classList.contains('hidden') || memberPresenceRefreshing) return;
+  memberPresenceRefreshing=true;
+  const id=state.activeServer.server.id;
+  try {const data=await api(`/api/servers/${id}`);if(state.activeServer?.server.id===id){state.activeServer.members=data.members;renderMembers();}}catch{}finally{memberPresenceRefreshing=false;}
+},20000);

@@ -1156,7 +1156,13 @@ async function handleApi(request, response, helpers) {
         server: server.rows[0],
         categories: categories.rows,
         channels: visibleChannels,
-        members: normalizedMembers,
+        members: normalizedMembers.map(member => {
+          const memberRoleIds = new Set(member.roles.map(role => role.id));
+          const owner = member.id === server.rows[0]?.owner_id;
+          const canView = owner || normalizedRoles.some(role => memberRoleIds.has(role.id) && role.permissions.includes("channel.view"));
+          return {...member, online: Date.now() - (activeUsers.get(member.id) || 0) < 40000,
+            visible_channel_ids: visibleChannels.filter(channel => canView && (owner || !channel.is_private || channel.allowed_role_ids.some(id => memberRoleIds.has(id)))).map(channel => channel.id)};
+        }),
         roles: (granted.has("roles.manage") || granted.has("channels.manage") || granted.has("members.manage")) ? normalizedRoles : [],
         permissions: [...granted]
       });
@@ -1476,7 +1482,7 @@ async function handleApi(request, response, helpers) {
         if (!(await requirePermission(response, sendJson, channel.server_id, user.id, "channel.view"))) return;
         const result = await query(
           `SELECT m.id, m.content, m.created_at, m.edited_at, u.id AS author_id,
-                  u.display_name AS author_name, u.handle AS author_handle
+                  u.display_name AS author_name, u.handle AS author_handle, u.avatar_url, u.avatar_frame
              FROM messages m JOIN users u ON u.id = m.author_id
             WHERE m.channel_id = $1 ORDER BY m.created_at DESC LIMIT 100`,
           [channel.id]
@@ -1490,7 +1496,7 @@ async function handleApi(request, response, helpers) {
         if (!content) return sendJson(response, 400, { error: "Mesaj boş olamaz" });
         const id = crypto.randomUUID();
         await query("INSERT INTO messages (id, channel_id, author_id, content) VALUES ($1, $2, $3, $4)", [id, channel.id, user.id, content]);
-        return sendJson(response, 201, { message: { id, content, authorId: user.id, authorName: user.display_name, created_at: new Date().toISOString() } });
+        return sendJson(response, 201, { message: { id, content, authorId: user.id, authorName: user.display_name, avatar_url: user.avatar_url, avatar_frame: user.avatar_frame, created_at: new Date().toISOString() } });
       }
     }
 

@@ -21,6 +21,8 @@ test('builder previews match persisted channels for every template and preserve 
       assert.deepEqual(channels.map(row=>({...row})),expected);
       assert.equal(read.prepare('SELECT COUNT(*) AS n FROM channel_categories WHERE server_id=?').get(server.id).n,categories.length);
       const detail=(await req('/api/servers/'+server.id,user.cookie)).data;
+      assert.equal(detail.members[0].online,true);
+      assert.deepEqual(new Set(detail.members[0].visible_channel_ids),new Set(detail.channels.map(c=>c.id)));
       const categoryId=detail.categories[0].id;
       assert.equal((await req('/api/servers/'+server.id+'/categories/'+categoryId,user.cookie,{name:'Private group',applyAccess:true,isPrivate:true,allowedRoleIds:[]},'PATCH')).status,200);
       assert.equal(read.prepare('SELECT name FROM channel_categories WHERE id=?').get(categoryId).name,'Private group');
