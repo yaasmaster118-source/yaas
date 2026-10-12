@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 test('email tokens expire, are single-use, hide raw tokens and revoke sessions',async()=>{
   const filename=path.join(os.tmpdir(),`yaas-account-${crypto.randomUUID()}.sqlite`);
   process.env.LOCAL_DATABASE_PATH=filename;process.env.DATABASE_URL='';process.env.RESEND_API_KEY='test-only';process.env.SECURITY_ALERT_FROM='test@example.com';process.env.PUBLIC_APP_URL='https://example.com';
-  const {query,getPool}=require('../src/database'),{issueToken,consumeToken}=require('../src/account-security');
+  const {query,getPool}=require('../src/database'),{issueToken,consumeToken,consumeResetCode}=require('../src/account-security');
   const original=global.fetch;let email;
   global.fetch=async(_url,options)=>{email=JSON.parse(options.body);return {ok:true};};
   try{
@@ -15,6 +15,15 @@ test('email tokens expire, are single-use, hide raw tokens and revoke sessions',
     assert.equal(await consumeToken(token,'reset','NewPassword123'),true);
     assert.equal((await query('SELECT * FROM sessions')).rowCount,0);
     assert.equal(await consumeToken(token,'reset','OtherPassword123'),false);
+    await issueToken(user,'reset',true);let code=email.text.match(/kodun: (\d{8})/)[1];
+    assert.equal(await consumeResetCode('other@example.com',code,'CodePassword123'),false);
+    assert.equal(await consumeResetCode(user.email,code,'CodePassword123'),true);
+    assert.equal(await consumeResetCode(user.email,code,'OtherPassword123'),false);
+    const {verifyPassword}=require('../src/auth');assert.equal(await verifyPassword('CodePassword123',(await query('SELECT password_hash FROM users WHERE id=$1',[id])).rows[0].password_hash),true);
+    await issueToken(user,'reset',true);code=email.text.match(/kodun: (\d{8})/)[1];
+    const wrong=code==='00000000'?'11111111':'00000000';for(let i=0;i<5;i++)assert.equal(await consumeResetCode(user.email,wrong,'NeverChanged123'),false);
+    assert.equal(await consumeResetCode(user.email,code,'NeverChanged123'),false);
+    await issueToken(user,'reset',true);code=email.text.match(/kodun: (\d{8})/)[1];await query('UPDATE account_tokens SET expires_at=$1',['2000-01-01T00:00:00.000Z']);assert.equal(await consumeResetCode(user.email,code,'NeverChanged123'),false);
     await issueToken(user,'verify');token=email.text.match(/token=([\w-]+)/)[1];
     await query('UPDATE account_tokens SET expires_at=$1',['2000-01-01T00:00:00.000Z']);assert.equal(await consumeToken(token,'verify'),false);
     await issueToken(user,'verify');token=email.text.match(/token=([\w-]+)/)[1];assert.equal(await consumeToken(token,'verify'),true);
