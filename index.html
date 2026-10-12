@@ -208,7 +208,7 @@
         <section class="server-view hidden" id="server-view">
           <aside class="channel-panel">
             <header>
-              <div class="active-server-title"><span class="server-icon active-server-logo" id="active-server-logo">S</span><div><strong id="active-server-name">Sunucu</strong><small id="active-server-description"></small></div></div>
+              <div class="active-server-title"><span class="server-icon active-server-logo" id="active-server-logo">S</span><div><button id="server-channel-menu-button" type="button" aria-expanded="false"><strong id="active-server-name">Sunucu</strong> ▾</button><small id="active-server-description"></small></div></div>
               <button class="icon-button manage-server-button hidden" data-open-modal="manage-server-modal" type="button">⚙</button>
             </header>
             <section class="server-live-streams">
@@ -216,6 +216,7 @@
               <div id="server-stream-list"><small>Henuz yayin yok</small></div>
             </section>
             <div class="channel-list" id="channel-list"></div>
+            <div id="server-channel-menu" hidden><button type="button" data-open-modal="category-modal">＋ Yeni kategori</button><button type="button" id="menu-create-channel">＋ Yeni kanal</button></div>
             <button class="add-channel-button hidden" id="add-category-button" data-open-modal="category-modal" type="button">＋ Kategori ekle</button>
             <button class="add-channel-button hidden" id="add-channel-button" data-open-modal="channel-modal" type="button">＋ Kanal ekle</button>
           </aside>
@@ -411,6 +412,19 @@
       </form>
     </div>
 
+    <div class="modal-layer" id="category-settings-modal" hidden>
+      <form class="modal" id="category-settings-form">
+        <header><strong>Kategori ayarları</strong><button type="button" class="icon-button modal-close" aria-label="Kapat">×</button></header>
+        <input type="hidden" id="category-settings-id">
+        <label>Kategori adı<input id="category-settings-name" required maxlength="40"></label>
+        <label><input type="checkbox" id="category-apply-access"> Bu kategorideki mevcut kanalların erişimini birlikte değiştir</label>
+        <label><input type="checkbox" id="category-private"> Sadece seçili roller görebilsin</label>
+        <div id="category-role-list"></div>
+        <p>Hiç rol seçmeden özel yaparsan kanallar yalnızca yönetim yetkisi olanlara açık kalır. Sonradan açılan kanalların erişimini oluşturma formundan seçebilirsin.</p>
+        <div id="category-channel-controls"></div><p class="form-error" role="alert"></p>
+        <footer><button type="button" class="secondary modal-close">Vazgeç</button><button type="submit" class="primary">Kaydet</button></footer>
+      </form>
+    </div>
     <div class="modal-layer" id="manage-server-modal" hidden>
       <section class="modal server-settings-modal">
         <header><div><strong id="settings-server-name">Sunucu ayarları</strong><small>Sunucunu, üyelerini ve izinlerini yönet.</small></div><button class="icon-button modal-close" type="button">×</button></header>

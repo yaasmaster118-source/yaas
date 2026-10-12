@@ -2397,12 +2397,14 @@ function renderChannels() {
         ${channel.is_private ? '<small class="private-channel-lock" title="Ozel kanal">lock</small>' : ""}
       </button>`).join("");
   $("#channel-list").innerHTML = grouped.map((category) => `
-    <section class="channel-category channel-template-category">
-      <div class="channel-category-header template-category-header"><span>diamond</span><strong>${escapeHtml(category.name)}</strong><small>${category.channels.length}</small></div>
+    <section class="channel-category channel-template-category" data-drop-category="${category.id}">
+      <div class="channel-category-header template-category-header"><span>diamond</span><strong>${escapeHtml(category.name)}</strong><button type="button" class="category-count" data-create-in="${category.id}" aria-label="Bu kategoride kanal oluştur" ${state.activeServer.permissions.includes("channels.manage") ? "" : "disabled"}>${category.channels.length} ＋</button>${state.activeServer.permissions.includes("channels.manage") ? `<button type="button" data-edit-category="${category.id}" aria-label="Kategori ayarları">⚙</button>` : ""}</div>
       ${channelButtons(category.channels)}
     </section>`).join("")
     + (uncategorized.length ? `<section class="channel-category channel-template-category"><div class="channel-category-header template-category-header"><span>star</span><strong>Main</strong><small>${uncategorized.length}</small></div>${channelButtons(uncategorized)}</section>` : "");
-  $$(".channel-item").forEach((button) => button.addEventListener("click", () => {
+  bindChannelManagement();
+  $(".channel-item").forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.suppressClick) { delete button.dataset.suppressClick; return; }
     const channel = state.activeServer.channels.find((item) => item.id === button.dataset.channelId);
     openChannel(channel);
   }));
@@ -4050,3 +4052,74 @@ start().catch((error) => {
 });
 
 $("#home-open-events")?.addEventListener("click",()=>showEventsPage().catch(error=>notify(error.message,true)));
+function canManageChannels() { return state.activeServer?.permissions?.includes('channels.manage'); }
+function createChannelIn(categoryId = '') {
+  if (!canManageChannels()) return;
+  $('#channel-category-input').value = categoryId;
+  openModal('channel-modal');
+  $('#server-channel-menu').hidden = true;
+  $('#server-channel-menu-button').setAttribute('aria-expanded', 'false');
+}
+function editCategory(id) {
+  if (!canManageChannels()) return;
+  const category = state.activeServer.categories.find(c => c.id === id);
+  $('#category-settings-id').value = id;
+  $('#category-settings-name').value = category.name;
+  $('#category-apply-access').checked = false;
+  $('#category-private').checked = false;
+  roleAccessList($('#category-role-list'), []);
+  $('#category-channel-controls').innerHTML = state.activeServer.channels.filter(c => c.category_id === id).map(c => `<button type="button" data-category-channel="${c.id}">${escapeHtml(c.name)} · Kanal ayarları</button>`).join('');
+  $$('[data-category-channel]').forEach(b => b.onclick = () => {
+    closeModal($('#category-settings-form'));
+    state.activeChannel = state.activeServer.channels.find(c => c.id === b.dataset.categoryChannel);
+    openChannelSettings();
+  });
+  $('.form-error', $('#category-settings-form')).textContent = '';
+  openModal('category-settings-modal');
+}
+async function moveManagedChannel(id, categoryId) {
+  if (!canManageChannels()) return;
+  const serverId = state.activeServer.server.id;
+  try {
+    await api(`/api/servers/${serverId}/channels/${id}`, {method:'PATCH', body:JSON.stringify({categoryId:categoryId || null})});
+    await openServer(serverId);
+    notify('Kanal taşındı');
+  } catch(error) { notify(error.message); }
+}
+function bindChannelManagement() {
+  if (!canManageChannels()) return;
+  $$('[data-create-in]').forEach(b => b.onclick = () => createChannelIn(b.dataset.createIn));
+  $$('[data-edit-category]').forEach(b => b.onclick = () => editCategory(b.dataset.editCategory));
+  $$('.channel-item').forEach(b => {
+    b.draggable = true;
+    b.addEventListener('dragstart', e => { e.dataTransfer.setData('text/yaas-channel', b.dataset.channelId); e.dataTransfer.effectAllowed = 'move'; });
+    let timer, origin;
+    b.addEventListener('pointerdown', e => {
+      if(e.button !== 0) return;
+      origin = {x:e.clientX,y:e.clientY};
+      timer = setTimeout(() => { b.dataset.suppressClick = 'true'; state.activeChannel = state.activeServer.channels.find(c=>c.id===b.dataset.channelId); openChannelSettings(); notify('Kategori seçerek kanalı taşıyabilirsin'); }, 600);
+    });
+    b.addEventListener('pointermove', e => { if(origin && Math.hypot(e.clientX-origin.x,e.clientY-origin.y)>12) clearTimeout(timer); });
+    for(const event of ['pointerup','pointercancel','dragstart','pointerleave']) b.addEventListener(event,()=>clearTimeout(timer));
+  });
+  $$('[data-drop-category]').forEach(section => {
+    section.addEventListener('dragover', e => { if(e.dataTransfer.types.includes('text/yaas-channel')) {e.preventDefault();section.classList.add('channel-drop-target');} });
+    section.addEventListener('dragleave',()=>section.classList.remove('channel-drop-target'));
+    section.addEventListener('drop', e => { e.preventDefault();section.classList.remove('channel-drop-target'); const id=e.dataTransfer.getData('text/yaas-channel');if(state.activeServer.channels.some(c=>c.id===id)) moveManagedChannel(id,section.dataset.dropCategory); });
+  });
+}
+$('#server-channel-menu-button').addEventListener('click', () => {
+  if (!canManageChannels()) return;
+  const menu=$('#server-channel-menu');menu.hidden=!menu.hidden;
+  $('#server-channel-menu-button').setAttribute('aria-expanded',String(!menu.hidden));
+});
+$('#menu-create-channel').addEventListener('click',()=>createChannelIn());
+$('#category-settings-form').addEventListener('submit', async event => {
+  event.preventDefault();const form=event.currentTarget;if(form.dataset.saving) return;
+  const error=$('.form-error',form);error.textContent='';form.dataset.saving='true';const submit=$('[type=submit]',form);submit.disabled=true;
+  const serverId=state.activeServer.server.id;
+  try {
+    await api(`/api/servers/${serverId}/categories/${$('#category-settings-id').value}`,{method:'PATCH',body:JSON.stringify({name:$('#category-settings-name').value,applyAccess:$('#category-apply-access').checked,isPrivate:$('#category-private').checked,allowedRoleIds:selectedRoleAccess($('#category-role-list'))})});
+    closeModal(form);await openServer(serverId);notify('Kategori kaydedildi');
+  } catch(e) {error.textContent=e.message;} finally {delete form.dataset.saving;submit.disabled=false;}
+});

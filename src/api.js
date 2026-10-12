@@ -1311,6 +1311,10 @@ async function handleApi(request, response, helpers) {
         return sendJson(response, 200, { ok: true });
       }
       const body = await readJson(request);
+      if (body.categoryId) {
+        const target = await query("SELECT id FROM channel_categories WHERE id = $1 AND server_id = $2", [body.categoryId, serverId]);
+        if (!target.rowCount) return sendJson(response, 400, { error: "Kategori bulunamadı" });
+      }
       await query(
         `UPDATE channels SET
            name = COALESCE($3, name),
@@ -1354,6 +1358,21 @@ async function handleApi(request, response, helpers) {
     }
 
     const categoryItemRoute = url.pathname.match(/^\/api\/servers\/([0-9a-f-]+)\/categories\/([0-9a-f-]+)$/i);
+    if (method === "PATCH" && categoryItemRoute) {
+      const [, serverId, categoryId] = categoryItemRoute;
+      if (!(await requirePermission(response, sendJson, serverId, user.id, "channels.manage"))) return;
+      const body = await readJson(request);
+      const name = text(body.name, 40);
+      if (!name) return sendJson(response, 400, { error: "Kategori adı gerekli" });
+      const category = await query("SELECT id FROM channel_categories WHERE id = $1 AND server_id = $2", [categoryId, serverId]);
+      if (!category.rowCount) return sendJson(response, 404, { error: "Kategori bulunamadı" });
+      if (body.applyAccess && (!Array.isArray(body.allowedRoleIds) || typeof body.isPrivate !== "boolean")) return sendJson(response, 400, { error: "Erişim ayarları geçersiz" });
+      await transaction(async client => {
+        await client.query("UPDATE channel_categories SET name = $3 WHERE id = $1 AND server_id = $2", [categoryId, serverId, name]);
+        if (body.applyAccess) await client.query("UPDATE channels SET is_private = $3, allowed_role_ids = $4::jsonb WHERE category_id = $1 AND server_id = $2", [categoryId, serverId, body.isPrivate, JSON.stringify(body.isPrivate ? body.allowedRoleIds : [])]);
+      });
+      return sendJson(response, 200, { ok: true });
+    }
     if (method === "DELETE" && categoryItemRoute) {
       const [, serverId, categoryId] = categoryItemRoute;
       if (!(await requirePermission(response, sendJson, serverId, user.id, "channels.manage"))) return;
