@@ -1889,7 +1889,7 @@ function renderMembers() {
   const section = (label,group) => group.length ? '<section class="member-role-section"><strong>'+label+' · '+group.length+'</strong>'+group.map(memberCard).join('')+'</section>' : '';
   $('#member-list').innerHTML = '<button type="button" id="member-scope-toggle" class="secondary">'+(state.showAllServerMembers?'Bu kanalı görebilenler':'Tüm sunucu üyeleri')+'</button><small class="member-access-note">'+(activeId && !state.showAllServerMembers ? 'Bu kanalı görebilen üyeler' : 'Sunucu üyeleri')+' · '+accessible.length+'</small>'+sections+section('Çevrimiçi',rest)+section('Çevrimdışı',offline);
   $('#member-scope-toggle').onclick=()=>{state.showAllServerMembers=!state.showAllServerMembers;renderMembers();};
-  $('[data-sidebar-remove-role]', $('#member-list')).forEach(button=>button.onclick=()=>removeMemberRole(button.dataset.memberId,button.dataset.sidebarRemoveRole));
+  $$('[data-sidebar-remove-role]', $('#member-list')).forEach(button=>button.onclick=()=>removeMemberRole(button.dataset.memberId,button.dataset.sidebarRemoveRole));
   $$("[data-profile-id]", $("#member-list")).forEach((item) => {
     item.addEventListener("click", (event) => {
       if (event.target.closest("button")) return;
