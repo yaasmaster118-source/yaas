@@ -2440,6 +2440,8 @@ function showNoChannel() {
 }
 
 async function openChannel(channel) {
+  channelMessageRequest?.abort();
+  channelMessageSequence++;
   state.activeChannel = channel;
   renderMembers();
   $$(".channel-item").forEach((button) => button.classList.toggle("active", button.dataset.channelId === channel.id));
@@ -2464,8 +2466,8 @@ async function openChannel(channel) {
     syncVoiceRoomControls();
     return;
   }
-  await loadMessages();
   updateMentionSuggestions();
+  await loadMessages();
 }
 
 function openChannelSettings() {
@@ -2483,14 +2485,34 @@ function openChannelSettings() {
   openModal("channel-settings-modal");
 }
 
+let channelMessageRequest;
+let channelMessageSequence = 0;
+const channelMessageCache = new Map();
 async function loadMessages() {
+  const channel = state.activeChannel;
+  if (!channel || channel.type !== 'text') return;
+  channelMessageRequest?.abort();
+  const request = channelMessageRequest = new AbortController();
+  const sequence = ++channelMessageSequence;
+  const key = `${state.user.id}:${channel.id}`;
+  const list = $("#message-list");
+  const cached = !channel.is_private && channelMessageCache.get(key);
+  const paint = messages => {
+    list.innerHTML = messages.length ? messages.map(messageTemplate).join('') : '<div class="empty-channel"><span>#</span><strong>İlk mesajı sen gönder</strong><p>Bu kanal henüz boş.</p></div>';
+    list.scrollTop = list.scrollHeight;
+  };
+  if (cached && Date.now()-cached.at < 15000) paint(cached.messages);
+  else list.innerHTML = '<div class="empty-channel" role="status">Mesajlar yükleniyor…</div>';
   try {
-    const data = await api(`/api/channels/${state.activeChannel.id}/messages`);
-    $("#message-list").innerHTML = data.messages.length
-      ? data.messages.map(messageTemplate).join("")
-      : `<div class="empty-channel"><span>#</span><strong>İlk mesajı sen gönder</strong><p>Bu kanal henüz boş.</p></div>`;
-    $("#message-list").scrollTop = $("#message-list").scrollHeight;
+    const data = await api(`/api/channels/${channel.id}/messages`, {signal:request.signal});
+    if(sequence !== channelMessageSequence || state.activeChannel?.id !== channel.id) return;
+    if(!channel.is_private){channelMessageCache.delete(key);channelMessageCache.set(key,{messages:data.messages,at:Date.now()});if(channelMessageCache.size>20)channelMessageCache.delete(channelMessageCache.keys().next().value);}
+    paint(data.messages);
   } catch (error) {
+    if(error.name === 'AbortError' || sequence !== channelMessageSequence || state.activeChannel?.id !== channel.id) return;
+    channelMessageCache.delete(key);
+    list.innerHTML = '<div class="empty-channel"><strong>Mesajlar yüklenemedi</strong><button type="button" id="retry-channel-messages" class="secondary">Yeniden dene</button></div>';
+    $('#retry-channel-messages').onclick = () => loadMessages();
     notify(error.message, true);
   }
 }
@@ -3620,6 +3642,8 @@ $("#message-form").addEventListener("submit", async (event) => {
   const content = $("#message-input").value.trim();
   if (!content) return;
   const input = $("#message-input"), channelId = state.activeChannel.id;
+  channelMessageRequest?.abort();channelMessageSequence++;
+  channelMessageCache.delete(`${state.user.id}:${channelId}`);
   const list = $("#message-list");
   list.querySelector('.empty-channel')?.remove();
   const pending = document.createElement('div');

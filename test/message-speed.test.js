@@ -6,6 +6,6 @@ let submit,resolve,calls=[];const nodes={};const input={value:'hello',focus(){}}
 const list={scrollHeight:10,querySelector(){return null;},append(node){nodes.pending=node;}};
 const form={addEventListener(_,fn){submit=fn;}};
 const doc={createElement(){return{isConnected:true,append(){}};}};
-vm.runInNewContext(source.slice(start,end),{document:doc,$:id=>({'#message-form':form,'#message-input':input,'#message-list':list,'#mention-suggestions':{classList:{add(){}}}}[id]),state:{user:{display_name:'Alice'},activeChannel:{id:'a'}},messageTemplate:m=>m.content,api:(url)=>{calls.push(url);return new Promise(r=>resolve=r);},notify(){}});
+vm.runInNewContext(source.slice(start,end),{channelMessageRequest:null,channelMessageSequence:0,channelMessageCache:new Map(),document:doc,$:id=>({'#message-form':form,'#message-input':input,'#message-list':list,'#mention-suggestions':{classList:{add(){}}}}[id]),state:{user:{display_name:'Alice'},activeChannel:{id:'a'}},messageTemplate:m=>m.content,api:(url)=>{calls.push(url);return new Promise(r=>resolve=r);},notify(){}});
 const sent=submit({preventDefault(){}});assert.equal(input.value,'');assert.equal(nodes.pending.innerHTML,'hello');input.value='next draft';resolve({message:{content:'hello'}});await sent;assert.equal(input.value,'next draft');assert.equal(calls.length,1);assert.equal(nodes.pending.className,'');
 });
