@@ -669,7 +669,8 @@ function renderDmPage() {
   if(composer)window.mountDmComposer(composer,{draft:state.dmDrafts[selected.id],onDraft:value=>state.dmDrafts[selected.id]=value,send:async body=>{
     const data=await api(`/api/dms/${selected.id}`,{method:'POST',body:JSON.stringify(body)});
     if(state.activeDm?.id===selected.id&&composer.isConnected){state.inboxMessages=[...(state.inboxMessages||[]),data.message];renderDmPageMessages(state.inboxMessages);const list=$('#dm-page-message-list');list.scrollTop=list.scrollHeight;}
-    try{state.conversations=(await api('/api/dms')).conversations;}catch{ /* The sent message remains successful; polling refreshes the sidebar. */ }
+    const conversation=state.conversations.find(person=>person.id===selected.id);
+    if(conversation)conversation.last_message=data.message.content;
     const row=$(`[data-inbox-person="${selected.id}"] small`);if(row)row.textContent=data.message.content;
   }});
   if(selected) loadInboxMessages();
@@ -3613,12 +3614,24 @@ $("#message-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const content = $("#message-input").value.trim();
   if (!content) return;
+  const input = $("#message-input"), channelId = state.activeChannel.id;
+  const list = $("#message-list");
+  list.querySelector('.empty-channel')?.remove();
+  const pending = document.createElement('div');
+  pending.innerHTML = messageTemplate({content,authorName:state.user.display_name,createdAt:new Date().toISOString()});
+  pending.className = 'message-pending';
+  const status = document.createElement('small');status.textContent = 'Gönderiliyor…';pending.append(status);
+  list.append(pending);list.scrollTop=list.scrollHeight;
+  input.value = '';input.focus();
+  $("#mention-suggestions").classList.add("hidden");
   try {
-    await api(`/api/channels/${state.activeChannel.id}/messages`, { method: "POST", body: JSON.stringify({ content }) });
-    $("#message-input").value = "";
-    $("#mention-suggestions").classList.add("hidden");
-    await loadMessages();
+    const data = await api(`/api/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify({ content }) });
+    if(pending.isConnected){pending.innerHTML=messageTemplate(data.message);pending.className='';}
   } catch (error) {
+    status.textContent = 'Gönderilemedi';
+    const retry=document.createElement('button');retry.type='button';retry.textContent='Yeniden gönder';
+    retry.onclick=async()=>{retry.disabled=true;status.textContent='Gönderiliyor…';try{const data=await api(`/api/channels/${channelId}/messages`,{method:'POST',body:JSON.stringify({content})});pending.innerHTML=messageTemplate(data.message);pending.className='';}catch(failure){status.textContent=failure.message;retry.disabled=false;}};
+    pending.append(retry);
     notify(error.message, true);
   }
 });

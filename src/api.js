@@ -767,7 +767,9 @@ async function handleApi(request, response, helpers) {
       const content = text(body.content, 4000) || (attachment ? attachment.mime==='image/gif'?"[GIF]":attachment.mime.startsWith("image/")?"[Fotoğraf]":attachment.mime.startsWith("audio/")?"[Ses kaydı]":attachment.mime.startsWith('video/')?"[Video]":"[Dosya]" : "");
       if (!content) return sendJson(response, 400, { error: "Mesaj boş olamaz" });
       const message = { id: crypto.randomUUID(), content };
-      await transaction(async client=>{
+      if (!attachment) {
+        await query("INSERT INTO direct_messages (id, sender_id, recipient_id, content) VALUES ($1, $2, $3, $4)", [message.id, user.id, friendId, content]);
+      } else await transaction(async client=>{
         if(attachment){
           if(process.env.DATABASE_URL)await client.query("SELECT pg_advisory_xact_lock(794112119)");
           const quota=await client.query("SELECT COALESCE(SUM(size_bytes),0) AS total, COALESCE(SUM(CASE WHEN owner_id=$1 THEN size_bytes ELSE 0 END),0) AS personal FROM dm_attachments",[user.id]);
@@ -1488,7 +1490,7 @@ async function handleApi(request, response, helpers) {
         if (!content) return sendJson(response, 400, { error: "Mesaj boş olamaz" });
         const id = crypto.randomUUID();
         await query("INSERT INTO messages (id, channel_id, author_id, content) VALUES ($1, $2, $3, $4)", [id, channel.id, user.id, content]);
-        return sendJson(response, 201, { message: { id, content, authorId: user.id, authorName: user.display_name } });
+        return sendJson(response, 201, { message: { id, content, authorId: user.id, authorName: user.display_name, created_at: new Date().toISOString() } });
       }
     }
 
