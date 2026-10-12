@@ -1671,3 +1671,22 @@ html[data-compact="true"] .channel-template-item { height:34px !important; }
 .yaas-home{grid-template-columns:minmax(0,1fr)!important}
 .home-topbar{justify-content:flex-end}
 .workspace-page-topbar{grid-template-columns:minmax(0,1fr) auto}
+/* Keep server navigation fixed while the chat scrolls. */
+.app {height:100dvh!important;min-height:0!important;overflow:hidden!important;}
+.workspace,.server-view,.content-panel,.message-view,.channel-panel,.member-panel {min-height:0!important;}
+.server-view {height:100%!important;overflow:hidden!important;grid-template-rows:minmax(0,1fr)!important;}
+.content-panel {height:100%!important;overflow:hidden!important;display:flex!important;flex-direction:column!important;}
+.content-panel>header,.channel-panel>header,.member-panel>header {flex-shrink:0;}
+.message-view {flex:1!important;display:flex;flex-direction:column;height:0;overflow:hidden!important;}
+.message-view.hidden {display:none!important;}
+.message-list {flex:1!important;min-height:0!important;overflow-y:auto!important;overscroll-behavior:contain;}
+.message-form {flex-shrink:0!important;}
+.channel-panel {height:100%!important;overflow:hidden!important;}
+.channel-list,.member-list {flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;}
+.member-list {display:block!important;}
+.member-role-section {margin-bottom:16px;}
+.member-role-section>strong {display:block;margin:10px 0;font-size:12px;}
+.member-access-note {display:block;padding:8px 0;color:var(--muted);}
+.role-chip button {background:transparent;color:inherit;padding:0 4px;cursor:pointer;}
+@media(min-width:1051px) {.member-panel {display:flex!important;position:relative!important;transform:none!important;height:100dvh!important;}}
+@media(max-width:720px) {.server-view {height:calc(100% - 58px)!important;}}
