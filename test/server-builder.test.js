@@ -7,7 +7,7 @@ test('builder previews match persisted channels for every template and preserve 
   const child = spawn(process.execPath, ['server.js'], {cwd:path.join(__dirname,'..'), env:{...process.env,PORT:'4208',DATABASE_URL:'',LOCAL_DATABASE_PATH:db},windowsHide:true,stdio:['ignore','pipe','pipe']});
   try {
     await new Promise((resolve,reject) => { const timer=setTimeout(()=>reject(Error('startup timeout')),15000); child.stdout.on('data',data=>{if(String(data).includes('YAAS is running')){clearTimeout(timer);resolve();}});child.once('error',reject); });
-    async function req(route,cookie,body) {const r=await fetch('http://localhost:4208'+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
+    async function req(route,cookie,body,method=body?'POST':'GET') {const r=await fetch('http://localhost:4208'+route,{method,headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},...(body?{body:JSON.stringify(body)}:{})});return{status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
     assert.equal((await req('/api/server-templates')).status,401);
     const user=await req('/api/auth/register',null,{name:'Builder test',email:'builder@example.com',password:'Builder-test-8765'}); assert.ok(user.cookie);
     const {templates}=(await req('/api/server-templates',user.cookie)).data; assert.equal(Object.keys(templates).length,7);
@@ -20,6 +20,16 @@ test('builder previews match persisted channels for every template and preserve 
       const expected=categories.flatMap(category=>category.channels).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
       assert.deepEqual(channels.map(row=>({...row})),expected);
       assert.equal(read.prepare('SELECT COUNT(*) AS n FROM channel_categories WHERE server_id=?').get(server.id).n,categories.length);
+      const detail=(await req('/api/servers/'+server.id,user.cookie)).data;
+      const categoryId=detail.categories[0].id;
+      assert.equal((await req('/api/servers/'+server.id+'/categories/'+categoryId,user.cookie,{name:'Private group',applyAccess:true,isPrivate:true,allowedRoleIds:[]},'PATCH')).status,200);
+      assert.equal(read.prepare('SELECT name FROM channel_categories WHERE id=?').get(categoryId).name,'Private group');
+      assert.ok(read.prepare('SELECT is_private FROM channels WHERE category_id=?').all(categoryId).every(c=>c.is_private));
+      const channelId=detail.channels[0].id;
+      assert.equal((await req('/api/servers/'+server.id+'/channels/'+channelId,user.cookie,{categoryId:'00000000-0000-0000-0000-000000000001'},'PATCH')).status,400);
+      assert.equal((await req('/api/servers/'+server.id+'/channels/'+channelId,user.cookie,{categoryId:null},'PATCH')).status,200);
+      assert.equal(read.prepare('SELECT category_id FROM channels WHERE id=?').get(channelId).category_id,null);
+
     }} finally {read.close();}
   } finally {if(child.exitCode===null){const exit=once(child,'exit');child.kill();await exit;}for(const suffix of ['','-wal','-shm'])fs.rmSync(db+suffix,{force:true});}
 });
