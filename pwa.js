@@ -1,5 +1,5 @@
 (() => {
- let installEvent=null,registration=null,reloading=false,updateRequested=false;
+ let installEvent=null,registration=null,reloading=false,updateRequested=false,selectedDevice=null;
  const standalone=()=>window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
  function sync(){document.querySelectorAll('[data-install-app]').forEach(button=>{button.hidden=standalone();});}
  window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installEvent=event;sync();});
@@ -13,6 +13,7 @@
   if(!dialog.open)dialog.showModal();
  }
  function selectDevice(device){
+  selectedDevice=device;
   const phone=device==='phone';
   const ua=navigator.userAgent;
   const apple=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
@@ -22,12 +23,15 @@
   document.querySelector('#pwa-device-details').hidden=false;
   document.querySelector('#pwa-install-help').textContent=phone?'Android: YAAS’ı Chrome’da aç. ⋮ menüsünden “Uygulamayı yükle” veya “Ana ekrana ekle”yi seç. iPhone/iPad: Safari’de Paylaş → Ana Ekrana Ekle → Ekle.':'Bilgisayarında YAAS’ı Chrome veya Edge’de aç. Adres çubuğundaki yükleme simgesini ya da tarayıcı menüsündeki “Uygulamayı yükle / Bu siteyi uygulama olarak yükle” seçeneğini kullan. Mac Safari’de destekleniyorsa “Dock’a Ekle”yi seç.';
   const action=document.querySelector('#pwa-install-now');
-  action.hidden=!installEvent||currentPhone!==phone;
-  action.textContent=phone?'Bu telefona yükle':'Bu PC’ye yükle';
-  document.querySelector('#pwa-device-note').textContent=currentPhone!==phone?(phone?'Telefonunda aynı YAAS bağlantısını açarak yükleyebilirsin.':'PC’nde aynı YAAS bağlantısını açarak yükleyebilirsin.'):'Kurulum seçeneği tarayıcında görünüyorsa yukarıdaki adımlarla devam edebilirsin.';
+  action.hidden=false;
+  action.textContent=phone?'Telefon için yükle':'PC için yükle';
+  document.querySelector('#pwa-install-help').hidden=true;
+  document.querySelector('#pwa-device-note').textContent=currentPhone!==phone?(phone?'Telefonunda aynı YAAS bağlantısını açarak yükleyebilirsin.':'PC’nde aynı YAAS bağlantısını açarak yükleyebilirsin.'):'Kurulumu başlatmak için aşağıdaki Yükle düğmesine bas.';
  }
  async function installNow(){
-  if(!installEvent)return;
+  const ua=navigator.userAgent;
+  const currentPhone=/iPad|iPhone|iPod|Android/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  if(!installEvent||currentPhone!==(selectedDevice==='phone')){document.querySelector('#pwa-install-help').hidden=false;document.querySelector('#pwa-device-note').textContent=currentPhone!==(selectedDevice==='phone')?'Kurulumu seçtiğin cihazda başlatmalısın. O cihazda YAAS’ı açıp Yükle’ye bas.':'Bu tarayıcı doğrudan kurulum penceresi açamıyor. Gösterilen adımlarla YAAS’ı yükleyebilirsin.';return;}
   const event=installEvent;installEvent=null;
   document.querySelector('#pwa-install-now').hidden=true;
   try{await event.prompt();const choice=await event.userChoice;document.querySelector('#pwa-device-note').textContent=choice.outcome==='accepted'?'Kurulum onaylandı. YAAS simgesinden açabilirsin.':'Kurulum iptal edildi. İstersen daha sonra yeniden deneyebilirsin.';}catch{document.querySelector('#pwa-device-note').textContent='Kurulum penceresi açılamadı. Yukarıdaki tarayıcı menüsü adımlarını kullan.';}
