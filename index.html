@@ -16,6 +16,8 @@
     <link rel="stylesheet" href="clean.css?v=1.1.36">
     <link rel="stylesheet" href="studio.css?v=1.1.31">
     <link rel="stylesheet" href="auth-entrance.css?v=1.1.32">
+    <link rel="stylesheet" href="layout-mode.css?v=2">
+    <script src="layout-mode.js?v=2" defer></script>
     <script src="auth-entrance.js?v=1.1.36" defer></script>
     <script src="studio.js?v=1.1.31" defer></script>
     <script src="studio-window.js?v=1.1.31" defer></script>
@@ -25,6 +27,7 @@
     <script src="account-ui.js?v=1.1.35" defer></script>
   </head>
   <body>
+    <dialog id="layout-dialog" aria-labelledby="layout-title" aria-describedby="layout-description"><span class="layout-brand">YAAS</span><h2 id="layout-title">Nasıl devam etmek istersin?</h2><p id="layout-description">Sana uygun görünümü seç.</p><div class="layout-options"><button type="button" data-layout-choice="mobile"><span aria-hidden="true">▯</span>Mobil</button><button type="button" data-layout-choice="desktop"><span aria-hidden="true">▰</span>PC</button></div></dialog>
     <section class="auth-screen" id="auth-screen">
       <div class="auth-scene" aria-hidden="true"><video autoplay loop muted playsinline preload="auto" poster="assets/yaas-entry-poster.png" tabindex="-1"><source src="assets/yaas-entry.mp4" type="video/mp4"></video></div>
       <div class="auth-scene-shade" aria-hidden="true"></div>
