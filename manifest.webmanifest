@@ -1,17 +1,32 @@
 {
+  "id": "/",
   "name": "YAAS Topluluk",
   "short_name": "YAAS",
-  "description": "Topluluk, video ve fotoğraf paylaşım platformu.",
-  "start_url": "/",
+  "description": "Topluluğun, sohbetlerin ve yayınların tek uygulamada.",
+  "lang": "tr",
+  "start_url": "/?source=app",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#070707",
-  "theme_color": "#d6aa52",
+  "background_color": "#080808",
+  "theme_color": "#080808",
   "icons": [
     {
-      "src": "/assets/yaas-main-logo.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/assets/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/app-icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

@@ -12,6 +12,11 @@
     <title>YAAS 1.1 | Topluluk Platformu</title>
     <link rel="icon" href="assets/yaas-main-logo.svg" type="image/svg+xml">
     <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="assets/app-icon-180.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="YAAS">
+    <link rel="stylesheet" href="pwa.css?v=1">
+    <script src="pwa.js?v=1" defer></script>
     <link rel="stylesheet" href="styles.css?v=1.1.23">
     <link rel="stylesheet" href="clean.css?v=1.1.36">
     <link rel="stylesheet" href="studio.css?v=1.1.31">
@@ -31,7 +36,7 @@
     <section class="auth-screen" id="auth-screen">
       <div class="auth-scene" aria-hidden="true"><video autoplay loop muted playsinline preload="auto" poster="assets/yaas-entry-poster.png" tabindex="-1"><source src="assets/yaas-entry.mp4" type="video/mp4"></video></div>
       <div class="auth-scene-shade" aria-hidden="true"></div>
-      <header class="auth-scene-header"><strong>YAAS</strong><button type="button" data-auth-motion aria-pressed="false">Hareketi durdur</button></header>
+      <header class="auth-scene-header"><strong>YAAS</strong><button type="button" data-install-app>Uygulamayı yükle</button><button type="button" data-auth-motion aria-pressed="false">Hareketi durdur</button></header>
       <p class="auth-entry-status" role="status" aria-live="polite"></p>
       <div class="auth-brand">
         <div class="premium-top-brand">
@@ -105,6 +110,7 @@
           <button id="nav-y-preview-button" type="button"><span>Y</span>Y Para · Önizleme</button>
           <button id="nav-events-button" type="button"><span>▣</span>Etkinlikler</button>
           <button id="nav-servers-button" type="button"><span>▤</span>Sunucular</button>
+          <button type="button" data-install-app><span>↓</span>Uygulamayı yükle</button>
           <button id="nav-settings-button" type="button"><span>⚙</span>Ayarlar</button>
         </nav>
         <div class="server-actions">
