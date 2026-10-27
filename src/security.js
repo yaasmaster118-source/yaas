@@ -32,7 +32,7 @@ function requestPolicy(request) {
   const pathname = String(request.url || "").split("?")[0];
   if (pathname === "/api/auth/register") return "register";
   if (pathname.startsWith("/api/auth/")) return "auth";
-  if (pathname.endsWith("/chat") || (request.method === "POST" && /^\/api\/dms\//.test(pathname))) return "messages";
+  if (request.method === "POST" && (pathname.endsWith("/chat") || /^\/api\/dms\//.test(pathname))) return "messages";
   if (pathname.startsWith("/api/voice/") || pathname.startsWith("/api/stream-rtc/")) return "realtime";
   if (request.method === "POST" && (/\/friends\/requests$/.test(pathname) || pathname === "/api/message-requests")) return "social";
   if (request.method === "POST" && (/\/messages$/.test(pathname) || /\/chat$/.test(pathname))) return "messages";
@@ -42,11 +42,17 @@ function requestPolicy(request) {
 }
 
 function applyRateLimit(request, response) {
-  const name = requestPolicy(request);
+  let name = requestPolicy(request);
+  const ip = clientIp(request);
+  const failureKey = `login-failure:${ip}`;
+  const failed = buckets.get(failureKey);
+  const blockedLogin = request.method === "POST" && String(request.url || "").split("?")[0] === "/api/auth/login"
+    && failed && failed.resetAt > Date.now() && failed.count >= POLICIES.failedLogin.limit;
+  if (blockedLogin) name = "failedLogin";
   const policy = POLICIES[name];
   const now = Date.now();
-  const key = `${clientIp(request)}:${name}`;
-  const result = consumeRateLimit(key, name, now);
+  const key = `${ip}:${name}`;
+  const result = blockedLogin ? {allowed:false,bucket:{...failed}} : consumeRateLimit(key, name, now);
   const { bucket } = result;
   const remaining = Math.max(0, policy.limit - bucket.count);
   response.setHeader("RateLimit-Limit", String(policy.limit));

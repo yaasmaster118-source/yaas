@@ -1150,7 +1150,7 @@ async function handleApi(request, response, helpers) {
       const roleIds = new Set((currentMember?.roles || []).map((role) => role.id));
       const isOwner = server.rows[0]?.owner_id === user.id;
       const visibleChannels = normalizedChannels.filter((channel) =>
-        isOwner || !channel.is_private || channel.allowed_role_ids.some((roleId) => roleIds.has(roleId))
+        granted.has("channel.view") && (isOwner || !channel.is_private || channel.allowed_role_ids.some((roleId) => roleIds.has(roleId)))
       );
       return sendJson(response, 200, {
         server: server.rows[0],
@@ -1314,6 +1314,9 @@ async function handleApi(request, response, helpers) {
     if (channelItemRoute && ["PATCH", "DELETE"].includes(method)) {
       const [, serverId, channelId] = channelItemRoute;
       if (!(await requirePermission(response, sendJson, serverId, user.id, "channels.manage"))) return;
+      if (!(await query("SELECT id FROM channels WHERE id = $1 AND server_id = $2", [channelId, serverId])).rowCount) {
+        return sendJson(response, 404, { error: "Kanal bulunamadı" });
+      }
       if (method === "DELETE") {
         await query("DELETE FROM channels WHERE id = $1 AND server_id = $2", [channelId, serverId]);
         return sendJson(response, 200, { ok: true });
@@ -1479,6 +1482,7 @@ async function handleApi(request, response, helpers) {
         }
       }
       if (channel.type !== "text") return sendJson(response, 400, { error: "Bu bir yazı kanalı değil" });
+      if (!granted.has("channel.view")) return sendJson(response,403,{error:"Bu işlem için iznin yok"});
       if (method === "GET") {
         if (!granted.has("channel.view")) return sendJson(response,403,{error:"Bu işlem için iznin yok"});
         const result = await query(

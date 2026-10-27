@@ -21,6 +21,17 @@ test('server events persist, stay inside membership and stream audience is enfor
   assert.ok((await req('/api/streams',member.cookie)).data.streams.servers.some(s=>s.id===privateId));assert.ok(!(await req('/api/streams',outside.cookie)).data.streams.servers.some(s=>s.id===privateId));
   assert.equal((await req('/api/stream-rtc/join',outside.cookie,{streamId:privateId,clientId:'outsider',role:'viewer'})).status,403);assert.equal((await req('/api/stream-rtc/join',member.cookie,{streamId:privateId,clientId:'member',role:'viewer'})).status,200);
   const publicStream=await req('/api/streams',owner.cookie,{title:'Public audience',visibility:'global'});assert.equal(publicStream.status,201);assert.ok((await req('/api/streams',outside.cookie)).data.streams.global.some(s=>s.id===publicStream.data.stream.id));assert.equal((await req('/api/stream-rtc/join',outside.cookie,{streamId:publicStream.data.stream.id,clientId:'public-viewer',role:'viewer'})).status,200);
+  assert.equal((await req('/api/streams/'+privateId,outside.cookie)).status,404);
+  db=new DatabaseSync(dbPath);db.prepare("INSERT INTO friendships(requester_id,addressee_id,status) VALUES (?,?,'accepted')").run(owner.data.user.id,outside.data.user.id);
+  const friendsStream=await req('/api/streams',owner.cookie,{title:'Friends audience',visibility:'friends'});assert.equal(friendsStream.status,201);const friendsId=friendsStream.data.stream.id;
+  assert.equal((await req('/api/streams/'+friendsId,outside.cookie)).status,200);assert.equal((await req('/api/streams/'+friendsId,member.cookie)).status,404);
+  db.prepare('DELETE FROM friendships WHERE requester_id=? AND addressee_id=?').run(owner.data.user.id,outside.data.user.id);
+  assert.equal((await req('/api/stream-rtc/join',outside.cookie,{streamId:friendsId,clientId:'revoked-friend',role:'viewer'})).status,403);
+  db.prepare('DELETE FROM memberships WHERE server_id=? AND user_id=?').run(serverId,member.data.user.id);
+  assert.equal((await req('/api/events',member.cookie)).data.events.length,0);
+  assert.equal((await req('/api/streams/'+privateId,member.cookie)).status,404);
+  assert.equal((await req('/api/stream-rtc/join',member.cookie,{streamId:privateId,clientId:'revoked-member',role:'viewer'})).status,403);
+  db.close();db=null;await req('/api/streams/'+friendsId,owner.cookie,null,'DELETE');
   await req('/api/streams/'+privateId,owner.cookie,null,'DELETE');await req('/api/streams/'+publicStream.data.stream.id,owner.cookie,null,'DELETE');
   assert.equal((await req('/api/events/'+id,owner.cookie,null,'DELETE')).status,200);assert.equal((await req('/api/events',member.cookie)).data.events.length,0);
  }finally{db?.close();await stop();for(const suffix of ['','-wal','-shm'])fs.rmSync(dbPath+suffix,{force:true});}

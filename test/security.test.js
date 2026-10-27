@@ -36,6 +36,8 @@ test("security policies separate sensitive actions and validate image signatures
   assert.equal(requestPolicy(request("POST", "/api/auth/register")), "register");
   assert.equal(requestPolicy(request("POST", "/api/friends/requests")), "social");
   assert.equal(requestPolicy(request("POST", "/api/channels/abc/messages")), "messages");
+  assert.equal(requestPolicy(request("POST", "/api/streams/abc/chat")), "messages");
+  assert.equal(requestPolicy(request("GET", "/api/streams/abc/chat")), "global");
   assert.equal(validateImageValue("http://insecure.example/avatar.png"), null);
   assert.equal(validateImageValue("data:image/png;base64,ZmFrZQ=="), null);
   const png = Buffer.from("89504e470d0a1a0a00000000", "hex").toString("base64");
@@ -50,6 +52,19 @@ test("security policies separate sensitive actions and validate image signatures
   for (let i = 0; i < 12; i++) assert.equal(consumeRateLimit("test-auth", "auth", 1000).allowed, true);
   assert.equal(consumeRateLimit("test-auth", "auth", 1000).allowed, false);
   assert.equal(consumeRateLimit("test-auth", "auth", 61001).allowed, true);
+});
+
+test('failed-login cooldown blocks login only and expires without extending on retries',()=>{
+  const {consumeRateLimit,applyRateLimit}=require('../src/security');
+  const ip='test-cooldown-'+Date.now(),now=Date.now();
+  for(let i=0;i<5;i++)consumeRateLimit('login-failure:'+ip,'failedLogin',now);
+  const headers={};let status;
+  const response={setHeader(k,v){headers[k]=v;},writeHead(value,values){status=value;Object.assign(headers,values);},end(){}};
+  const request={method:'POST',url:'/api/auth/login',headers:{},socket:{remoteAddress:ip}};
+  assert.equal(applyRateLimit(request,response),false);assert.equal(status,429);assert.ok(Number(headers['Retry-After'])>60);
+  assert.equal(applyRateLimit({...request,method:'GET',url:'/api/me'},response),true);
+  const original=Date.now;Date.now=()=>now+15*60*1000+1;
+  try{assert.equal(applyRateLimit(request,response),true);}finally{Date.now=original;}
 });
 
 test("configured email alerts use recipient, omit metadata secrets and suppress immediate duplicates", async () => {

@@ -521,15 +521,17 @@ function renderDmPageMessages(messages) {
   const nearBottom=list.scrollHeight-list.scrollTop-list.clientHeight<90;
   list.querySelector('.dm-empty')?.remove();
   const existing=new Map([...list.children].map(node=>[node.dataset.messageId,node]));
-  messages.forEach((message,index)=>{
-    if(existing.has(message.id))return;
+  let nextNode = null;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if(existing.has(message.id)){nextNode=existing.get(message.id);continue;}
     const node=document.createElement('div');node.className=`dm-message ${message.sender_id===state.user.id?'mine':''}`;node.dataset.messageId=message.id;
     const media=message.attachment_id ? `/api/dm-attachments/${encodeURIComponent(message.attachment_id)}` : null;
     const mime=message.attachment_mime||'';
     const label=media&&['[Fotoğraf]','[Ses kaydı]','[Video]','[GIF]','[Dosya]'].includes(message.content)?'':message.content;
     node.innerHTML=`${media ? mime.startsWith('image/')?`<a href="${media}" target="_blank" rel="noopener"><img class="dm-photo" src="${media}" alt="${escapeHtml(message.attachment_name)}" loading="lazy"></a>`:mime.startsWith('audio/')?`<audio controls preload="metadata" src="${media}" aria-label="Ses kaydı"></audio>`:mime.startsWith('video/')?`<video controls playsinline preload="metadata" src="${media}" aria-label="Video"></video>`:`<div class="dm-sent-file">▤ ${escapeHtml(message.attachment_name)}</div>`:''}${label?`<p class="dm-message-text">${escapeHtml(label)}</p>`:''}${media?`<a class="dm-download" href="${media}" download="${escapeHtml(message.attachment_name)}">${escapeHtml(message.attachment_name)} · İndir</a>`:''}<small class="dm-message-meta">${dmDate(message.created_at).toLocaleString('tr-TR')}${message.sender_id===state.user.id?'<span data-receipt aria-label="Gönderildi">✓</span>':''}</small>`;
-    const next=messages.slice(index+1).map(item=>existing.get(item.id)).find(Boolean);list.insertBefore(node,next||null);existing.set(message.id,node);
-  });
+    list.insertBefore(node,nextNode);existing.set(message.id,node);nextNode=node;
+  }
   messages.forEach(message=>{const receipt=existing.get(message.id)?.querySelector('[data-receipt]');if(receipt){const read=state.dmPeerReadAt&&dmDate(message.created_at)<=dmDate(state.dmPeerReadAt);const label=read?'Okundu':'Gönderildi',symbol=read?'✓✓':'✓';if(receipt.textContent!==symbol)receipt.textContent=symbol;if(receipt.getAttribute('aria-label')!==label)receipt.setAttribute('aria-label',label);receipt.title=label;}});
   if(!messages.length)list.innerHTML='<div class="dm-empty inline-empty">İlk özel mesajı gönder.</div>';
   if(nearBottom)list.scrollTop=list.scrollHeight;
@@ -537,11 +539,15 @@ function renderDmPageMessages(messages) {
 
 async function loadDmPageMessages() {
   if (!state.activeDm || !$("#dm-page-message-list")) return;
+  const contactId = state.activeDm.id;
+  const list = $("#dm-page-message-list");
   try {
-    const data = await api(`/api/dms/${state.activeDm.id}`);
+    const data = await api(`/api/dms/${contactId}`);
+    if (state.activeDm?.id !== contactId || $("#dm-page-message-list") !== list) return;
     renderDmPageMessages(data.messages || []);
   } catch (error) {
-    $("#dm-page-message-list").innerHTML = `<div class="dm-empty inline-empty">${escapeHtml(error.message)}</div>`;
+    if (state.activeDm?.id !== contactId || $("#dm-page-message-list") !== list) return;
+    list.innerHTML = `<div class="dm-empty inline-empty">${escapeHtml(error.message)}</div>`;
   }
 }
 
@@ -648,14 +654,15 @@ function renderDmPage() {
   const selected = state.activeDm;
   const isFriend = selected && state.friends.friends.some(person => person.id === selected.id);
   $("#workspace-page-shell").innerHTML = `${workspaceTopbar("DM kutusu", "Sohbetlerin, sabitlenen kişiler ve mesaj geçmişin.")}
-    <div class="workspace-card dm-workspace-layout inbox-layout"><aside class="dm-workspace-sidebar">
+    <div class="workspace-card dm-workspace-layout inbox-layout ${selected ? 'has-active-conversation' : ''}"><aside class="dm-workspace-sidebar">
     <div class="messenger-quick-tabs"><button data-inbox-tab="conversations" class="${state.activeDmTab !== 'requests' ? 'active' : ''}">Sohbetler</button><button data-inbox-tab="requests" class="${state.activeDmTab === 'requests' ? 'active' : ''}">İstekler (${state.messageRequests.length})</button></div>
     <label class="inbox-search">Sohbet ara<input id="inbox-search" placeholder="İsim veya kullanıcı adı"></label><div class="dm-list" id="inbox-conversations">${state.activeDmTab === 'requests' ? state.messageRequests.map(request => `<article class="dm-list-row"><div><strong>${escapeHtml(request.sender_name)}</strong><p>${escapeHtml(request.content)}</p><button class="primary" data-inbox-request="${request.id}" data-answer="accept">Kabul</button><button class="secondary" data-inbox-request="${request.id}" data-answer="reject">Reddet</button></div></article>`).join('') || '<p class="empty-list">Mesaj isteği yok.</p>' : conversations.map(person => `<button class="dm-list-row ${selected?.id === person.id ? 'active' : ''}" data-inbox-person="${person.id}" data-search="${escapeHtml(`${contactName(person)} ${person.handle}`.toLocaleLowerCase('tr-TR'))}">${avatarContent(person)}<div><strong>${person.pinned ? '★ ' : ''}${escapeHtml(contactName(person))}</strong><small>${escapeHtml(person.last_message || 'Henüz mesaj yok')}</small></div>${Number(person.unread_count) ? `<b class="notification-badge">${Number(person.unread_count)}</b>` : ''}</button>`).join('') || '<p class="empty-list">Bir arkadaşından sohbet başlat. Mesajların burada kalır.</p>'}</div>
     <button class="secondary wide" id="inbox-open-friends">Arkadaş listesini aç</button></aside>
-    ${selected ? `<section class="dm-workspace-chat"><header>${avatarContent(selected)}<div><strong>${escapeHtml(contactName(selected))}</strong><small>@${escapeHtml(selected.handle)}</small></div><button class="secondary" id="inbox-pin">${selected.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle'}</button><button class="secondary" id="inbox-profile">Profil</button></header>
+    ${selected ? `<section class="dm-workspace-chat"><header><button type="button" class="secondary" id="inbox-back" aria-label="Sohbet listesine dön">←</button>${avatarContent(selected)}<div><strong>${escapeHtml(contactName(selected))}</strong><small>@${escapeHtml(selected.handle)}</small></div><button class="secondary" id="inbox-pin">${selected.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle'}</button><button class="secondary" id="inbox-profile">Profil</button></header>
     <span id="dm-peer-presence" class="dm-peer-presence" aria-live="polite">Durum kontrol ediliyor…</span><button class="secondary hidden" id="inbox-older">Eski mesajları yükle</button><div class="dm-message-list" id="dm-page-message-list" aria-live="polite"></div>
     ${isFriend ? window.dmComposerMarkup() : '<p class="empty-list">Sohbet geçmişin korunuyor. Yeni mesaj için yeniden arkadaş olmalısınız.</p>'}</section>` : '<section class="dm-workspace-chat empty"><span>✉</span><strong>Mesajların burada</strong><small>Soldan bir sohbet seç veya arkadaş listenden mesaj başlat.</small></section>'}</div>`;
   bindWorkspaceTopbarActions();
+  $('#inbox-back')?.addEventListener('click',()=>{state.activeDm=null;renderDmPage();$('#inbox-search')?.focus();});
   $("#inbox-open-friends").onclick = () => showDmPage("friends").catch(error => notify(error.message,true));
   $$("[data-inbox-tab]").forEach(button => button.onclick = () => { state.activeDmTab=button.dataset.inboxTab; renderDmPage(); });
   $$("[data-inbox-person]").forEach(button => button.onclick = () => { state.activeDm=conversations.find(person => person.id===button.dataset.inboxPerson); renderDmPage(); });
@@ -689,7 +696,7 @@ async function loadInboxMessages(older=false) {
     renderDmPageMessages(state.inboxMessages);
     if(older)list.scrollTop=list.scrollHeight-oldHeight;
     $('#inbox-older')?.classList.toggle('hidden',!data.hasMore);
-    if(!older){await api(`/api/contacts/${id}`,{method:'PATCH',body:JSON.stringify({read:true})});const conversation=(state.conversations||[]).find(person=>person.id===id);if(conversation)conversation.unread_count=0;$('[data-inbox-person="'+id+'"] .notification-badge')?.remove();}
+    if(!older){await api(`/api/contacts/${id}`,{method:'PATCH',body:JSON.stringify({read:true})});const conversation=(state.conversations||[]).find(person=>person.id===id);if(conversation)conversation.unread_count=0;$('[data-inbox-person="'+id+'"] .notification-badge')?.remove();await loadNotificationSummary();}
   }catch(error){notify(error.message,true);}
 }
 
@@ -697,6 +704,7 @@ async function toggleNotificationPanel() {
   let panel=$('#notification-popover');
   if(panel && !panel.hidden){panel.hidden=true; $('#notifications-button')?.setAttribute('aria-expanded','false');return;}
   await loadFriends(); await loadMessageRequests(); state.conversations=(await api('/api/dms')).conversations || [];
+  await loadNotificationSummary();
   if(!panel){panel=document.createElement('aside');panel.id='notification-popover';panel.className='notification-popover';panel.setAttribute('aria-label','Bildirimler');document.body.append(panel);}
   const unread=state.conversations.filter(person=>Number(person.unread_count)>0);
   panel.innerHTML=`<header><strong>Bildirimler</strong><button class="icon-button" id="notification-close" aria-label="Bildirimleri kapat">×</button></header><div class="notification-popover-list">${dmNotificationItems().map(item=>`<button class="notification-item" data-notice-page="${item.type==='friend'?'friends':'requests'}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></button>`).join('')}${unread.map(person=>`<button class="notification-item" data-notice-contact="${person.id}"><strong>${escapeHtml(contactName(person))} · ${Number(person.unread_count)} yeni mesaj</strong><small>${escapeHtml(person.last_message)}</small></button>`).join('') || ''}${!dmNotificationItems().length && !unread.length?'<p class="empty-list">Yeni bildirim yok.</p>':''}</div>`;
@@ -725,15 +733,14 @@ async function answerMessageRequestFromPage(requestId, action) {
 async function showDmPage(tab = "friends", preselectedFriend = null) {
   if (tab === "notifications") return toggleNotificationPanel();
   state.activeDmTab = tab;
-  await loadFriends();
-  await loadMessageRequests();
+  const [, , inbox] = await Promise.all([loadFriends(), loadMessageRequests(), api("/api/dms")]);
   if (preselectedFriend) {
     state.activeDmTab = "friends";
     state.activeDm = preselectedFriend;
   } else if (tab !== "friends") {
     state.activeDm = null;
   }
-  state.conversations = (await api("/api/dms")).conversations || [];
+  state.conversations = inbox.conversations || [];
   if(state.activeDm){state.activeDm={...state.activeDm,...state.friends.friends.find(person=>person.id===state.activeDm.id),...state.conversations.find(person=>person.id===state.activeDm.id)};}
   if (tab === "friends" && !preselectedFriend) return showWorkspacePage("nav-friends-button", renderFriendsPage);
   showWorkspacePage("nav-dms-button", renderDmPage);
@@ -1370,10 +1377,12 @@ function renderHomeEvents() {
   const markup = state.eventsError ? '<p role="status">Etkinlikler yüklenemedi. Etkinlikler sayfasından yeniden dene.</p>' : (state.events || []).slice(0,6).map(event=>serverEventMarkup(event)).join('') || '<p class="empty-list">Sunucularında yaklaşan etkinlik yok.</p>';
   if(list.innerHTML!==markup)list.innerHTML=markup;
 }
+let eventsLoadSequence = 0;
 async function loadEvents() {
   const userId = state.user?.id;if(!userId)return;
-  try { const data=await api('/api/events');if(state.user?.id!==userId)return;state.events=data.events||[];state.eventsError=''; }
-  catch(error){if(state.user?.id!==userId)return;state.eventsError=error.message;}
+  const sequence = ++eventsLoadSequence;
+  try { const data=await api('/api/events');if(state.user?.id!==userId||sequence!==eventsLoadSequence)return;state.events=data.events||[];state.eventsError=''; }
+  catch(error){if(state.user?.id!==userId||sequence!==eventsLoadSequence)return;state.eventsError=error.message;}
   renderHomeEvents();
 }
 function renderEventsPage() {
@@ -1395,6 +1404,9 @@ function renderEventsPage() {
     </div>`;
   bindWorkspaceTopbarActions();
   for(const [field,value] of Object.entries({server:draft.serverId||state.activeServer?.server?.id||'',title:draft.title||'',type:draft.type||'Turnuva',date:draft.startsAt||'',location:draft.location||'Online',description:draft.description||''}))$('#page-event-'+field+'-input').value=value;
+  $('#page-event-form').addEventListener('input',()=>{
+    state.eventDraft={...state.eventDraft,serverId:$('#page-event-server-input').value,title:$('#page-event-title-input').value,type:$('#page-event-type-input').value,startsAt:$('#page-event-date-input').value,location:$('#page-event-location-input').value,description:$('#page-event-description-input').value};
+  });
   $('#page-create-event-button').onclick=()=>{state.eventCreatorOpen=!state.eventCreatorOpen;renderEventsPage();};
   $('#refresh-events-button').onclick=async()=>{await loadEvents();if(state.activeWorkspacePage==='events'&&!state.eventCreatorOpen)renderEventsPage();};
   $$('[data-share-local-event]').forEach(button=>button.onclick=()=>{const event=local.find(item=>item.id===button.dataset.shareLocalEvent);state.eventDraft={...event,localId:event.id};state.eventCreatorOpen=true;renderEventsPage();$('#page-event-server-input').focus();});
@@ -1628,6 +1640,8 @@ async function loadNotificationSummary() {
 
 function showAuth() {
   state.user = null;
+  $('#notification-popover')?.remove();
+  $('#notifications-button')?.setAttribute('aria-expanded','false');
   $("#app").classList.add("hidden");
   $("#auth-screen").classList.remove("hidden");
   window.yaasEntrance?.show();
@@ -1746,11 +1760,17 @@ function populateStreamServerOptions() {
       `<option value="${server.id}" ${server.id === activeId ? "selected" : ""}>${escapeHtml(server.name)}</option>`).join("");
 }
 
+let streamsLoadSequence = 0;
 async function loadStreams() {
+  const userId = state.user?.id;
+  if (!userId) return;
+  const sequence = ++streamsLoadSequence;
   try {
     const data = await api("/api/streams");
+    if (state.user?.id !== userId || sequence !== streamsLoadSequence) return;
     state.streams = data.streams || { friends: [], servers: [], global: [] };
   } catch (error) {
+    if (state.user?.id !== userId || sequence !== streamsLoadSequence) return;
     state.streams = { friends: [], servers: [], global: [] };
   }
   renderStreams();
@@ -2497,7 +2517,11 @@ async function loadMessages() {
   const key = `${state.user.id}:${channel.id}`;
   const list = $("#message-list");
   const cached = !channel.is_private && channelMessageCache.get(key);
+  let paintedMessages;
   const paint = messages => {
+    const signature = JSON.stringify(messages);
+    if (signature === paintedMessages) return;
+    paintedMessages = signature;
     list.innerHTML = messages.length ? messages.map(messageTemplate).join('') : '<div class="empty-channel"><span>#</span><strong>İlk mesajı sen gönder</strong><p>Bu kanal henüz boş.</p></div>';
     list.scrollTop = list.scrollHeight;
   };
@@ -3179,7 +3203,7 @@ async function joinPendingInvite() {
 async function start() {
   buildPermissionGrid();
   const socialAuthError = authErrorFromLocation();
-  const providers = await api("/api/auth/providers");
+  const [providers, data] = await Promise.all([api("/api/auth/providers"), api("/api/me")]);
   const enabledProviders = providers.providers || {};
   state.authProviders = enabledProviders;
   $$("[data-provider]").forEach((button) => {
@@ -3188,7 +3212,6 @@ async function start() {
   $("#social-login-note").textContent = enabledProviders.google || enabledProviders.apple
     ? "Google ile ilk girişte YAAS hesabın otomatik oluşur, sonraki girişlerde aynı hesaba girersin."
     : "Google ve Apple girişi güvenli bağlantı tamamlanınca açılacak.";
-  const data = await api("/api/me");
   if (!data.user) {
     if (socialAuthError) $("#login-error").textContent = socialAuthError;
     const inviteCode = inviteCodeFromLocation();
@@ -3268,6 +3291,7 @@ $("#nav-dms-button")?.addEventListener("click", async () => {
     notify(error.message, true);
   }
 });
+$("#nav-y-preview-button")?.addEventListener("click", () => location.assign('/y-para.html'));
 $("#nav-streams-button")?.addEventListener("click", () => {
   showStreamsPage().catch((error) => notify(error.message, true));
 });
@@ -3406,6 +3430,7 @@ $("#login-form").addEventListener("submit", async (event) => {
 $("#register-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  if (form.dataset.pending === "true") return;
   const password = $("#register-password").value;
   const confirmation = $("#register-password-confirm").value;
   $("#register-error").textContent = "";
@@ -3417,6 +3442,9 @@ $("#register-form").addEventListener("submit", async (event) => {
     $("#register-error").textContent = "Şifre en az 8 karakter, harf ve rakam içermeli.";
     return;
   }
+  form.dataset.pending = "true";
+  const submit = form.querySelector('[type="submit"]');
+  submit.disabled = true;
   try {
     const data = await api("/api/auth/register", {
       method: "POST",
@@ -3434,6 +3462,9 @@ $("#register-form").addEventListener("submit", async (event) => {
     await loadStreams();
   } catch (error) {
     $("#register-error").textContent = error.message;
+  } finally {
+    delete form.dataset.pending;
+    submit.disabled = false;
   }
 });
 
@@ -3466,6 +3497,10 @@ $("#profile-settings-form").addEventListener("submit", async (event) => {
 });
 
 $("#logout-button").addEventListener("click", async () => {
+  const button = $("#logout-button");
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
   await leaveVoice();
   await api("/api/auth/logout", { method: "POST", body: "{}" });
   state.servers = [];
@@ -3477,7 +3512,14 @@ $("#logout-button").addEventListener("click", async () => {
   state.notifications = { friendRequests: 0, total: 0 };
   state.activeDm = null;
   updateNotificationBadges(0);
+  state.activeChannel = null;
+  state.securityDashboard = null;
   showAuth();
+  } catch (error) {
+    notify("Çıkış yapılamadı. " + error.message, true);
+  } finally {
+    button.disabled = false;
+  }
 });
 
 $("#friends-button").addEventListener("click", async () => {
@@ -3640,8 +3682,7 @@ $("#channel-form").addEventListener("submit", async (event) => {
     });
     form.reset();
     closeModal(form);
-    await openServer(state.activeServer.server.id);
-    await openChannel(data.channel);
+    await openServer(state.activeServer.server.id, data.channel.id);
   } catch (error) {
     formError.textContent = error.message;
   }
@@ -3791,19 +3832,28 @@ $("#settings-create-invite").addEventListener("click", createActiveServerInvite)
 $("#category-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  if (form.dataset.pending === "true") return;
+  const serverId = state.activeServer.server.id;
+  const activeChannelId = state.activeChannel?.id;
   const formError = $(".form-error", form);
   formError.textContent = "";
+  form.dataset.pending = "true";
+  const submit = form.querySelector('[type="submit"]');
+  submit.disabled = true;
   try {
-    await api(`/api/servers/${state.activeServer.server.id}/categories`, {
+    await api(`/api/servers/${serverId}/categories`, {
       method: "POST",
       body: JSON.stringify({ name: $("#category-name-input").value })
     });
     form.reset();
     closeModal(form);
-    await openServer(state.activeServer.server.id);
+    if (state.activeServer?.server.id === serverId) await openServer(serverId, activeChannelId);
     notify("Kategori oluşturuldu");
   } catch (error) {
     formError.textContent = error.message;
+  } finally {
+    delete form.dataset.pending;
+    submit.disabled = false;
   }
 });
 
@@ -4133,9 +4183,11 @@ function editCategory(id) {
 async function moveManagedChannel(id, categoryId) {
   if (!canManageChannels()) return;
   const serverId = state.activeServer.server.id;
+  const activeChannelId = state.activeChannel?.id;
   try {
     await api(`/api/servers/${serverId}/channels/${id}`, {method:'PATCH', body:JSON.stringify({categoryId:categoryId || null})});
-    await openServer(serverId);
+    if (state.activeServer?.server.id !== serverId) return;
+    await openServer(serverId, activeChannelId);
     notify('Kanal taşındı');
   } catch(error) { notify(error.message); }
 }

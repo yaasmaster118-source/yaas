@@ -3,8 +3,8 @@ const MAX_DM_SECONDS=120;
 function validDmDuration(seconds){return Number.isFinite(seconds)&&seconds>0&&seconds<=MAX_DM_SECONDS;}
 function readDmDuration(file){return new Promise((resolve,reject)=>{
   const element=document.createElement(file.type.startsWith('audio/')?'audio':'video'),url=URL.createObjectURL(file);
-  let timer;
-  const finish=(duration,error)=>{clearTimeout(timer);element.onloadedmetadata=null;element.ontimeupdate=null;element.onerror=null;element.removeAttribute('src');element.load();URL.revokeObjectURL(url);error?reject(error):resolve(duration);};
+  let timer,finished=false;
+  const finish=(duration,error)=>{if(finished)return;finished=true;clearTimeout(timer);element.onloadedmetadata=null;element.ontimeupdate=null;element.onerror=null;element.removeAttribute('src');element.load();URL.revokeObjectURL(url);error?reject(error):resolve(duration);};
   timer=setTimeout(()=>finish(null,new Error('Dosyanın süresi okunamadı. Başka bir ses veya video seç.')),8000);
   element.preload='metadata';element.onloadedmetadata=()=>{if(Number.isFinite(element.duration))return finish(element.duration);element.ontimeupdate=()=>{const duration=Number.isFinite(element.duration)?element.duration:element.currentTime;if(Number.isFinite(duration)&&duration>0&&duration<1e9)finish(duration);};element.currentTime=1e10;};
   element.onerror=()=>finish(null,new Error('Ses veya video dosyası açılamadı.'));element.src=url;
@@ -147,15 +147,16 @@ if(typeof window!=='undefined')window.mountDmComposer=function(form,{send,draft,
   document.addEventListener('pointerdown',onOutside);form.addEventListener('keydown',onEscape);
   input.oninput=()=>onDraft(input.value);
   input.onkeydown=event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();form.requestSubmit();}};
-  input.addEventListener('paste',event=>{const item=[...event.clipboardData.items].find(item=>item.kind==='file');if(item){event.preventDefault();setFile(item.getAsFile());}});
+  input.addEventListener('paste',event=>{const item=[...event.clipboardData.items].find(item=>item.kind==='file');const pasted=item?.getAsFile();if(pasted){event.preventDefault();setFile(pasted);}});
   form.ondragover=event=>event.preventDefault();form.ondrop=event=>{event.preventDefault();if(event.dataTransfer.files[0])setFile(event.dataTransfer.files[0]);};
   form.onsubmit=async event=>{
-    event.preventDefault();if(busy||recording||(!input.value.trim()&&!file))return;
+    event.preventDefault();if(disposed||busy||recording||(!input.value.trim()&&!file))return;
     const original=input.value,selectedFile=file;busy=true;sendButton.disabled=true;input.focus();message('Gönderiliyor…');
     try{
       let attachment;
       if(selectedFile&&(selectedFile.type.startsWith('audio/')||selectedFile.type.startsWith('video/'))){const duration=await readDmDuration(selectedFile);if(!validDmDuration(duration))throw new Error('Ses ve videolar en fazla 2 dakika olabilir. Daha kısa bir dosya seç.');}
       if(selectedFile){const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Dosya okunamadı'));reader.readAsDataURL(selectedFile);});attachment={name:selectedFile.name,data};}
+      if(disposed||!form.isConnected)return;
       await send({content:original.trim(),attachment});
       if(input.value===original){input.value='';onDraft('');}if(file===selectedFile)disposePreview();message('');
     }catch(error){message(error.message||'Mesaj gönderilemedi. Tekrar deneyebilirsin.');}
